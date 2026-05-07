@@ -1,0 +1,81 @@
+<svg viewBox="0 0 1200 380" width="1200" height="380" font-family="Helvetica, Arial, sans-serif" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="typestate asset lifecycle: Discovered transitions to Downloaded via Download(ctx, hc); Downloaded transitions to Saved via Save(ctx, sink.Disk); Saved transitions to Recorded directly when Immich is not configured, or via Uploaded then Recorded when Immich is configured. Each phase is a distinct Go type.">
+  <defs>
+    <marker id="t-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,3.5 L0,7 z" fill="#4a6741"/>
+    </marker>
+    <marker id="t-arrow-muted" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,3.5 L0,7 z" fill="#909090"/>
+    </marker>
+  </defs>
+  <g font-family="Helvetica, Arial, sans-serif">
+
+  <text x="20" y="32" font-size="22" font-weight="700" fill="#4a6741">typestate asset lifecycle</text>
+  <text x="20" y="54" font-size="12" fill="#404040">each phase is a distinct Go type. The only path between phases is the transition method on the source phase. Skipping a phase is a compile error.</text>
+
+  <text x="600" y="92" text-anchor="middle" font-size="11" font-weight="700" fill="#909090">PHASES (left to right; Recorded is terminal)</text>
+
+  <rect x="40" y="120" width="180" height="80" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="130" y="142" text-anchor="middle" font-size="12" font-weight="700" fill="#0a0a0a">Discovered</text>
+  <text x="130" y="160" text-anchor="middle" font-size="9" fill="#404040">famlyImageID, source,</text>
+  <text x="130" y="174" text-anchor="middle" font-size="9" fill="#404040">signed url, filename hint,</text>
+  <text x="130" y="188" text-anchor="middle" font-size="9" fill="#404040">timestamps, body, sender</text>
+
+  <line x1="220" y1="160" x2="280" y2="160" stroke="#4a6741" stroke-width="1.5" marker-end="url(#t-arrow)"/>
+  <text x="250" y="148" text-anchor="middle" font-size="9" font-weight="600" fill="#4a6741">Download</text>
+  <text x="250" y="178" text-anchor="middle" font-size="8" fill="#909090">(ctx, hc)</text>
+
+  <rect x="280" y="120" width="180" height="80" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="370" y="142" text-anchor="middle" font-size="12" font-weight="700" fill="#0a0a0a">Downloaded</text>
+  <text x="370" y="160" text-anchor="middle" font-size="9" fill="#404040">temp file path,</text>
+  <text x="370" y="174" text-anchor="middle" font-size="9" fill="#404040">SHA1, size,</text>
+  <text x="370" y="188" text-anchor="middle" font-size="9" fill="#404040">Content-Type</text>
+
+  <line x1="460" y1="160" x2="520" y2="160" stroke="#4a6741" stroke-width="1.5" marker-end="url(#t-arrow)"/>
+  <text x="490" y="148" text-anchor="middle" font-size="9" font-weight="600" fill="#4a6741">Save</text>
+  <text x="490" y="178" text-anchor="middle" font-size="8" fill="#909090">(ctx, *sink.Disk)</text>
+
+  <rect x="520" y="120" width="180" height="80" rx="4" fill="#f4f7f3" stroke="#4a6741" stroke-width="2"/>
+  <text x="610" y="142" text-anchor="middle" font-size="12" font-weight="700" fill="#0a0a0a">Saved</text>
+  <text x="610" y="160" text-anchor="middle" font-size="9" fill="#404040">final on-disk path,</text>
+  <text x="610" y="174" text-anchor="middle" font-size="9" fill="#404040">EXIF + XMP embedded,</text>
+  <text x="610" y="188" text-anchor="middle" font-size="9" fill="#4a6741" font-weight="600">durability boundary</text>
+
+  <line x1="700" y1="140" x2="760" y2="120" stroke="#909090" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#t-arrow-muted)"/>
+  <text x="730" y="108" text-anchor="middle" font-size="9" font-weight="600" fill="#909090">Upload</text>
+  <text x="730" y="125" text-anchor="middle" font-size="8" fill="#909090">(ctx, *sink.Immich)</text>
+
+  <rect x="760" y="80" width="180" height="80" rx="4" fill="none" stroke="#909090" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="850" y="102" text-anchor="middle" font-size="12" font-weight="700" fill="#404040">Uploaded</text>
+  <text x="850" y="120" text-anchor="middle" font-size="9" fill="#404040">immich asset id,</text>
+  <text x="850" y="134" text-anchor="middle" font-size="9" fill="#404040">created or duplicate</text>
+  <text x="850" y="150" text-anchor="middle" font-size="9" fill="#909090">(only if Immich configured)</text>
+
+  <line x1="940" y1="120" x2="1000" y2="160" stroke="#909090" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#t-arrow-muted)"/>
+  <text x="980" y="120" text-anchor="middle" font-size="9" font-weight="600" fill="#909090">Record</text>
+  <text x="980" y="148" text-anchor="middle" font-size="8" fill="#909090">(ctx, *state.Store)</text>
+
+  <line x1="700" y1="180" x2="1000" y2="180" stroke="#4a6741" stroke-width="1.5" marker-end="url(#t-arrow)"/>
+  <text x="850" y="172" text-anchor="middle" font-size="9" font-weight="600" fill="#4a6741">Record (skip-Immich path)</text>
+  <text x="850" y="195" text-anchor="middle" font-size="8" fill="#909090">(ctx, *state.Store)</text>
+
+  <rect x="1000" y="120" width="160" height="80" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="1080" y="142" text-anchor="middle" font-size="12" font-weight="700" fill="#0a0a0a">Recorded</text>
+  <text x="1080" y="160" text-anchor="middle" font-size="9" fill="#404040">terminal phase</text>
+  <text x="1080" y="174" text-anchor="middle" font-size="9" fill="#404040">recordedAt timestamp,</text>
+  <text x="1080" y="188" text-anchor="middle" font-size="9" fill="#404040">durable across runs</text>
+
+  <text x="600" y="245" text-anchor="middle" font-size="11" font-weight="700" fill="#909090">COMPILE-TIME ENFORCEMENT</text>
+
+  <rect x="40" y="260" width="540" height="90" rx="3" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="50" y="280" font-size="11" font-weight="600" fill="#0a0a0a">what the type system refuses</text>
+  <text x="50" y="300" font-size="10" fill="#404040">disc.Save(...)         // no method on Discovered</text>
+  <text x="50" y="316" font-size="10" fill="#404040">dl.Upload(...)         // no method on Downloaded</text>
+  <text x="50" y="332" font-size="10" fill="#404040">disc.Record(...)       // can only record from Saved or Uploaded</text>
+
+  <rect x="620" y="260" width="540" height="90" rx="3" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="630" y="280" font-size="11" font-weight="600" fill="#0a0a0a">what's allowed (the only paths)</text>
+  <text x="630" y="300" font-size="10" fill="#404040">disc.Download(...).Save(...).Record(...)            // skip-Immich</text>
+  <text x="630" y="316" font-size="10" fill="#404040">disc.Download(...).Save(...).Upload(...).Record(...) // with Immich</text>
+  <text x="630" y="332" font-size="10" fill="#909090">two Record methods (one on Saved, one on Uploaded); both yield Recorded.</text>
+  </g>
+</svg>

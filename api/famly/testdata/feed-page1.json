@@ -1,0 +1,57 @@
+{
+  "feedItems": [
+    {
+      "feedItemId": "post-001",
+      "originatorId": "Post:e001",
+      "createdDate": "2026-05-06T14:30:00Z",
+      "body": "Great day at the park",
+      "images": [
+        {
+          "imageId": "img-001",
+          "url": "https://fixture/image/img-001",
+          "url_big": "https://fixture/image/img-001/big",
+          "width": 1024,
+          "height": 768,
+          "createdAt": {"date": "2026-05-06T14:25:00Z"},
+          "expiration": "2026-05-07T14:30:00Z",
+          "liked": true,
+          "likes": [{"loginId": "00000000-0000-0000-0000-000000000001"}],
+          "tags": []
+        },
+        {
+          "imageId": "img-002",
+          "url": "https://fixture/image/img-002",
+          "url_big": "https://fixture/image/img-002/big",
+          "width": 1024,
+          "height": 768,
+          "createdAt": {"date": "2026-05-06T14:25:30Z"},
+          "expiration": "2026-05-07T14:30:00Z",
+          "liked": false,
+          "likes": [],
+          "tags": [
+            {"tag": "child-a", "type": "Child", "name": "Child A", "childId": "00000000-0000-0000-0000-00000000c001"}
+          ]
+        }
+      ],
+      "videos": []
+    },
+    {
+      "feedItemId": "post-002",
+      "originatorId": "Post:e002",
+      "createdDate": "2026-05-05T10:15:00Z",
+      "body": "Music time",
+      "images": [],
+      "videos": [
+        {
+          "videoId": "vid-001",
+          "url": "https://fixture/video/vid-001",
+          "thumbnail": "https://fixture/video/vid-001/thumb",
+          "duration": 12,
+          "width": 1920,
+          "height": 1080,
+          "expiration": "2026-05-07T14:30:00Z"
+        }
+      ]
+    }
+  ]
+}

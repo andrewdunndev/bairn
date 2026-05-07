@@ -1,0 +1,85 @@
+# Famly schema (SDL).
+#
+# Hand-curated subset of the vendor's full schema. genqlient
+# validates operations.graphql against this file; only the types
+# and fields bairn references appear here.
+#
+# Source: vendor introspection dump (gitignored locally). When
+# adding types, copy field declarations precisely from the dump and
+# trim to the minimum bairn needs.
+
+# Custom scalars: declared here so genqlient knows their identity.
+# Bound to Go string in genqlient.yaml.
+scalar EmailAddress
+scalar Password
+scalar DeviceId
+scalar AccessToken
+scalar Markdown
+
+type Query {
+  # Placeholder until a future release wires a real query (notes,
+  # journey, etc.).
+  hello: HelloPayload!
+}
+
+type HelloPayload {
+  message: String!
+}
+
+type Mutation {
+  me: MeMutation!
+}
+
+type MeMutation {
+  authenticateWithPassword(
+    email: EmailAddress!
+    password: Password!
+    deviceId: DeviceId!
+    legacy: Boolean!
+  ): AuthenticateWithPasswordResult!
+}
+
+union AuthenticateWithPasswordResult =
+    AuthenticationSucceeded
+  | AuthenticationFailed
+  | AuthenticationChallenged
+
+type AuthenticationSucceeded {
+  status: AuthenticationStatus!
+  accessToken: AccessToken!
+  deviceId: DeviceId!
+}
+
+type AuthenticationFailed {
+  status: AuthenticationStatus!
+  errorTitle: Markdown!
+  errorDetails: Markdown!
+}
+
+# AuthenticationChallenged is referenced by the union but its full
+# field set (multi-factor, recovery codes, etc.) is out of scope.
+# We declare it with a single field so genqlient can validate
+# spreads when we eventually add MFA support.
+type AuthenticationChallenged {
+  status: AuthenticationStatus!
+}
+
+enum AuthenticationStatus {
+  UnknownResult
+  Succeeded
+  FailedLoginNotFound
+  FailedInvalidPassword
+  Failed
+  FailedNoValidLoginsBeforePin
+  FailedNoPin
+  FailedInvalidPin
+  FailedTooManyAttempts
+  FailedPasswordNotSet
+  FailedHmacExpired
+  FailedInvalidTwofactorCode
+  FailedTooManyPinAttempts
+  FailedOIDC
+  FailedPasswordAttemptInsteadOfOIDC
+  FailedInvalidRecoveryCode
+  FailedMultiFactorSetupRequired
+}

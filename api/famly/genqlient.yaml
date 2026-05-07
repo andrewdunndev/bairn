@@ -1,0 +1,31 @@
+# genqlient configuration. Run via "make gen".
+#
+# The schema lives at api/famly/schema.graphql, hand-curated to the
+# subset of Famly's surface bairn actually uses. See ADR 0001.
+
+schema: schema.graphql
+operations:
+  - operations.graphql
+generated: gen.go
+package: famly
+
+bindings:
+  ID:
+    type: string
+  DateTime:
+    type: time.Time
+  Date:
+    type: string
+  # Famly's custom scalars are opaque strings to bairn.
+  EmailAddress:
+    type: string
+  Password:
+    type: string
+  DeviceId:
+    type: string
+  AccessToken:
+    type: string
+  Markdown:
+    type: string
+
+use_struct_references: true

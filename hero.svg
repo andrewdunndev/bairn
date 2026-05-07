@@ -1,0 +1,99 @@
+<svg viewBox="0 0 1200 430" width="1200" height="430" font-family="Helvetica, Arial, sans-serif" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="bairn: a personal photo archive for Famly-using households. Authenticate with parent credentials, paginate the feed, fetch best-resolution images, embed EXIF and XMP metadata in-file, save to disk under date subfolders, optionally also upload to Immich.">
+  <defs>
+    <marker id="b-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,3.5 L0,7 z" fill="#909090"/>
+    </marker>
+    <marker id="b-arrow-accent" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,3.5 L0,7 z" fill="#4a6741"/>
+    </marker>
+  </defs>
+  <g font-family="Helvetica, Arial, sans-serif">
+
+  <text x="20" y="32" font-size="22" font-weight="700" fill="#4a6741">bairn</text>
+  <text x="20" y="54" font-size="12" fill="#404040">a personal photo archive for Famly-using households. parent credentials in; date-organized files with embedded metadata out.</text>
+
+  <text x="100" y="90" text-anchor="middle" font-size="11" font-weight="700" fill="#404040">FAMLY</text>
+  <text x="540" y="90" text-anchor="middle" font-size="11" font-weight="700" fill="#4a6741">BAIRN (Go binary, single host)</text>
+  <text x="1010" y="100" text-anchor="middle" font-size="10" font-weight="700" fill="#909090">FILESYSTEM</text>
+  <text x="1010" y="240" text-anchor="middle" font-size="10" font-weight="700" fill="#909090">IMMICH (v0.2.0, optional)</text>
+
+  <rect x="20" y="105" width="160" height="60" rx="3" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="100" y="128" text-anchor="middle" font-size="11" font-weight="600" fill="#0a0a0a">your account</text>
+  <text x="100" y="146" text-anchor="middle" font-size="9" fill="#909090">email + password, MFA token</text>
+
+  <rect x="20" y="180" width="160" height="60" rx="3" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="100" y="203" text-anchor="middle" font-size="11" font-weight="600" fill="#0a0a0a">feed endpoint</text>
+  <text x="100" y="221" text-anchor="middle" font-size="9" fill="#909090">photos, videos, captions, tags</text>
+
+  <rect x="240" y="100" width="600" height="290" rx="4" fill="none" stroke="#4a6741" stroke-width="2"/>
+
+  <rect x="260" y="120" width="260" height="42" rx="2" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="270" y="138" font-size="10" font-weight="700" fill="#4a6741">1</text>
+  <text x="284" y="138" font-size="11" font-weight="600" fill="#0a0a0a">authenticate</text>
+  <text x="284" y="153" font-size="10" fill="#404040">email + password → session token</text>
+
+  <rect x="260" y="172" width="260" height="42" rx="2" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="270" y="190" font-size="10" font-weight="700" fill="#4a6741">2</text>
+  <text x="284" y="190" font-size="11" font-weight="600" fill="#0a0a0a">paginate feed</text>
+  <text x="284" y="205" font-size="10" fill="#404040">cursor + olderThan; --max-pages cap</text>
+
+  <rect x="260" y="224" width="260" height="42" rx="2" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="270" y="242" font-size="10" font-weight="700" fill="#4a6741">3</text>
+  <text x="284" y="242" font-size="11" font-weight="600" fill="#0a0a0a">fetch best resolution</text>
+  <text x="284" y="257" font-size="10" fill="#404040">CDN size segment → original W×H</text>
+
+  <rect x="260" y="276" width="260" height="52" rx="2" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="270" y="294" font-size="10" font-weight="700" fill="#4a6741">4</text>
+  <text x="284" y="294" font-size="11" font-weight="600" fill="#0a0a0a">embed metadata in-file</text>
+  <text x="284" y="309" font-size="10" fill="#404040">EXIF: timestamp, body, sender</text>
+  <text x="284" y="321" font-size="10" fill="#404040">XMP: dc:description, dc:subject (subject tags)</text>
+
+  <rect x="260" y="338" width="260" height="42" rx="2" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="270" y="356" font-size="10" font-weight="700" fill="#4a6741">5</text>
+  <text x="284" y="356" font-size="11" font-weight="600" fill="#0a0a0a">record + skip-already-done</text>
+  <text x="284" y="371" font-size="10" fill="#404040">JSON state under flock; idempotent rerun</text>
+
+  <rect x="540" y="120" width="280" height="80" rx="2" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="550" y="138" font-size="10" font-weight="700" fill="#4a6741">contract</text>
+  <text x="550" y="155" font-size="10" fill="#404040">single household, single account</text>
+  <text x="550" y="170" font-size="10" fill="#404040">single host (state file is flock'd)</text>
+  <text x="550" y="185" font-size="10" fill="#404040">human-rate; operator's own creds</text>
+
+  <rect x="540" y="210" width="280" height="80" rx="2" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="550" y="228" font-size="10" font-weight="700" fill="#4a6741">posture</text>
+  <text x="550" y="245" font-size="10" fill="#404040">stopgap until Famly ships official</text>
+  <text x="550" y="260" font-size="10" fill="#404040">parent-side data export (acknowledged</text>
+  <text x="550" y="275" font-size="10" fill="#404040">on backlog; not delivered to date)</text>
+
+  <rect x="540" y="300" width="280" height="80" rx="2" fill="none" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="550" y="318" font-size="10" font-weight="700" fill="#4a6741">layout</text>
+  <text x="550" y="335" font-size="10" fill="#404040">save_dir/YYYY-MM-DD/</text>
+  <text x="550" y="350" font-size="10" fill="#404040">feed-image-...-&lt;id&gt;.jpg (mode 0600)</text>
+  <text x="550" y="365" font-size="10" fill="#404040">filesystem mtime from createdAt</text>
+
+  <line x1="180" y1="135" x2="240" y2="135" stroke="#909090" stroke-width="1.5" marker-end="url(#b-arrow)"/>
+  <line x1="180" y1="210" x2="240" y2="210" stroke="#909090" stroke-width="1.5" marker-end="url(#b-arrow)"/>
+
+  <rect x="900" y="105" width="220" height="120" rx="3" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="1010" y="130" text-anchor="middle" font-size="11" font-weight="600" fill="#0a0a0a">your disk</text>
+  <text x="1010" y="148" text-anchor="middle" font-size="9" fill="#909090">YYYY-MM-DD/</text>
+  <text x="1010" y="162" text-anchor="middle" font-size="9" fill="#909090">feed-image-...jpg</text>
+  <text x="1010" y="180" text-anchor="middle" font-size="9" fill="#404040">EXIF + XMP embedded</text>
+  <text x="1010" y="196" text-anchor="middle" font-size="9" fill="#404040">no sidecars</text>
+  <text x="1010" y="212" text-anchor="middle" font-size="9" fill="#909090">survives Famly outages</text>
+
+  <rect x="900" y="245" width="220" height="100" rx="3" fill="none" stroke="#909090" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="1010" y="270" text-anchor="middle" font-size="11" font-weight="600" fill="#0a0a0a">Immich asset</text>
+  <text x="1010" y="288" text-anchor="middle" font-size="9" fill="#909090">POST /api/assets</text>
+  <text x="1010" y="304" text-anchor="middle" font-size="9" fill="#909090">SHA1 dedup via x-immich-checksum</text>
+  <text x="1010" y="320" text-anchor="middle" font-size="9" fill="#404040">deviceAssetId = famly image id</text>
+  <text x="1010" y="336" text-anchor="middle" font-size="9" fill="#404040">opt-in via env vars</text>
+
+  <line x1="840" y1="160" x2="900" y2="160" stroke="#4a6741" stroke-width="1.5" marker-end="url(#b-arrow-accent)"/>
+  <line x1="840" y1="290" x2="900" y2="290" stroke="#909090" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#b-arrow)"/>
+
+  <line x1="20" y1="400" x2="1180" y2="400" stroke="#e0e0e0" stroke-width="1"/>
+  <text x="20" y="418" font-size="10" fill="#909090">~1500 LOC Go · MIT licensed · single static binary · go test -race ./...</text>
+  <text x="1180" y="418" font-size="10" fill="#909090" text-anchor="end">gitlab.com/dunn.dev/bairn</text>
+  </g>
+</svg>

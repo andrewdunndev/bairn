@@ -1,0 +1,12 @@
+{
+  "data": {
+    "me": {
+      "authenticateWithPassword": {
+        "__typename": "AuthenticationSucceeded",
+        "status": "Succeeded",
+        "accessToken": "fresh-access-token-from-login",
+        "deviceId": "device-1"
+      }
+    }
+  }
+}

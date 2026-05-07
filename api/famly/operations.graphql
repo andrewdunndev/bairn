@@ -1,0 +1,53 @@
+# Famly GraphQL operations consumed by bairn.
+#
+# Validated against api/famly/schema.graphql at codegen time.
+# Adding an operation: also extend schema.graphql with the types
+# the operation references.
+
+# Probe is the placeholder operation that keeps genqlient producing
+# a non-empty client. Removed once Probe is no longer the only
+# read-side operation.
+query Probe {
+  hello {
+    message
+  }
+}
+
+# Authenticate exchanges email + password for an access token.
+# Used by the refresh path in auth.go when a session token is
+# rejected and refresh credentials are available.
+#
+# The result is a union; on Succeeded we extract accessToken. On
+# Failed we surface the AuthenticationStatus and errorTitle to the
+# operator with refresh guidance. Challenged (MFA, etc.) is
+# treated as an unknown failure for now.
+mutation Authenticate(
+  $email: EmailAddress!
+  $password: Password!
+  $deviceId: DeviceId!
+  $legacy: Boolean!
+) {
+  me {
+    authenticateWithPassword(
+      email: $email
+      password: $password
+      deviceId: $deviceId
+      legacy: $legacy
+    ) {
+      __typename
+      ... on AuthenticationSucceeded {
+        status
+        accessToken
+        deviceId
+      }
+      ... on AuthenticationFailed {
+        status
+        errorTitle
+        errorDetails
+      }
+      ... on AuthenticationChallenged {
+        status
+      }
+    }
+  }
+}

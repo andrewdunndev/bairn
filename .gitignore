@@ -1,0 +1,34 @@
+# Build outputs
+/bin/
+/dist/
+*.test
+*.out
+coverage.txt
+
+# Local config: never commit credentials
+/config.toml
+/*.env
+.envrc
+
+# Discovery artifacts: never commit any captured vendor data,
+# baselines, or session walks. Opening this repo later must remain a
+# permission flip, not a sanitization audit. Generic protocol docs
+# and probe scripts are committed; outputs are not.
+/discovery/baselines/
+/discovery/sessions/
+/discovery/captures/
+/discovery/probe/*.json
+/discovery/probe/*.shape
+/discovery/probe/*.har
+
+# Runtime state
+/state.db
+*.sqlite
+*.sqlite3
+
+# Tempfiles and editor cruft
+/tmp/
+.idea/
+.vscode/
+*.swp
+.DS_Store

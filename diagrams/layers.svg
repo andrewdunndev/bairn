@@ -1,0 +1,72 @@
+<svg viewBox="0 0 1200 540" width="1200" height="540" font-family="Helvetica, Arial, sans-serif" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="bairn layered architecture: cmd/bairn CLI calls into internal/sync orchestration, which uses api/famly and internal/asset typestate and internal/sink as parallel collaborators, which in turn depend on internal/state, internal/exif, api/immich, and the filesystem.">
+  <defs>
+    <marker id="l-arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="10" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,3.5 L0,7 z" fill="#909090"/>
+    </marker>
+  </defs>
+  <g font-family="Helvetica, Arial, sans-serif">
+
+  <text x="20" y="32" font-size="22" font-weight="700" fill="#4a6741">bairn architecture</text>
+  <text x="20" y="54" font-size="12" fill="#404040">four layers, top-down. Vendor-facing knowledge stays in api/; orchestration lives in internal/sync.</text>
+
+  <text x="600" y="92" text-anchor="middle" font-size="11" font-weight="700" fill="#909090">CLI</text>
+  <rect x="380" y="105" width="440" height="60" rx="4" fill="#f4f7f3" stroke="#4a6741" stroke-width="2"/>
+  <text x="600" y="128" text-anchor="middle" font-size="12" font-weight="700" fill="#0a0a0a">cmd/bairn</text>
+  <text x="600" y="148" text-anchor="middle" font-size="10" fill="#404040">login · fetch · status · drift</text>
+
+  <line x1="600" y1="165" x2="600" y2="200" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+
+  <text x="600" y="222" text-anchor="middle" font-size="11" font-weight="700" fill="#909090">ORCHESTRATION</text>
+  <rect x="320" y="235" width="560" height="60" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="600" y="258" text-anchor="middle" font-size="12" font-weight="700" fill="#0a0a0a">internal/sync</text>
+  <text x="600" y="278" text-anchor="middle" font-size="10" fill="#404040">paginate feed; per asset run typestate transitions; emit summary</text>
+
+  <line x1="500" y1="295" x2="240" y2="335" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+  <line x1="600" y1="295" x2="600" y2="335" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+  <line x1="700" y1="295" x2="960" y2="335" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+
+  <text x="600" y="320" text-anchor="middle" font-size="11" font-weight="700" fill="#909090">COLLABORATORS</text>
+
+  <rect x="80" y="340" width="320" height="80" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="240" y="362" text-anchor="middle" font-size="11" font-weight="700" fill="#0a0a0a">api/famly</text>
+  <text x="240" y="380" text-anchor="middle" font-size="10" fill="#404040">genqlient (GraphQL) + REST helpers</text>
+  <text x="240" y="396" text-anchor="middle" font-size="10" fill="#404040">TokenSource (static or refreshing)</text>
+  <text x="240" y="412" text-anchor="middle" font-size="10" fill="#404040">iter.Seq2 feed paginator</text>
+
+  <rect x="440" y="340" width="320" height="80" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="600" y="362" text-anchor="middle" font-size="11" font-weight="700" fill="#0a0a0a">internal/asset</text>
+  <text x="600" y="380" text-anchor="middle" font-size="10" fill="#404040">typestate phases (one type per phase)</text>
+  <text x="600" y="396" text-anchor="middle" font-size="10" fill="#404040">transition methods only</text>
+  <text x="600" y="412" text-anchor="middle" font-size="10" fill="#404040">streaming Download to temp file</text>
+
+  <rect x="800" y="340" width="320" height="80" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text x="960" y="362" text-anchor="middle" font-size="11" font-weight="700" fill="#0a0a0a">internal/sink</text>
+  <text x="960" y="380" text-anchor="middle" font-size="10" fill="#404040">Sink interface + Disk + Immich impls</text>
+  <text x="960" y="396" text-anchor="middle" font-size="10" fill="#404040">filename + dir patterns</text>
+  <text x="960" y="412" text-anchor="middle" font-size="10" fill="#404040">future sinks slot in here</text>
+
+  <line x1="240" y1="420" x2="160" y2="460" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+  <line x1="600" y1="420" x2="500" y2="460" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+  <line x1="600" y1="420" x2="700" y2="460" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+  <line x1="960" y1="420" x2="900" y2="460" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+  <line x1="960" y1="420" x2="1080" y2="460" stroke="#909090" stroke-width="1.5" marker-end="url(#l-arrow)"/>
+
+  <text x="600" y="450" text-anchor="middle" font-size="11" font-weight="700" fill="#909090">RESOURCES</text>
+
+  <rect x="40" y="465" width="240" height="60" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1"/>
+  <text x="160" y="486" text-anchor="middle" font-size="11" font-weight="600" fill="#0a0a0a">internal/state</text>
+  <text x="160" y="504" text-anchor="middle" font-size="9" fill="#909090">JSON + flock; atomic tmp+fsync+rename</text>
+
+  <rect x="380" y="465" width="240" height="60" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1"/>
+  <text x="500" y="486" text-anchor="middle" font-size="11" font-weight="600" fill="#0a0a0a">internal/exif</text>
+  <text x="500" y="504" text-anchor="middle" font-size="9" fill="#909090">EXIF via go-exif/v3; XMP hand-rolled</text>
+
+  <rect x="640" y="465" width="240" height="60" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1"/>
+  <text x="760" y="486" text-anchor="middle" font-size="11" font-weight="600" fill="#0a0a0a">api/immich</text>
+  <text x="760" y="504" text-anchor="middle" font-size="9" fill="#909090">oapi-codegen client + multipart upload</text>
+
+  <rect x="960" y="465" width="200" height="60" rx="4" fill="#fafafa" stroke="#909090" stroke-width="1" stroke-dasharray="4,3"/>
+  <text x="1060" y="486" text-anchor="middle" font-size="11" font-weight="600" fill="#404040">filesystem</text>
+  <text x="1060" y="504" text-anchor="middle" font-size="9" fill="#909090">save_dir/YYYY-MM-DD/</text>
+  </g>
+</svg>

@@ -1,0 +1,8 @@
+baselines/
+sessions/
+captures/
+probe/*.json
+probe/*.shape
+probe/*.har
+probe/manifest.toml
+probe/manifest.local.toml

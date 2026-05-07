@@ -1,0 +1,59 @@
+default:
+  tags:
+    - storr
+
+stages:
+  - lint
+  - test
+  - build
+  - drift
+
+variables:
+  GOFLAGS: -mod=readonly
+
+include:
+  # Schedule-triggered drift triage. Sends shape diffs to Claude
+  # when bairn's drift command emits non-empty output. See
+  # docs/decisions/0007-llm-augmented-ci.md for the posture.
+  #
+  # Until bairn drift is native Go (deferred to v0.2.0), the
+  # drift_command below is a placeholder that always produces
+  # empty output, so the component exits cleanly without an API
+  # call. When native drift lands, swap to "./bairn drift".
+  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@v1.3.0
+    inputs:
+      drift_command: "echo ''"
+      issue_on_drift: true
+      issue_label: "drift,ai-triaged"
+      stage: drift
+
+lint:
+  stage: lint
+  image: golangci/golangci-lint:latest-alpine
+  script:
+    - golangci-lint run ./...
+  allow_failure: true
+
+test:
+  stage: test
+  image: golang:1.25-alpine
+  script:
+    - go test -short -race ./...
+
+build:
+  stage: build
+  image: golang:1.25-alpine
+  parallel:
+    matrix:
+      - OS: linux
+        ARCH: amd64
+      - OS: darwin
+        ARCH: arm64
+  script:
+    - GOOS=$OS GOARCH=$ARCH CGO_ENABLED=0
+        go build -trimpath -ldflags "-s -w -X main.Version=$CI_COMMIT_REF_NAME"
+        -o bairn-$OS-$ARCH ./cmd/bairn
+  artifacts:
+    paths:
+      - bairn-*
+    expire_in: 1 week

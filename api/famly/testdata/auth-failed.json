@@ -1,0 +1,12 @@
+{
+  "data": {
+    "me": {
+      "authenticateWithPassword": {
+        "__typename": "AuthenticationFailed",
+        "status": "FailedInvalidPassword",
+        "errorTitle": "Invalid password",
+        "errorDetails": "The password you entered is incorrect."
+      }
+    }
+  }
+}

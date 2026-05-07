@@ -1,0 +1,30 @@
+# oapi-codegen configuration. Run via "make gen".
+#
+# The Immich OpenAPI spec at api/immich/openapi.json is vendored
+# from immich-app/immich (publicly published). To refresh:
+#
+#   curl -sLfo api/immich/openapi.json \
+#     https://raw.githubusercontent.com/immich-app/immich/main/open-api/immich-openapi-specs.json
+#   make gen
+#
+# We narrow generation to the asset endpoints bairn actually uses;
+# the full spec is ~700KB and emits a proportionally large client.
+
+package: imapi
+output: imapi/imapi.go
+
+generate:
+  client: true
+  models: true
+  embedded-spec: false
+  std-http-server: false
+
+# Limit generated surface to the operations we use. Keeps gen.go
+# small and the dependency graph tight.
+output-options:
+  include-operation-ids:
+    - uploadAsset
+    - checkBulkUpload
+    - getAssetInfo
+    - getServerVersion
+    - pingServer

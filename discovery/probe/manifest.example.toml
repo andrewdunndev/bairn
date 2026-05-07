@@ -1,0 +1,32 @@
+# Example manifest for the shape probe. Copy to manifest.toml
+# (gitignored), fill in real paths and identifiers, set the auth
+# token via the env var named in auth_env.
+#
+# manifest.toml stays operator-local; only this example ships in
+# the repo.
+
+base_url    = "https://app.example.com"
+auth_header = "x-vendor-accesstoken"
+auth_env    = "VENDOR_ACCESS_TOKEN"
+user_agent  = "bairn-discovery/0.0"
+delay_sec   = 1.0
+
+[[endpoint]]
+id     = "me"
+method = "GET"
+path   = "/api/me"
+
+[[endpoint]]
+id     = "child-relations"
+method = "GET"
+path   = "/api/v2/relations?childId=${CHILD_ID}"
+
+[[endpoint]]
+id     = "child-tagged"
+method = "GET"
+path   = "/api/v2/images/tagged?childId=${CHILD_ID}"
+
+[[endpoint]]
+id     = "feed-page1"
+method = "GET"
+path   = "/api/feed?first=10"

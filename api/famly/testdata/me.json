@@ -1,0 +1,16 @@
+{
+  "loginId": "00000000-0000-0000-0000-000000000001",
+  "email": "alice@example.com",
+  "roles2": [
+    {
+      "targetId": "00000000-0000-0000-0000-00000000c001",
+      "targetType": "Famly.Daycare:Child",
+      "title": "Child A"
+    },
+    {
+      "targetId": "00000000-0000-0000-0000-00000000c002",
+      "targetType": "Famly.Daycare:Child",
+      "title": "Child B"
+    }
+  ]
+}
