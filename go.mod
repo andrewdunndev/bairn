@@ -8,6 +8,7 @@ tool (
 )
 
 require (
+	github.com/BurntSushi/toml v1.3.2
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/dsoprea/go-exif/v3 v3.0.1

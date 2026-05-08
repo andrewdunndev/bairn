@@ -99,19 +99,35 @@ does not read them for LLM augmentation.
 - `ANTHROPIC_API_KEY` configured as a masked, protected CI variable.
 
 The component fires only when its `drift_command` produces non-empty
-output. For v0.1.0 the bairn input is `echo ''`, a placeholder that
-always exits cleanly because `bairn drift` is currently a stub. No
-Anthropic API calls happen until that command starts producing real
-output, so there is no API spend during v0.1.0 scheduled runs.
+output. The default bairn input is `echo ''`, a placeholder that
+always exits cleanly. No Anthropic API calls happen until that command
+starts producing real output, so there is no API spend during default
+scheduled runs.
+
+`bairn drift` is native Go as of v0.2.0 (`internal/drift/`): it loads a
+TOML manifest, hits each endpoint, computes JSON-key-only signatures,
+and optionally diffs against a prior baseline directory. Output is
+human-readable lines of the form `path/key: removed`, `path/key: added`,
+`path/key: "str" -> "int"`, and the process exits 1 when drift is found.
+The Python prototype (`discovery/probe/shape.py`) stays in the repo as
+documentation of the methodology and as a reference implementation; the
+on-disk signature format is byte-compatible.
+
+The CI integration is operator-side: the manifest and baselines stay
+gitignored (operator-only) per the `discovery/PROTOCOL.md` privacy
+posture, so flipping `drift_command` to `./bairn drift --diff
+discovery/baselines/last` requires the operator to set up a
+project-private mechanism to make those artefacts available in the CI
+job. For most operators, drift runs locally on a cron and is fine
+there.
 
 ## Pending follow-on
 
-- **Native `bairn drift` subcommand** that walks the committed
-  endpoint manifest, hits each surface, computes shape diffs against
-  committed baselines, and emits the diff JSON to stdout. Targeted
-  for v0.2.0. When this lands, swap the `drift_command` input from
-  `echo ''` to `./bairn drift` (or `bairn-linux-amd64 drift` against
-  the build artifact) and the integration is fully live.
+- **Operator playbook for CI-driven drift** that wires `bairn drift`
+  into the `claude-drift-triage` component end-to-end (manifest +
+  baseline distribution, scheduled pipeline, archived diff history).
+  Lower priority than native drift itself; ships when one operator
+  hits the point where local-cron stops being enough.
 - **`claude-mr-summary`** component for generated-code diffs in MR
   descriptions. Most useful once a second catalog consumer adopts
   spec-first codegen.

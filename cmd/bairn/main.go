@@ -13,13 +13,14 @@ import (
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/config"
+	"gitlab.com/dunn.dev/bairn/internal/drift"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 	"gitlab.com/dunn.dev/bairn/internal/sync"
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "0.1.0"
+var Version = "0.2.0"
 
 const usage = `usage: bairn <subcommand> [flags]
 
@@ -189,13 +190,86 @@ func runStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger, arg
 	return 0
 }
 
-// runDrift shells out to the discovery probe today; v0.2.0+ may
-// move it to a native Go subcommand using the typed clients.
+// runDrift hits the endpoints in a TOML manifest, computes
+// JSON-key-only shape signatures, optionally diffs against a prior
+// baseline, and writes fresh signatures to an output directory.
+//
+// Exit codes: 0 = no drift (or no diff requested), 1 = drift found,
+// 2 = configuration or transport error. The non-zero-on-drift
+// behaviour lets the catalog's claude-drift-triage component fire on
+// real changes only.
 func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
-	// Drift is implemented as a native subcommand in v0.2.0+; for
-	// now, run discovery/probe/shape.py manually.
-	logger.Warn("drift",
-		"msg", "native drift not yet implemented; run discovery/probe/shape.py manually for now")
+	fs := flag.NewFlagSet("drift", flag.ContinueOnError)
+	manifestPath := fs.String("manifest", "discovery/probe/manifest.toml", "TOML manifest path")
+	outDir := fs.String("out-dir", "discovery/baselines/current", "directory for written shape signatures")
+	diffDir := fs.String("diff", "", "prior baseline directory to diff against (optional)")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	m, err := drift.LoadManifest(*manifestPath)
+	if err != nil {
+		logger.Error("drift", "phase", "manifest", "err", err)
+		return 2
+	}
+	logger.Info("drift",
+		"manifest", *manifestPath,
+		"endpoints", len(m.Endpoints),
+		"out_dir", *outDir,
+		"diff", *diffDir,
+	)
+
+	opts := drift.ProbeOptions{Logger: logger}
+	if *diffDir != "" {
+		opts.Compare = func(id string) (any, bool) {
+			sig, err := drift.ReadSignature(*diffDir, id)
+			if err != nil {
+				return nil, false
+			}
+			return sig, true
+		}
+	}
+
+	results, err := drift.Probe(ctx, m, opts)
+	if err != nil {
+		logger.Error("drift", "phase", "probe", "err", err)
+		return 2
+	}
+
+	driftCount := 0
+	writeFails := 0
+	for _, r := range results {
+		switch {
+		case r.Error != "":
+			fmt.Printf("  %s: ERROR %s\n", r.ID, r.Error)
+		case r.NotJSON:
+			fmt.Printf("  %s: HTTP %d, %dB, not JSON\n", r.ID, r.Status, r.BodySize)
+		default:
+			if err := drift.WriteSignature(*outDir, r.ID, r.Signature); err != nil {
+				logger.Error("drift", "phase", "write", "id", r.ID, "err", err)
+				writeFails++
+			}
+			switch {
+			case len(r.Drift) > 0:
+				driftCount++
+				fmt.Printf("  %s: HTTP %d, %dB, DRIFT (%d changes)\n", r.ID, r.Status, r.BodySize, len(r.Drift))
+				for _, d := range r.Drift {
+					fmt.Printf("    %s\n", d)
+				}
+			case *diffDir != "":
+				fmt.Printf("  %s: HTTP %d, %dB, ok\n", r.ID, r.Status, r.BodySize)
+			default:
+				fmt.Printf("  %s: HTTP %d, %dB\n", r.ID, r.Status, r.BodySize)
+			}
+		}
+	}
+
+	if writeFails > 0 {
+		return 2
+	}
+	if driftCount > 0 {
+		return 1
+	}
 	return 0
 }
 
