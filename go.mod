@@ -8,14 +8,14 @@ tool (
 )
 
 require (
-	github.com/BurntSushi/toml v1.3.2
+	github.com/BurntSushi/toml v1.6.0
 	github.com/Khan/genqlient v0.8.1
 	github.com/cenkalti/backoff/v5 v5.0.3
 	github.com/dsoprea/go-exif/v3 v3.0.1
 	github.com/dsoprea/go-jpeg-image-structure/v2 v2.0.0-20221012074422-4f3f7e934102
 	github.com/oapi-codegen/runtime v1.4.0
-	golang.org/x/sys v0.43.0
-	golang.org/x/term v0.42.0
+	golang.org/x/sys v0.44.0
+	golang.org/x/term v0.43.0
 )
 
 require (
