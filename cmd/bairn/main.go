@@ -20,7 +20,7 @@ import (
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "0.4.0"
+var Version = "0.4.1"
 
 const usage = `usage: bairn <subcommand> [flags]
 
@@ -229,20 +229,24 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		"diff", *diffDir,
 	)
 
-	// Resolve a token via bairn's normal auth path: prefer
-	// FAMLY_EMAIL+FAMLY_PASSWORD (refreshing) over the short-lived
-	// FAMLY_ACCESS_TOKEN. Pass the resolved token into Probe so the
-	// manifest's auth_env hint is overridden with a token that is
-	// guaranteed live for this run.
-	tokenSrc := buildTokenSource(cfg)
-	token, err := tokenSrc.Token(ctx)
-	if err != nil {
-		logger.Error("drift", "phase", "token", "err", err)
-		return 2
-	}
-	if token == "" {
-		logger.Error("drift", "phase", "token", "err", "resolved token is empty; check FAMLY_EMAIL/FAMLY_PASSWORD or FAMLY_ACCESS_TOKEN are visible to the pipeline (protected vars need a protected ref)")
-		return 2
+	// Token resolution by manifest. Famly's auth_env is FAMLY_ACCESS_TOKEN;
+	// when that's set, prefer credentials (FAMLY_EMAIL+FAMLY_PASSWORD)
+	// over the short-lived static token for a self-healing tag pipeline.
+	// Other vendors (Immich's IMMICH_API_KEY, etc.) flow through Probe's
+	// env-fallback unchanged: leaving Token empty makes Probe read
+	// os.Getenv(m.AuthEnv).
+	var token string
+	if m.AuthEnv == "FAMLY_ACCESS_TOKEN" {
+		tokenSrc := buildTokenSource(cfg)
+		token, err = tokenSrc.Token(ctx)
+		if err != nil {
+			logger.Error("drift", "phase", "token", "err", err)
+			return 2
+		}
+		if token == "" {
+			logger.Error("drift", "phase", "token", "err", "resolved Famly token is empty; check FAMLY_EMAIL/FAMLY_PASSWORD or FAMLY_ACCESS_TOKEN are visible to the pipeline (protected vars need a protected ref)")
+			return 2
+		}
 	}
 
 	opts := drift.ProbeOptions{

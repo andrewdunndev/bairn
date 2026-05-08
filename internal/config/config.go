@@ -109,9 +109,10 @@ func (c *Config) Validate(mode string) error {
 	case "status":
 		// state path must be openable but no creds needed
 	case "drift":
-		if c.FamlyAccessToken == "" && (c.FamlyEmail == "" || c.FamlyPassword == "") {
-			return errors.New("config: drift needs FAMLY_EMAIL and FAMLY_PASSWORD (recommended) or FAMLY_ACCESS_TOKEN; the credentials path uses bairn's normal refreshing token, the static token path expires")
-		}
+		// drift is multi-vendor (Famly + Immich). Per-vendor auth
+		// checks happen at runDrift() once the manifest is loaded:
+		// Famly's auth_env triggers the refreshing-token path,
+		// other vendors flow through Probe's env-fallback.
 	}
 	return nil
 }

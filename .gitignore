@@ -18,12 +18,14 @@ coverage.txt
 # project-specific exception).
 /discovery/baselines/*
 !/discovery/baselines/main/
+!/discovery/baselines/main-immich/
 /discovery/sessions/
 /discovery/captures/
 /discovery/probe/*.json
 /discovery/probe/*.shape
 /discovery/probe/*.har
 /discovery/probe/manifest.local.toml
+/discovery/probe/manifest-immich.local.toml
 
 # Runtime state
 /state.db

@@ -109,3 +109,28 @@ drift-gate:
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
   rules:
     - if: $CI_COMMIT_TAG
+
+# Tag-only pre-release drift gate against the operator's Immich
+# server. Same posture as the Famly drift gate: detects shape
+# changes in the Immich endpoints bairn touches before a release
+# ships against an upstream that has moved on (Immich is moving
+# toward v3 with breaking /assets contract changes).
+#
+# allow_failure: true because the storr runner cannot reach the
+# operator's Immich server unless IMMICH_BASE_URL is reachable from
+# CI (often it is not — Immich is typically a homelab/LAN service).
+# A forker without IMMICH_BASE_URL/IMMICH_API_KEY set sees this
+# job fail without blocking the tag pipeline.
+#
+# Operator who wants strict gating: set IMMICH_BASE_URL +
+# IMMICH_API_KEY as masked + protected CI variables, and override
+# allow_failure: false in their fork.
+drift-gate-immich:
+  stage: drift-gate
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
+  script:
+    - go build -o bin/bairn ./cmd/bairn
+    - bin/bairn drift --anonymize --manifest discovery/probe/manifest-immich.toml --diff discovery/baselines/main-immich
+  rules:
+    - if: $CI_COMMIT_TAG
+  allow_failure: true

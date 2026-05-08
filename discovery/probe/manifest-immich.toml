@@ -1,0 +1,69 @@
+# bairn's Immich-side drift manifest. Probes a small set of read
+# endpoints on the operator's Immich server so a release pipeline
+# can detect upstream API shape changes before bairn ships against
+# them.
+#
+# Pairs with discovery/baselines/main-immich/ (committed, like the
+# Famly baseline) and the drift-gate-immich CI job. Same posture as
+# the Famly drift gate: tag-push only, never on a schedule against
+# Immich. See docs/decisions/0007-llm-augmented-ci.md.
+#
+# Endpoints chosen so the probe surface is minimal and maintainer-
+# private context does not leak into committed baselines:
+#
+#   - /api/server/version  Immich server version (no auth required;
+#                          probe still sends the api key for parity).
+#                          Catches major-version changes that
+#                          frequently coincide with /assets contract
+#                          shifts (e.g. v2.7.5's zod migration).
+#   - /api/users/me        caller-identity surface; auth check + small
+#                          shape signal that catches profile-shape
+#                          breaks (Immich's User model is a known
+#                          stability hot spot).
+#
+# Write endpoints (POST /api/assets in particular) are not in this
+# manifest because:
+#  - probing them either requires a sample upload (pollutes the
+#    operator's library) or returns 4xx (no signal);
+#  - the right tool for write-side validation is an integration
+#    smoke test, not shape diff. Tracked separately.
+#
+# base_url is operator-private (each homelab Immich URL is its own).
+# Set IMMICH_BASE_URL in the environment; the manifest expands it
+# at load time. CI variable is masked + protected.
+#
+# The same drift command (`bairn drift`) is reused with this
+# manifest; auth resolution falls through to Probe's env fallback
+# because IMMICH_API_KEY is not the Famly token. See
+# cmd/bairn/main.go runDrift() for the per-vendor branch.
+#
+# To regenerate the baseline locally:
+#
+#   export IMMICH_BASE_URL=https://photos.example.com
+#   export IMMICH_API_KEY=...
+#   bairn drift --anonymize \
+#     --manifest discovery/probe/manifest-immich.toml \
+#     --out-dir discovery/baselines/main-immich
+#
+# The drift gate also passes --anonymize so any per-instance
+# cardinality (e.g. number of pinned albums) does not leak into the
+# committed baseline.
+#
+# Operators with private overrides (additional endpoints they
+# probe) put those in manifest-immich.local.toml (gitignored).
+
+base_url    = "${IMMICH_BASE_URL}"
+auth_header = "x-api-key"
+auth_env    = "IMMICH_API_KEY"
+user_agent  = "bairn-drift/0.4.0 (+https://gitlab.com/dunn.dev/bairn)"
+delay_sec   = 1.0
+
+[[endpoint]]
+id     = "server-version"
+method = "GET"
+path   = "/api/server/version"
+
+[[endpoint]]
+id     = "users-me"
+method = "GET"
+path   = "/api/users/me"

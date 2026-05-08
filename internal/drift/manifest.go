@@ -28,7 +28,9 @@ type Manifest struct {
 	Endpoints  []Endpoint `toml:"endpoint"`
 }
 
-// LoadManifest reads a TOML manifest from path.
+// LoadManifest reads a TOML manifest from path. base_url is
+// env-expanded so an operator-private host (e.g. an Immich URL)
+// can be supplied via env without committing it to the manifest.
 func LoadManifest(path string) (*Manifest, error) {
 	var m Manifest
 	if _, err := toml.DecodeFile(path, &m); err != nil {
@@ -37,6 +39,11 @@ func LoadManifest(path string) (*Manifest, error) {
 	if m.BaseURL == "" {
 		return nil, fmt.Errorf("manifest %s: base_url required", path)
 	}
+	expanded, err := ExpandEnv(m.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("manifest %s: base_url: %w", path, err)
+	}
+	m.BaseURL = expanded
 	if m.AuthHeader == "" {
 		return nil, fmt.Errorf("manifest %s: auth_header required", path)
 	}
