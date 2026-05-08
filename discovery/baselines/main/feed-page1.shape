@@ -1,0 +1,130 @@
+{
+  "feedItems": [
+    {
+      "body": "str",
+      "bookmarked": "bool",
+      "canBePinned": "bool",
+      "canBlock": "bool",
+      "canBookmark": "bool",
+      "canDelete": "bool",
+      "canEdit": "bool",
+      "canReport": "bool",
+      "comments": [
+        "\u003cempty\u003e"
+      ],
+      "createdDate": "str",
+      "disableFeedback": "bool",
+      "embed": {
+        "child": {
+          "childId": "str",
+          "firstName": "str"
+        },
+        "invoice": {
+          "amount": "int",
+          "balance": "null",
+          "behaviors": [
+            {
+              "id": "...",
+              "payload": "..."
+            },
+            "\u003cn=*\u003e"
+          ],
+          "billPayerId": "str",
+          "chargeWithDirectDebit": "bool",
+          "coveringMonths": [
+            "str",
+            "\u003cn=*\u003e"
+          ],
+          "createdAt": {
+            "date": "str",
+            "timezone": "str",
+            "timezone_type": "int"
+          },
+          "date": "str",
+          "due": "str",
+          "id": "str",
+          "institutionId": "str",
+          "invoiceNo": "int",
+          "lines": [
+            {
+              "amount": "...",
+              "childId": "...",
+              "from": "...",
+              "id": "...",
+              "planId": "...",
+              "title": "...",
+              "to": "...",
+              "type": "..."
+            },
+            "\u003cn=*\u003e"
+          ],
+          "linkedInvoices": [
+            "\u003cempty\u003e"
+          ],
+          "note": "str",
+          "payer": {
+            "address": "str",
+            "billPayerId": "str",
+            "email": "str",
+            "name": "str"
+          },
+          "payments": [
+            "\u003cempty\u003e"
+          ],
+          "pdf": "str",
+          "status": "int",
+          "subtitle": "str",
+          "title": "str",
+          "type": "str"
+        },
+        "openInvoiceAsPdfLink": "bool",
+        "type": "str"
+      },
+      "famlyMeetingId": "null",
+      "feedItemId": "str",
+      "files": [
+        "\u003cempty\u003e"
+      ],
+      "generated": "bool",
+      "images": [
+        "\u003cempty\u003e"
+      ],
+      "isPinned": "bool",
+      "liked": "bool",
+      "likes": [
+        "\u003cempty\u003e"
+      ],
+      "originatorId": "str",
+      "pollId": "null",
+      "reactedByMe": "str",
+      "receivers": [
+        "\u003cempty\u003e"
+      ],
+      "richTextBody": "null",
+      "seen": "bool",
+      "seenLogins": [
+        "\u003cempty\u003e"
+      ],
+      "sender": {
+        "id": "str",
+        "loginId": "str",
+        "name": "str",
+        "profileImage": "str",
+        "subtitle": "str"
+      },
+      "siteSetId": "null",
+      "smsIdentifier": "null",
+      "stats": "null",
+      "systemPostTypeClass": "str",
+      "systemPostTypeIcon": "str",
+      "thumbs": [
+        "\u003cempty\u003e"
+      ],
+      "userContext": "str",
+      "videos": [
+        "\u003cempty\u003e"
+      ]
+    },
+    "\u003cn=*\u003e"
+  ]
+}

@@ -1,0 +1,80 @@
+{
+  "_intercom": {
+    "management": "bool",
+    "noPosts": "int",
+    "user_hash": "str"
+  },
+  "_intercomV2": {
+    "app_id": "str"
+  },
+  "address": {
+    "city": "str",
+    "country": "null",
+    "state": "null",
+    "street": "str",
+    "zip": "str"
+  },
+  "behaviors": [
+    {
+      "id": "str",
+      "payload": "null"
+    },
+    "\u003cn=*\u003e"
+  ],
+  "createdAtUnix": "int",
+  "email": "str",
+  "features": [
+    "str",
+    "\u003cn=*\u003e"
+  ],
+  "homePhone": "str",
+  "image": {
+    "colorCode": "int",
+    "imageId": "str",
+    "isEmpty": "bool",
+    "large": "str",
+    "small": "str"
+  },
+  "impersonated": "bool",
+  "locale": "str",
+  "loginId": "str",
+  "loginWithPin": "bool",
+  "missingPin": "bool",
+  "name": {
+    "firstName": "str",
+    "fullName": "str",
+    "lastName": "str",
+    "middleName": "str"
+  },
+  "phone": "str",
+  "roles": [
+    "\u003cempty\u003e"
+  ],
+  "roles2": [
+    {
+      "features": [
+        "str",
+        "\u003cn=*\u003e"
+      ],
+      "image": "str",
+      "permissions": [
+        "\u003cempty\u003e"
+      ],
+      "roleId": "str",
+      "sourceType": "str",
+      "subtitle": "str",
+      "targetId": "str",
+      "targetType": "str",
+      "title": "str"
+    },
+    "\u003cn=*\u003e"
+  ],
+  "services": [
+    "\u003cempty\u003e"
+  ],
+  "status": "str",
+  "supportPin": "str",
+  "timeZone": "str",
+  "usePincodeCheckin": "bool",
+  "workPhone": "str"
+}

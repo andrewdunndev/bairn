@@ -1,14 +1,21 @@
 # bairn's drift manifest. Lists ONLY the read-side endpoints bairn
-# issues during a normal fetch:
+# issues during a normal fetch that can be probed without
+# operator-private context:
 #
 #   - /api/me/me/me      auth + identity check
-#   - /api/v2/relations  household relations (operator's children)
 #   - /api/feed/feed/feed first page of the parent feed
 #
-# It is intentionally NOT exhaustive of Famly's parent-side API.
-# Surveying surface bairn does not integrate against would not be
-# in scope: bairn is a household photo archive, not a vendor API
-# monitor.
+# /api/v2/relations is intentionally absent: it requires a
+# ?childId=<id> query param, which is operator-private context
+# we don't want in a committed manifest. The Relation response
+# shape is still exercised on every real fetch through bairn's
+# typed unmarshal in api/famly/me.go; if Famly changes that
+# shape, fetch surfaces it.
+#
+# This manifest is intentionally NOT exhaustive of Famly's
+# parent-side API. Surveying surface bairn does not integrate
+# against would not be in scope: bairn is a household photo
+# archive, not a vendor API monitor.
 #
 # This manifest is committed to the repo as documentation of the
 # integration boundary. The corresponding shape baseline lives at
@@ -64,11 +71,6 @@ delay_sec   = 1.0
 id     = "me"
 method = "GET"
 path   = "/api/me/me/me"
-
-[[endpoint]]
-id     = "relations"
-method = "GET"
-path   = "/api/v2/relations"
 
 [[endpoint]]
 id     = "feed-page1"
