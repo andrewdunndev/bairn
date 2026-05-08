@@ -1,0 +1,54 @@
+# bairn's drift manifest. Lists ONLY the read-side endpoints bairn
+# issues during a normal fetch:
+#
+#   - /api/me/me/me      auth + identity check
+#   - /api/v2/relations  household relations (operator's children)
+#   - /api/feed/feed/feed first page of the parent feed
+#
+# It is intentionally NOT exhaustive of Famly's parent-side API.
+# Surveying surface bairn does not integrate against would not be
+# in scope: bairn is a household photo archive, not a vendor API
+# monitor.
+#
+# This manifest is committed to the repo as documentation of the
+# integration boundary. The corresponding shape baseline lives at
+# discovery/baselines/main/ (also committed; keys-only, no values).
+#
+# Used by `bairn drift --manifest discovery/probe/manifest.toml
+# --diff discovery/baselines/main` as a maintainer's pre-release
+# check that bairn's typed clients still match Famly's response
+# shapes. NOT fired on a CI schedule; see
+# docs/decisions/0007-llm-augmented-ci.md for the posture.
+#
+# To regenerate the baseline locally (operator action):
+#
+#   export FAMLY_ACCESS_TOKEN=...   # operator's own token
+#   bairn drift --out-dir discovery/baselines/main
+#
+# Authenticate mutations and other write-side operations are
+# deliberately absent.
+#
+# Operators with private overrides (e.g. additional endpoints they
+# probe for their own debugging) should put those in
+# manifest.local.toml, which stays gitignored.
+
+base_url    = "https://app.famly.co"
+auth_header = "x-famly-accesstoken"
+auth_env    = "FAMLY_ACCESS_TOKEN"
+user_agent  = "bairn-drift/0.2.0 (+https://gitlab.com/dunn.dev/bairn)"
+delay_sec   = 1.0
+
+[[endpoint]]
+id     = "me"
+method = "GET"
+path   = "/api/me/me/me"
+
+[[endpoint]]
+id     = "relations"
+method = "GET"
+path   = "/api/v2/relations"
+
+[[endpoint]]
+id     = "feed-page1"
+method = "GET"
+path   = "/api/feed/feed/feed?first=10"

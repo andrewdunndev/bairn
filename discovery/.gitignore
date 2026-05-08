@@ -1,8 +1,12 @@
-baselines/
+# Most discovery outputs are operator-only by default; see
+# PROTOCOL.md for the privacy posture and the project-specific
+# exception (the scoped "main" baseline that documents bairn's own
+# integration boundary).
+baselines/*
+!baselines/main/
 sessions/
 captures/
 probe/*.json
 probe/*.shape
 probe/*.har
-probe/manifest.toml
 probe/manifest.local.toml

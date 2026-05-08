@@ -92,8 +92,9 @@ If you intend to use bairn, accept these as part of running it:
 
 bairn defaults files to mode `0600`. The state file lives under
 `$XDG_STATE_HOME` and never travels with the photos. The discovery
-toolkit's outputs (captured response shapes, schema dumps, HARs)
-are gitignored and stay on the operator's machine.
+toolkit's outputs (captured HARs, schema dumps, expanded shape
+baselines beyond bairn's own integration boundary) are gitignored
+and stay on the operator's machine.
 
 bairn embeds full Famly-side metadata into each saved file: the
 post body, the educator's name, kid-tag names where applicable.
@@ -102,6 +103,33 @@ context lives with the file. What happens to those files after
 the operator has them is the operator's responsibility. If you
 plan to share photos beyond your household, strip metadata first
 with `exiftool` or similar.
+
+## Drift detection access pattern
+
+bairn ships a small drift detection tool (`bairn drift`) used by
+the maintainer to confirm bairn's typed clients still match
+Famly's response shapes before tagging a release. Two notes for
+a Famly reader:
+
+- **Scope**: the committed
+  [`discovery/probe/manifest.toml`](./discovery/probe/manifest.toml)
+  lists only the read-side endpoints bairn integrates against
+  (auth check, household relations, parent feed pagination). It
+  is intentionally not exhaustive. The committed
+  [`discovery/baselines/main/`](./discovery/baselines/main/) is
+  the corresponding shape baseline (keys-only, no values). Both
+  exist as documentation of the integration boundary.
+- **Cadence**: drift is fired by the maintainer by hand, on the
+  maintainer's machine, with the maintainer's own access token,
+  before tagging a release. It is **not** scheduled in CI. A
+  weekly cron firing from a CI runner would distinguishably read
+  as automated monitoring against your platform; we deliberately
+  avoid that posture. Famly's logs should see no recurring
+  pattern from bairn beyond what an actual fetch by an actual
+  parent generates.
+
+The drift tool's output is shape diffs only. No captured
+payloads, no values, no IDs are ever surfaced or shared.
 
 ## If you want to integrate at organizational scale
 

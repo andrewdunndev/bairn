@@ -148,7 +148,36 @@ Treat captured artifacts the way you'd treat credentials:
   isn't).
 
 The committed surface is the methodology, the generic scripts, and
-your own client implementation. Everything else is operator-side.
+your own client implementation. Everything else is operator-side
+by default.
+
+### bairn's project-specific exception
+
+bairn opts to commit a *scoped* shape baseline at
+`discovery/baselines/main/`, paired with a committed
+`discovery/probe/manifest.toml`. The exception is deliberate and
+narrow:
+
+- The committed manifest lists **only the read-side endpoints
+  bairn issues during a normal fetch** (auth check, household
+  relations, parent feed pagination). It is not exhaustive of
+  Famly's parent-side API.
+- The committed baseline is keys-only (sentinel strings like
+  `"str"`, `"int"`, no values, no IDs, no PII). The shape probe
+  strips values by construction.
+- Together, the manifest and baseline document bairn's
+  integration boundary. A reader (including a Famly representative)
+  sees exactly which endpoints bairn integrates against and
+  which response fields bairn's typed clients depend on. No
+  more.
+- The maintainer runs `bairn drift --diff discovery/baselines/main`
+  by hand before tagging a release. Drift is **not fired on a
+  CI schedule against Famly**; see ADR 0007 for the reasoning.
+
+Operators with private overrides keep them in
+`discovery/probe/manifest.local.toml` (gitignored) and seed
+private baseline directories under `discovery/baselines/<other>/`
+(also gitignored).
 
 ## Why this matters
 

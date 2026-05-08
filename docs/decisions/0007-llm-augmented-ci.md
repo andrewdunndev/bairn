@@ -113,21 +113,48 @@ The Python prototype (`discovery/probe/shape.py`) stays in the repo as
 documentation of the methodology and as a reference implementation; the
 on-disk signature format is byte-compatible.
 
-The CI integration is operator-side: the manifest and baselines stay
-gitignored (operator-only) per the `discovery/PROTOCOL.md` privacy
-posture, so flipping `drift_command` to `./bairn drift --diff
-discovery/baselines/last` requires the operator to set up a
-project-private mechanism to make those artefacts available in the CI
-job. For most operators, drift runs locally on a cron and is fine
-there.
+## Why drift is not on a CI schedule against Famly
+
+bairn deliberately does not fire drift on a recurring CI schedule
+against Famly's surface, even with the operator's own access token.
+A weekly cron firing from a CI runner is distinguishable from a
+human user fetching photos: it arrives at the same hour each week
+from the same CI infrastructure with no prior user action. From
+Famly's logs, that pattern reads as automated monitoring even when
+authorized by the operator. For a small SaaS that engaged with our
+use case rather than deflecting, leaning into a posture that looks
+like surveillance would be ungenerous.
+
+So the design splits responsibilities:
+
+- The `discovery/probe/manifest.toml` and the
+  `discovery/baselines/main/` baseline are committed to the repo
+  as documentation of bairn's integration boundary (only the
+  read-side endpoints bairn issues during a fetch; keys-only shape
+  signatures, no values).
+- `bairn drift --diff discovery/baselines/main` runs locally,
+  fired by the maintainer by hand, before tagging a release. That
+  catches breakages early enough to fix the typed client before
+  shipping.
+- bairn's `.gitlab-ci.yml` keeps `drift_command` at `echo ''`. The
+  `claude-drift-triage` component stays included so that any
+  future change of posture (Famly explicitly inviting a monitoring
+  integration; bairn outgrowing this household scope) is a
+  one-line flip, not a re-architecture. Until then, no scheduled
+  pipeline calls Famly.
+
+The catalog component remains useful for projects whose vendors
+have explicitly invited automated monitoring (internal APIs,
+vendor-sanctioned monitoring contracts). bairn opts out for
+relationship reasons, not technical ones.
 
 ## Pending follow-on
 
-- **Operator playbook for CI-driven drift** that wires `bairn drift`
-  into the `claude-drift-triage` component end-to-end (manifest +
-  baseline distribution, scheduled pipeline, archived diff history).
-  Lower priority than native drift itself; ships when one operator
-  hits the point where local-cron stops being enough.
+- **Operator playbook for CI-driven drift** for a future state
+  where Famly (or a different vendor in scope) explicitly invites
+  scheduled monitoring. Until then there is no playbook to write;
+  bairn's local-maintainer-fired drift is the right shape for the
+  current relationship.
 - **`claude-mr-summary`** component for generated-code diffs in MR
   descriptions. Most useful once a second catalog consumer adopts
   spec-first codegen.

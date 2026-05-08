@@ -10,16 +10,20 @@ coverage.txt
 /*.env
 .envrc
 
-# Discovery artifacts: never commit any captured vendor data,
-# baselines, or session walks. Opening this repo later must remain a
-# permission flip, not a sanitization audit. Generic protocol docs
-# and probe scripts are committed; outputs are not.
-/discovery/baselines/
+# Discovery artifacts: never commit captured payloads, schema dumps,
+# session walks, or shape baselines beyond bairn's own integration
+# boundary. The "main" baseline subdirectory and the canonical
+# manifest.toml are exceptions, committed as documentation of what
+# bairn integrates against (see discovery/PROTOCOL.md for the
+# project-specific exception).
+/discovery/baselines/*
+!/discovery/baselines/main/
 /discovery/sessions/
 /discovery/captures/
 /discovery/probe/*.json
 /discovery/probe/*.shape
 /discovery/probe/*.har
+/discovery/probe/manifest.local.toml
 
 # Runtime state
 /state.db
