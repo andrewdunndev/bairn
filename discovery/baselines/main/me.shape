@@ -22,7 +22,7 @@
     "\u003cn=*\u003e"
   ],
   "createdAtUnix": "int",
-  "email": "str",
+  "email": "int",
   "features": [
     "str",
     "\u003cn=*\u003e"
