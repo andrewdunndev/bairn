@@ -22,7 +22,7 @@ include:
   # docs/decisions/0007-llm-augmented-ci.md for the relationship-side
   # reasoning. The component stays included so a future change of
   # posture is a one-line flip.
-  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@v1.5.3
+  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@v1.6.0
     inputs:
       drift_command: "echo ''"
       issue_on_drift: true
@@ -32,11 +32,11 @@ include:
   # Lint-stage govulncheck against the source. Allow_failure by
   # default; vulnerability database changes shouldn't block a
   # release, but the report is still visible in the pipeline.
-  - component: gitlab.com/dunn.dev/pipeline/go-audit@v1.5.3
+  - component: gitlab.com/dunn.dev/pipeline/go-audit@v1.6.0
 
   # Branch verification: cross-compile linux/amd64 + darwin/arm64
   # on every push. Skipped on tag pipelines.
-  - component: gitlab.com/dunn.dev/pipeline/go-build@v1.5.3
+  - component: gitlab.com/dunn.dev/pipeline/go-build@v1.6.0
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
@@ -44,7 +44,7 @@ include:
   # Tag-only: cross-compile, generate checksums, sign each binary
   # keyless via cosign + GitLab OIDC, upload everything to the
   # project's generic package registry.
-  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@v1.5.3
+  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@v1.6.0
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
@@ -52,28 +52,27 @@ include:
 
   # Tag-only: CycloneDX SBOM per binary via syft, uploaded
   # alongside the binaries.
-  - component: gitlab.com/dunn.dev/pipeline/go-sbom@v1.5.3
+  - component: gitlab.com/dunn.dev/pipeline/go-sbom@v1.6.0
     inputs:
       package_name: bairn
 
   # Tag-only: SLSA v1.0 provenance per binary, keyless-signed via
   # cosign + GitLab OIDC. Bundles upload to the project's
   # provenance package.
-  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@v1.5.3
+  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@v1.6.0
 
   # Tag-only: create the GitLab Release record from the annotated
   # tag's message, then link the binaries, checksums, SBOMs, and
   # SLSA attestations as Release assets.
-  - component: gitlab.com/dunn.dev/pipeline/release-create@v1.5.3
+  - component: gitlab.com/dunn.dev/pipeline/release-create@v1.6.0
     inputs:
       package_name: bairn
       release_title: "bairn $CI_COMMIT_TAG"
 
-# Images sourced via mirror.gcr.io (Google's free docker.io mirror)
-# rather than docker.io directly, because the storr runner is
-# unauthenticated to docker.io and hits the per-IP pull rate cap on
-# tag pipelines that fan out across multiple jobs. golangci/* is not
-# mirrored on gcr; lint allow_failure already covers transient pulls.
+# test + drift-gate use the catalog's ci-go image (authenticated
+# pull from registry.gitlab.com, no docker.io rate cap). lint pulls
+# golangci/golangci-lint from docker.io and is allow_failure - any
+# transient pull failure surfaces as a non-blocking lint skip.
 lint:
   stage: lint
   image: golangci/golangci-lint:latest-alpine
@@ -83,7 +82,7 @@ lint:
 
 test:
   stage: test
-  image: mirror.gcr.io/library/golang:1.25
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
   script:
     - go test -race ./...
 
@@ -104,7 +103,7 @@ test:
 # see this job fail at tag time; that is the intended signal.
 drift-gate:
   stage: drift-gate
-  image: mirror.gcr.io/library/golang:1.25
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
   script:
     - go build -o bin/bairn ./cmd/bairn
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
