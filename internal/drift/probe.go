@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -32,6 +33,13 @@ type ProbeOptions struct {
 	Compare    func(id string) (any, bool) // returns prior signature if available
 	Sleep      func(d time.Duration)       // injected for tests; defaults to time.Sleep
 	Shape      ShapeOpts                   // forwarded to Shape() for each response body
+	// Schemas binds endpoint ids to Go struct types. When an
+	// endpoint has an entry, its response is filtered to keys
+	// declared in the struct (via json tags) before shape is
+	// computed. Endpoints without an entry receive the full
+	// vendor shape (the right default for ad-hoc operator
+	// endpoints in manifest.local.toml).
+	Schemas map[string]reflect.Type
 }
 
 // Probe runs every endpoint in m in order and returns one
@@ -66,12 +74,16 @@ func Probe(ctx context.Context, m *Manifest, opts ProbeOptions) ([]ProbeResult, 
 		if i > 0 && delay > 0 {
 			opts.Sleep(delay)
 		}
-		results = append(results, hit(ctx, client, m, ep, token, ua, opts.Compare, opts.Shape))
+		var schema reflect.Type
+		if opts.Schemas != nil {
+			schema = opts.Schemas[ep.ID]
+		}
+		results = append(results, hit(ctx, client, m, ep, token, ua, opts.Compare, opts.Shape, schema))
 	}
 	return results, nil
 }
 
-func hit(ctx context.Context, client *http.Client, m *Manifest, ep Endpoint, token, ua string, compare func(string) (any, bool), shapeOpts ShapeOpts) ProbeResult {
+func hit(ctx context.Context, client *http.Client, m *Manifest, ep Endpoint, token, ua string, compare func(string) (any, bool), shapeOpts ShapeOpts, schema reflect.Type) ProbeResult {
 	res := ProbeResult{ID: ep.ID}
 
 	path, err := ExpandEnv(ep.Path)
@@ -125,6 +137,9 @@ func hit(ctx context.Context, client *http.Client, m *Manifest, ep Endpoint, tok
 		res.NotJSON = true
 		res.Signature = "<not-json>"
 	} else {
+		if schema != nil {
+			parsed = Filter(parsed, schema)
+		}
 		res.Signature = Shape(parsed, shapeOpts)
 	}
 

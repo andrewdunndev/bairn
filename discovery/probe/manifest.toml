@@ -5,6 +5,21 @@
 #   - /api/me/me/me      auth + identity check
 #   - /api/feed/feed/feed first page of the parent feed
 #
+# Each endpoint id below is bound to a Go struct in
+# cmd/bairn/drift_schemas.go. Before computing a shape signature, the
+# probe filters the response to the keys that struct decodes (via its
+# json tags). Vendor-side fields bairn ignores at decode time are not
+# carried into the committed baseline. The drift signal is therefore
+# scoped to "fields bairn's typed clients actually read"; a Famly
+# field bairn does not consume can change shape without firing the
+# gate. This is intentional: drift gates a release, and a release is
+# only put at risk by a change to a field bairn decodes.
+#
+# Endpoints with no struct binding receive the full vendor shape.
+# That is the right default for ad-hoc operator endpoints in
+# manifest.local.toml; it is the wrong default for the committed
+# manifest, where every endpoint should have a binding.
+#
 # /api/v2/relations is intentionally absent: it requires a
 # ?childId=<id> query param, which is operator-private context
 # we don't want in a committed manifest. The Relation response

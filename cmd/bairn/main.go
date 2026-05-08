@@ -20,7 +20,7 @@ import (
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "0.2.5"
+var Version = "0.3.0"
 
 const usage = `usage: bairn <subcommand> [flags]
 
@@ -242,9 +242,10 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	}
 
 	opts := drift.ProbeOptions{
-		Logger: logger,
-		Token:  token,
-		Shape:  drift.ShapeOpts{AnonymizeCounts: *anonymize},
+		Logger:  logger,
+		Token:   token,
+		Shape:   drift.ShapeOpts{AnonymizeCounts: *anonymize},
+		Schemas: driftSchemas,
 	}
 	if *diffDir != "" {
 		opts.Compare = func(id string) (any, bool) {
