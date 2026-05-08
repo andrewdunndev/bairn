@@ -98,6 +98,12 @@ type Result struct {
 	Duplicates  int       `json:"duplicates"`
 	ExifErrors  int       `json:"exifErrors"`
 	Errors      int       `json:"errors"`
+	// SystemPostsFiltered counts source-matching images that were
+	// skipped because their feed item was system-generated and the
+	// run did not pass --include-system-posts. Surfaces the
+	// interaction between the system-post default-off rule and the
+	// --source filter so operators see what they're missing.
+	SystemPostsFiltered int `json:"systemPostsFiltered,omitempty"`
 }
 
 // Run performs the fetch loop. Returns the run result and an error
@@ -139,11 +145,23 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 	res.FinishedAt = time.Now().UTC()
 	logger.Info("fetch complete",
 		"pages", res.PagesWalked,
+		"source", string(opts.Source),
 		"discovered", res.Discovered, "skipped", res.Skipped,
 		"saved", res.Saved, "uploaded", res.Uploaded,
 		"duplicates", res.Duplicates, "exifErrors", res.ExifErrors,
+		"systemPostsFiltered", res.SystemPostsFiltered,
 		"errors", res.Errors,
 		"elapsed", res.FinishedAt.Sub(res.StartedAt))
+	// Trap D: a filtered source (tagged|liked) that walked pages
+	// but matched nothing is the kind of silent zero-result that
+	// hides config drift (e.g. childId rotated, no recent likes).
+	// Surface it explicitly above the run summary noise.
+	if opts.Source != SourceAll && res.Saved == 0 && res.Discovered > 0 {
+		logger.Warn("fetch matched 0 of N discovered images via source filter",
+			"source", string(opts.Source),
+			"discovered", res.Discovered,
+			"hint", "--max-pages caps the walk; if the matching images are deeper in the feed try --max-pages 0, or widen with --source=all to verify the household context resolves")
+	}
 	return res, nil
 }
 
@@ -156,10 +174,27 @@ func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedIt
 		skipped := len(item.Images) + len(item.Videos)
 		if skipped > 0 {
 			res.Skipped += skipped
+			// Trap C: if the operator is filtering by source, count
+			// images that the filter would have matched in this
+			// system-skipped post. Surfaces in the run summary so
+			// operators see when --include-system-posts would
+			// expand the result set.
+			matched := 0
+			if opts.Source != SourceAll {
+				for _, img := range item.Images {
+					if shouldDownloadImage(img, opts) {
+						matched++
+					}
+				}
+			}
+			if matched > 0 {
+				res.SystemPostsFiltered += matched
+			}
 			logger.Debug("skipped system-generated post",
 				"feedItemId", item.FeedItemID,
 				"systemPostTypeClass", item.SystemPostTypeClass,
-				"assets", skipped)
+				"assets", skipped,
+				"source_matched", matched)
 		}
 		return
 	}

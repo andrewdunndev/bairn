@@ -93,7 +93,14 @@ func runLogin(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		return 1
 	}
 
-	fmt.Fprintf(os.Stderr, "login: ok (logged in as %s, %d children visible)\n", me.Email, len(me.Roles2))
+	// Defensive: me.Email is normally the login identifier and
+	// always populated, but fall back to the email used to log in
+	// when the API returns an empty string (Trap E).
+	displayEmail := me.Email
+	if displayEmail == "" {
+		displayEmail = email
+	}
+	fmt.Fprintf(os.Stderr, "login: ok (logged in as %s, %d children visible)\n", displayEmail, len(me.Roles2))
 	fmt.Fprintln(os.Stderr, "")
 	fmt.Fprintln(os.Stderr, "Next steps:")
 	fmt.Fprintln(os.Stderr, "  Set FAMLY_EMAIL and FAMLY_PASSWORD in your shell or cron")

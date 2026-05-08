@@ -20,7 +20,7 @@ import (
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "0.4.1"
+var Version = "0.4.2"
 
 const usage = `usage: bairn <subcommand> [flags]
 
@@ -148,6 +148,18 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 				}
 			}
 		}
+		// Trap A: a token that mints fine but resolves to no
+		// children/logins makes shouldDownloadImage return false for
+		// every image; the run would walk pages and save nothing
+		// silently. Fail loudly with a hint at the most likely cause.
+		if src == sync.SourceTagged && len(children) == 0 {
+			fmt.Fprintln(os.Stderr, "fetch: --source=tagged but no household children visible. Verify the token belongs to an enrolled caregiver (run \"bairn login\" to see Roles2).")
+			return 2
+		}
+		if src == sync.SourceLiked && len(logins) == 0 {
+			fmt.Fprintln(os.Stderr, "fetch: --source=liked but no household logins resolved. Verify the token's /me response includes a loginId and at least one Relation.")
+			return 2
+		}
 	}
 
 	res, err := sync.Run(ctx, sync.Deps{
@@ -255,12 +267,18 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		Shape:   drift.ShapeOpts{AnonymizeCounts: *anonymize},
 		Schemas: driftSchemas,
 	}
+	// Trap B: a --diff dir that's missing or empty silently produces
+	// "no drift found" which masquerades as a healthy gate. Count
+	// the comparisons that actually had a prior signature so we can
+	// fail loudly when the gate is a passthrough.
+	comparedCount := 0
 	if *diffDir != "" {
 		opts.Compare = func(id string) (any, bool) {
 			sig, err := drift.ReadSignature(*diffDir, id)
 			if err != nil {
 				return nil, false
 			}
+			comparedCount++
 			return sig, true
 		}
 	}
@@ -297,6 +315,20 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 				fmt.Printf("  %s: HTTP %d, %dB\n", r.ID, r.Status, r.BodySize)
 			}
 		}
+	}
+
+	// Trap B (cont.): if --diff was set and zero comparisons
+	// resolved, the gate compared nothing. Fail with exit 2 so a
+	// passthrough doesn't pass for a working gate.
+	if *diffDir != "" && comparedCount == 0 && len(results) > 0 {
+		logger.Error("drift",
+			"phase", "compare",
+			"err", "no prior signatures found",
+			"diff_dir", *diffDir,
+			"endpoints", len(results),
+			"hint", "seed the baseline first: bairn drift --anonymize --out-dir "+*diffDir+" (then commit). Until seeded, --diff is a no-op.",
+		)
+		return 2
 	}
 
 	if writeFails > 0 {
