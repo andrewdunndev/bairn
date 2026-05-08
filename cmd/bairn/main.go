@@ -20,7 +20,7 @@ import (
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "0.3.1"
+var Version = "0.4.0"
 
 const usage = `usage: bairn <subcommand> [flags]
 
@@ -84,15 +84,19 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	fs := flag.NewFlagSet("fetch", flag.ExitOnError)
 	maxPages := fs.Int("max-pages", 3, "stop after this many feed pages (0 = unlimited)")
 	dryRun := fs.Bool("dry-run", false, "enumerate without saving or uploading")
-	feedAll := fs.Bool("feed-all", true, "include every image and video on the feed")
-	feedTagged := fs.Bool("feed-tagged", false, "include only images tagged with one of our children")
-	feedLiked := fs.Bool("feed-liked", false, "include only images liked by a household login")
+	source := fs.String("source", "all", "feed filter: all (every image and video), tagged (only images tagged with one of our children), or liked (only images liked by a household login)")
 	saveDir := fs.String("save-dir", cfg.SaveDir, "root directory for saved photos and videos")
 	noImmich := fs.Bool("no-immich", false, "save to disk only; skip Immich even when configured")
 	filenamePat := fs.String("filename-pattern", "", "filename template (default: feed-{{.Source}}-%Y-%m-%d_%H-%M-%S-{{.ID}}.{{.Ext}})")
 	dirPat := fs.String("dir-pattern", "", "directory template under save-dir (default: %Y-%m-%d)")
 	includeSystem := fs.Bool("include-system-posts", false, "include automated Famly posts (check-ins, sign-outs); off by default to keep templated text out of photo captions")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	src := sync.Source(*source)
+	if err := src.Validate(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
 		return 2
 	}
 
@@ -124,7 +128,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 
 	logins := map[string]struct{}{}
 	children := map[string]struct{}{}
-	if *feedTagged || *feedLiked {
+	if src == sync.SourceTagged || src == sync.SourceLiked {
 		me, err := fc.Me(ctx)
 		if err != nil {
 			logger.Error("fetch /me", "err", err)
@@ -151,7 +155,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	}, sync.Options{
 		MaxPages:           *maxPages,
 		DryRun:             *dryRun,
-		Sources:            sync.Sources{FeedAll: *feedAll, FeedTagged: *feedTagged, FeedLiked: *feedLiked},
+		Source:             src,
 		HouseholdLogins:    logins,
 		HouseholdChildren:  children,
 		Software:           "bairn " + Version,

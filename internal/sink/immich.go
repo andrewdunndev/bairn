@@ -41,6 +41,13 @@ func (i *Immich) Put(ctx context.Context, in PutInput) (Receipt, error) {
 		Filename:       in.Filename,
 		FileCreatedAt:  in.FileCreatedAt,
 		FileModifiedAt: in.FileCreatedAt,
+		// Stable client identifier; do not encode bairn version into
+		// DeviceID or Immich treats each release as a separate device.
+		DeviceID: "bairn",
+		// Vendor-stable per-asset id so re-uploads of the same Famly
+		// image dedupe at the device layer (in addition to the SHA1
+		// content checksum already sent via x-immich-checksum).
+		DeviceAssetID: in.FamlyImageID,
 		Metadata: map[string]string{
 			"famlyImageId":  in.FamlyImageID,
 			"famlyFeedItem": in.FeedItemID,

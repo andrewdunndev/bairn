@@ -59,9 +59,10 @@ bairn does five jobs:
 2. **Paginate the feed.** bairn walks Famly's
    `/api/feed/feed/feed` endpoint, page by page, stopping at
    `--max-pages` (default 3) or when Famly returns no more items.
-   The default `--feed-all` mode includes every image and video on
-   each post; alternative `--feed-tagged` and `--feed-liked` filters
-   are available for households whose schools tag photos per kid.
+   The default `--source=all` mode includes every image and video on
+   each post; alternative `--source=tagged` and `--source=liked`
+   filters are available for households whose schools tag photos per
+   kid.
 
 3. **Fetch the highest-resolution variant.** Famly's CDN serves
    sized variants under path segments like `/1024x768/`; bairn
@@ -139,14 +140,26 @@ Save and state:
 | `BAIRN_STATE_PATH` | JSON state file | `$XDG_STATE_HOME/bairn/state.json` |
 | `BAIRN_LOG_FORMAT` | `json` (cron) or `text` (interactive) | `json` |
 
+Optional Immich sink (uploads alongside disk save):
+
+| Var | Purpose | Default |
+|---|---|---|
+| `IMMICH_BASE_URL` | Immich server URL, e.g. `https://photos.example.com` | unset |
+| `IMMICH_API_KEY` | Immich API key (User Settings → API Keys) | unset |
+
+**Immich version requirement: v2.7.5 or later.** bairn targets the
+post-zod-migration `/assets` upload contract
+([immich-app/immich#26597](https://github.com/immich-app/immich/pull/26597),
+April 2026). Older Immich versions are not supported.
+
 CLI flag overrides for `bairn fetch`:
 
 ```
 --max-pages N            stop after N feed pages (default 3, 0 = unlimited)
 --dry-run                enumerate without fetching or saving
---feed-all               include every image and video on the feed (default)
---feed-tagged            include only images tagged with one of your children
---feed-liked             include only images liked by a household login
+--source MODE            feed filter: all (default; every image and video),
+                         tagged (only images tagged with one of your children),
+                         or liked (only images liked by a household login)
 --save-dir DIR           override BAIRN_SAVE_DIR
 --filename-pattern PAT   override the default filename template
 --dir-pattern PAT        override the default directory template

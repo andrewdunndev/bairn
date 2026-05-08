@@ -77,6 +77,17 @@ type UploadInput struct {
 	FileCreatedAt  time.Time
 	FileModifiedAt time.Time
 
+	// DeviceID identifies the upload client (AssetMediaBase.deviceId).
+	// Stable across bairn versions so Immich's per-device library
+	// state is preserved.
+	DeviceID string
+
+	// DeviceAssetID is a client-side unique identifier for the asset
+	// (AssetMediaBase.deviceAssetId). bairn passes the vendor's
+	// stable image ID so Immich can de-duplicate at the device layer
+	// across bairn re-runs.
+	DeviceAssetID string
+
 	// Metadata is an arbitrary key/value bag persisted with the
 	// asset on the Immich side. bairn writes "famlyImageId" with
 	// the vendor's image ID for traceability.
@@ -152,10 +163,15 @@ func (c *Client) Upload(ctx context.Context, in UploadInput) (*UploadResult, err
 
 // buildUploadBody assembles the multipart payload Immich expects.
 //
-// Field names match the OpenAPI spec's AssetMediaCreateDto. The
-// generated client supports a JSON body but Immich's actual
-// /assets endpoint accepts only multipart/form-data; we encode by
-// hand for that reason.
+// Wire format targets Immich >= v2.7.5 (zod migration of /assets;
+// upstream PR immich-app/immich#26597, April 2026): metadata is one
+// JSON-array field rather than repeated multipart entries, and each
+// item's `value` is an object (`{value: "<string>"}` for strings).
+// deviceId and deviceAssetId from AssetMediaBase are now strictly
+// enforced.
+//
+// Older Immich versions are not supported. See README.md "Immich
+// version requirement".
 func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -168,6 +184,14 @@ func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 		return nil, "", err
 	}
 
+	// AssetMediaBase device fields. Both required since v2.7.5.
+	if err := w.WriteField("deviceId", in.DeviceID); err != nil {
+		return nil, "", err
+	}
+	if err := w.WriteField("deviceAssetId", in.DeviceAssetID); err != nil {
+		return nil, "", err
+	}
+
 	// Optional filename.
 	if in.Filename != "" {
 		if err := w.WriteField("filename", in.Filename); err != nil {
@@ -175,15 +199,23 @@ func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 		}
 	}
 
-	// Metadata: key/value upsert items. Encoded as repeated
-	// metadata[] fields each containing a JSON object, matching
-	// Immich's expectation for array-of-object multipart fields.
-	for k, v := range in.Metadata {
-		item, err := json.Marshal(map[string]any{"key": k, "value": v})
+	// Metadata: a single field whose value is a JSON-encoded array
+	// of {key, value} objects. Each `value` is an object (string
+	// values get wrapped as {"value": "<string>"}) per the v2.7.5
+	// AssetMetadataUpsertItemDto.value `type: object` constraint.
+	if len(in.Metadata) > 0 {
+		items := make([]map[string]any, 0, len(in.Metadata))
+		for k, v := range in.Metadata {
+			items = append(items, map[string]any{
+				"key":   k,
+				"value": map[string]any{"value": v},
+			})
+		}
+		encoded, err := json.Marshal(items)
 		if err != nil {
 			return nil, "", err
 		}
-		if err := w.WriteField("metadata", string(item)); err != nil {
+		if err := w.WriteField("metadata", string(encoded)); err != nil {
 			return nil, "", err
 		}
 	}

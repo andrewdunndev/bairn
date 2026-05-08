@@ -18,12 +18,14 @@ import (
 
 // fakeImmich captures the most recent upload request for assertions.
 type fakeImmich struct {
-	srv             *httptest.Server
-	lastChecksum    string
-	lastAPIKey      string
-	lastFilename    string
-	lastMetadata    map[string]string
-	lastFileCreated string
+	srv               *httptest.Server
+	lastChecksum      string
+	lastAPIKey        string
+	lastFilename      string
+	lastMetadata      map[string]string
+	lastFileCreated   string
+	lastDeviceID      string
+	lastDeviceAssetID string
 
 	respondWith struct {
 		statusCode int
@@ -69,14 +71,23 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 				f.lastFileCreated = string(body)
 			case "filename":
 				f.lastFilename = string(body)
+			case "deviceId":
+				f.lastDeviceID = string(body)
+			case "deviceAssetId":
+				f.lastDeviceAssetID = string(body)
 			case "metadata":
-				var item struct {
-					Key   string `json:"key"`
-					Value any    `json:"value"`
+				// v2.7.5+: single field, JSON-encoded array of
+				// {key, value} where value is an object wrapping
+				// the string ({"value":"<str>"}).
+				var items []struct {
+					Key   string         `json:"key"`
+					Value map[string]any `json:"value"`
 				}
-				_ = json.Unmarshal(body, &item)
-				if v, ok := item.Value.(string); ok {
-					f.lastMetadata[item.Key] = v
+				_ = json.Unmarshal(body, &items)
+				for _, item := range items {
+					if v, ok := item.Value["value"].(string); ok {
+						f.lastMetadata[item.Key] = v
+					}
 				}
 			}
 		}
@@ -101,6 +112,8 @@ func TestUploadCreated(t *testing.T) {
 		Filename:       "img-001.jpg",
 		FileCreatedAt:  now,
 		FileModifiedAt: now,
+		DeviceID:       "bairn",
+		DeviceAssetID:  "img-001",
 		Metadata:       map[string]string{"famlyImageId": "img-001"},
 	})
 	if err != nil {
@@ -119,6 +132,12 @@ func TestUploadCreated(t *testing.T) {
 	}
 	if f.lastFilename != "img-001.jpg" {
 		t.Errorf("filename = %q", f.lastFilename)
+	}
+	if f.lastDeviceID != "bairn" {
+		t.Errorf("deviceId = %q", f.lastDeviceID)
+	}
+	if f.lastDeviceAssetID != "img-001" {
+		t.Errorf("deviceAssetId = %q", f.lastDeviceAssetID)
 	}
 	if f.lastMetadata["famlyImageId"] != "img-001" {
 		t.Errorf("metadata.famlyImageId = %q", f.lastMetadata["famlyImageId"])

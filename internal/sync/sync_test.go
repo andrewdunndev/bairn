@@ -96,7 +96,7 @@ func openTestStore(t *testing.T) *state.Store {
 	return st
 }
 
-func TestRunSavesAndUploadsFeedAll(t *testing.T) {
+func TestRunSavesAndUploadsSourceAll(t *testing.T) {
 	famlySrv := fakeFamlyServer(t)
 	t.Cleanup(famlySrv.Close)
 	immichSrv := fakeImmichServer(t)
@@ -116,7 +116,7 @@ func TestRunSavesAndUploadsFeedAll(t *testing.T) {
 		Famly: fc, Disk: disk, Immich: immichSink, State: st,
 	}, Options{
 		MaxPages: 2,
-		Sources:  Sources{FeedAll: true},
+		Source:   SourceAll,
 		Software: "bairn 0.1-test",
 	})
 	if err != nil {
@@ -146,7 +146,7 @@ func TestRunSavesAndUploadsFeedAll(t *testing.T) {
 		Famly: fc, Disk: disk, Immich: immichSink, State: st,
 	}, Options{
 		MaxPages: 2,
-		Sources:  Sources{FeedAll: true},
+		Source:   SourceAll,
 		Software: "bairn 0.1-test",
 	})
 	if err != nil {
@@ -174,7 +174,7 @@ func TestRunSavesOnlyWithoutImmich(t *testing.T) {
 		Famly: fc, Disk: disk, Immich: nil, State: st,
 	}, Options{
 		MaxPages: 2,
-		Sources:  Sources{FeedAll: true},
+		Source:   SourceAll,
 		Software: "bairn 0.1-test",
 	})
 	if err != nil {
@@ -188,7 +188,7 @@ func TestRunSavesOnlyWithoutImmich(t *testing.T) {
 	}
 }
 
-func TestRunFeedTaggedFiltersByChild(t *testing.T) {
+func TestRunSourceTaggedFiltersByChild(t *testing.T) {
 	mux := http.NewServeMux()
 	famlySrv := httptest.NewServer(mux)
 	t.Cleanup(famlySrv.Close)
@@ -226,7 +226,7 @@ func TestRunFeedTaggedFiltersByChild(t *testing.T) {
 
 	res, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: st}, Options{
 		MaxPages:          1,
-		Sources:           Sources{FeedTagged: true},
+		Source:            SourceTagged,
 		HouseholdChildren: map[string]struct{}{"our-child": {}},
 	})
 	if err != nil {
@@ -252,7 +252,7 @@ func TestRunCleansTempFiles(t *testing.T) {
 
 	if _, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: st}, Options{
 		MaxPages: 1,
-		Sources:  Sources{FeedAll: true},
+		Source:   SourceAll,
 	}); err != nil {
 		t.Fatalf("Run: %v", err)
 	}

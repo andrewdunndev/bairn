@@ -7,6 +7,7 @@ package sync
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
@@ -17,12 +18,31 @@ import (
 	"gitlab.com/dunn.dev/bairn/internal/state"
 )
 
-// Sources selects which feed-image filtering modes are enabled.
-// At least one must be set. FeedAll trumps the other two.
-type Sources struct {
-	FeedAll    bool
-	FeedTagged bool
-	FeedLiked  bool
+// Source selects which feed images to download. Mutually exclusive
+// by construction; replaces the v0.3.x trio of FeedAll/FeedTagged/
+// FeedLiked booleans (where FeedAll's default-true silently masked
+// the other two).
+type Source string
+
+const (
+	// SourceAll downloads every image and video on the feed.
+	SourceAll Source = "all"
+	// SourceTagged downloads only images tagged with one of the
+	// HouseholdChildren. Videos are skipped (Famly does not surface
+	// child tags on videos).
+	SourceTagged Source = "tagged"
+	// SourceLiked downloads only images liked by one of the
+	// HouseholdLogins. Videos are skipped.
+	SourceLiked Source = "liked"
+)
+
+// Validate reports whether s is a known source value.
+func (s Source) Validate() error {
+	switch s {
+	case SourceAll, SourceTagged, SourceLiked:
+		return nil
+	}
+	return fmt.Errorf("sync: unknown source %q (want all|tagged|liked)", string(s))
 }
 
 // Options tunes the fetch run.
@@ -34,15 +54,15 @@ type Options struct {
 	// enumerated and skip-checked but no file lands on disk.
 	DryRun bool
 
-	// Sources is the set of source filters to apply.
-	Sources Sources
+	// Source picks the feed filter. Required.
+	Source Source
 
 	// HouseholdLogins is the set of login IDs treated as "us" for
-	// the FeedLiked filter.
+	// SourceLiked.
 	HouseholdLogins map[string]struct{}
 
 	// HouseholdChildren is the set of child IDs treated as "ours"
-	// for the FeedTagged filter.
+	// for SourceTagged.
 	HouseholdChildren map[string]struct{}
 
 	// Software is the value for EXIF Software tag, e.g. "bairn 0.1".
@@ -85,8 +105,8 @@ type Result struct {
 // recorded in the state DB and counted in Result.Errors but do not
 // abort the loop.
 func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
-	if !opts.Sources.FeedAll && !opts.Sources.FeedTagged && !opts.Sources.FeedLiked {
-		return Result{}, errors.New("sync: no sources enabled")
+	if err := opts.Source.Validate(); err != nil {
+		return Result{}, err
 	}
 	if deps.Disk == nil {
 		return Result{}, errors.New("sync: Disk sink is required")
@@ -151,7 +171,7 @@ func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedIt
 		processOne(ctx, deps, opts, asset.DiscoverImage(img, item), res, logger)
 	}
 	for _, vid := range item.Videos {
-		if !opts.Sources.FeedAll {
+		if opts.Source != SourceAll {
 			res.Skipped++
 			continue
 		}
@@ -161,17 +181,17 @@ func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedIt
 
 // shouldDownloadImage applies the source filter to an image.
 func shouldDownloadImage(img famly.Image, opts Options) bool {
-	if opts.Sources.FeedAll {
+	switch opts.Source {
+	case SourceAll:
 		return true
-	}
-	if opts.Sources.FeedTagged {
+	case SourceTagged:
 		for _, tag := range img.Tags {
 			if _, ok := opts.HouseholdChildren[tag.ChildID]; ok {
 				return true
 			}
 		}
-	}
-	if opts.Sources.FeedLiked {
+		return false
+	case SourceLiked:
 		for _, like := range img.Likes {
 			if _, ok := opts.HouseholdLogins[like.LoginID]; ok {
 				return true
@@ -180,6 +200,7 @@ func shouldDownloadImage(img famly.Image, opts Options) bool {
 		if img.Liked && len(opts.HouseholdLogins) > 0 {
 			return true
 		}
+		return false
 	}
 	return false
 }
