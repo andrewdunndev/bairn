@@ -6,28 +6,28 @@ stages:
   - lint
   - test
   - build
+  - drift-gate
   - package
   - release
-  - drift
+  - drift-triage
 
 variables:
   GOFLAGS: -mod=readonly
 
 include:
-  # Schedule-triggered drift triage. Sends shape diffs to Claude
-  # when bairn's drift command emits non-empty output. See
-  # docs/decisions/0007-llm-augmented-ci.md for the posture.
-  #
-  # Until bairn drift is native Go (deferred to v0.2.0), the
-  # drift_command below is a placeholder that always produces
-  # empty output, so the component exits cleanly without an API
-  # call. When native drift lands, swap to "./bairn drift".
+  # Schedule/web-triggered drift triage. Sends shape diffs to Claude
+  # for classification when bairn's drift command emits non-empty
+  # output. Held as a placeholder for now: drift_command is `echo ''`
+  # because bairn does not fire scheduled drift against Famly. See
+  # docs/decisions/0007-llm-augmented-ci.md for the relationship-side
+  # reasoning. The component stays included so a future change of
+  # posture is a one-line flip.
   - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@v1.5.0
     inputs:
       drift_command: "echo ''"
       issue_on_drift: true
       issue_label: "drift,ai-triaged"
-      stage: drift
+      stage: drift-triage
 
   # Lint-stage govulncheck against the source. Allow_failure by
   # default; vulnerability database changes shouldn't block a
@@ -81,3 +81,27 @@ test:
   image: golang:1.25
   script:
     - go test -race ./...
+
+# Tag-only pre-release drift gate. Builds bairn, hits Famly's
+# parent-side surface against the operator's own access token, and
+# diffs response shapes against the committed baseline at
+# discovery/baselines/main/. Fails the tag pipeline (exit 1) when
+# drift is detected so a binary that no longer matches Famly's
+# response shapes does not ship.
+#
+# Fires once per tag push, lined up with a human action (the
+# maintainer tagging a release). NOT a recurring schedule. See
+# discovery/PROTOCOL.md and docs/decisions/0007-llm-augmented-ci.md
+# for the posture.
+#
+# Operator must set FAMLY_ACCESS_TOKEN as a masked, protected
+# project CI variable. A forker who does not set the variable will
+# see this job fail at tag time; that is the intended signal.
+drift-gate:
+  stage: drift-gate
+  image: golang:1.25
+  script:
+    - go build -o bin/bairn ./cmd/bairn
+    - bin/bairn drift --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
+  rules:
+    - if: $CI_COMMIT_TAG

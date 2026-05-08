@@ -113,40 +113,78 @@ The Python prototype (`discovery/probe/shape.py`) stays in the repo as
 documentation of the methodology and as a reference implementation; the
 on-disk signature format is byte-compatible.
 
-## Why drift is not on a CI schedule against Famly
+## When drift fires
 
-bairn deliberately does not fire drift on a recurring CI schedule
-against Famly's surface, even with the operator's own access token.
-A weekly cron firing from a CI runner is distinguishable from a
-human user fetching photos: it arrives at the same hour each week
-from the same CI infrastructure with no prior user action. From
-Famly's logs, that pattern reads as automated monitoring even when
-authorized by the operator. For a small SaaS that engaged with our
-use case rather than deflecting, leaning into a posture that looks
-like surveillance would be ungenerous.
+Two distinct triggers, treated differently:
 
-So the design splits responsibilities:
+### Tag-push: bairn's own pre-release gate
 
-- The `discovery/probe/manifest.toml` and the
-  `discovery/baselines/main/` baseline are committed to the repo
-  as documentation of bairn's integration boundary (only the
-  read-side endpoints bairn issues during a fetch; keys-only shape
-  signatures, no values).
-- `bairn drift --diff discovery/baselines/main` runs locally,
-  fired by the maintainer by hand, before tagging a release. That
-  catches breakages early enough to fix the typed client before
-  shipping.
-- bairn's `.gitlab-ci.yml` keeps `drift_command` at `echo ''`. The
-  `claude-drift-triage` component stays included so that any
-  future change of posture (Famly explicitly inviting a monitoring
-  integration; bairn outgrowing this household scope) is a
-  one-line flip, not a re-architecture. Until then, no scheduled
-  pipeline calls Famly.
+A `drift-gate` job in bairn's `.gitlab-ci.yml`, scoped to
+`if: $CI_COMMIT_TAG`. It builds bairn, runs
+`bairn drift --diff discovery/baselines/main` against Famly's
+parent-side surface using the operator's own access token, and
+fails the tag pipeline when shapes have drifted. This blocks a
+broken binary from shipping.
+
+The relationship reasoning works for this trigger:
+
+- It fires only when the maintainer pushes a tag. A human action
+  initiates each call; no clockwork.
+- Frequency is per release. For bairn that is a few times a year,
+  not weekly.
+- The intent is verifiable: validate the binary about to ship
+  still matches the vendor's responses. Same shape as a smoke
+  test against production before deploying. A defensible reason
+  for a CI runner to call a vendor.
+- Total annual traffic from this trigger is a couple dozen
+  requests across a handful of release events, all under the
+  operator's own token. Below any abuse-detection threshold and
+  visibly tied to releases on the public Releases page.
+
+Operator setup is a single CI variable: `FAMLY_ACCESS_TOKEN` as
+masked + protected at the project level. A forker who does not
+set it sees the drift-gate job fail at tag time; that is the
+intended signal.
+
+### Schedule: deliberately not used against Famly
+
+The catalog `claude-drift-triage` component is included in
+bairn's CI on a `drift-triage` stage with rules
+`schedule|web`. Its `drift_command` is held at `echo ''`.
+
+Reasoning: a recurring weekly cron firing from a CI runner is
+distinguishable from a human user fetching photos. It arrives at
+the same hour each week from the same CI infrastructure with no
+prior user action. From Famly's logs, that pattern reads as
+automated monitoring even when authorized by the operator. For a
+small SaaS that engaged with our use case rather than deflecting,
+leaning into a posture that looks like surveillance would be
+ungenerous.
+
+The component stays included so that any future change of posture
+(Famly explicitly inviting a monitoring integration; bairn
+outgrowing this household scope) is a one-line `drift_command`
+flip, not a re-architecture. Until then, no scheduled pipeline
+calls Famly.
 
 The catalog component remains useful for projects whose vendors
 have explicitly invited automated monitoring (internal APIs,
 vendor-sanctioned monitoring contracts). bairn opts out for
 relationship reasons, not technical ones.
+
+## Maintainer workflow
+
+Before tagging:
+
+1. Refresh `discovery/baselines/main/` locally if needed:
+   `bairn drift --out-dir discovery/baselines/main`. Inspect the
+   `.shape` files; commit if changed.
+2. Push the tag. The drift-gate job fires; the maintainer watches
+   the pipeline.
+3. If clean, package + release stages run; the binary ships.
+4. If drift detected, the gate fails; fix the typed client (or
+   the manifest if the surface has moved cleanly), update the
+   baseline, push a new commit, and re-tag.
 
 ## Pending follow-on
 
