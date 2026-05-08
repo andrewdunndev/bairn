@@ -109,8 +109,8 @@ func (c *Config) Validate(mode string) error {
 	case "status":
 		// state path must be openable but no creds needed
 	case "drift":
-		if c.FamlyAccessToken == "" {
-			return errors.New("config: drift needs FAMLY_ACCESS_TOKEN")
+		if c.FamlyAccessToken == "" && (c.FamlyEmail == "" || c.FamlyPassword == "") {
+			return errors.New("config: drift needs FAMLY_EMAIL and FAMLY_PASSWORD (recommended) or FAMLY_ACCESS_TOKEN; the credentials path uses bairn's normal refreshing token, the static token path expires")
 		}
 	}
 	return nil

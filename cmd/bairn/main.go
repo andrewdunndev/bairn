@@ -207,6 +207,11 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		return 2
 	}
 
+	if err := cfg.Validate("drift"); err != nil {
+		logger.Error("drift", "phase", "config", "err", err)
+		return 2
+	}
+
 	m, err := drift.LoadManifest(*manifestPath)
 	if err != nil {
 		logger.Error("drift", "phase", "manifest", "err", err)
@@ -228,6 +233,10 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	token, err := tokenSrc.Token(ctx)
 	if err != nil {
 		logger.Error("drift", "phase", "token", "err", err)
+		return 2
+	}
+	if token == "" {
+		logger.Error("drift", "phase", "token", "err", "resolved token is empty; check FAMLY_EMAIL/FAMLY_PASSWORD or FAMLY_ACCESS_TOKEN are visible to the pipeline (protected vars need a protected ref)")
 		return 2
 	}
 
