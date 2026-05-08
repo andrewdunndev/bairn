@@ -4,9 +4,11 @@
 # integration boundary).
 baselines/*
 !baselines/main/
+!baselines/main-immich/
 sessions/
 captures/
 probe/*.json
 probe/*.shape
 probe/*.har
 probe/manifest.local.toml
+probe/manifest-immich.local.toml
