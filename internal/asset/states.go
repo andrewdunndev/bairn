@@ -194,14 +194,6 @@ func (r Recorded) Saved() Saved             { return r.saved }
 func (r Recorded) Uploaded() *Uploaded      { return r.uploaded }
 func (r Recorded) RecordedAt() time.Time    { return r.recordedAt }
 
-// preferBig returns big if non-empty, else fallback.
-func preferBig(big, fallback string) string {
-	if big != "" {
-		return big
-	}
-	return fallback
-}
-
 // pickImageTime selects the most-trusted timestamp for an image:
 // the image's own CreatedAt if populated, otherwise the parent
 // post's CreatedDate.

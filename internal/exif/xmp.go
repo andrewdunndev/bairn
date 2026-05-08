@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"time"
 
 	jis "github.com/dsoprea/go-jpeg-image-structure/v2"
 )
@@ -259,13 +258,4 @@ func isAcceptableXMPParseError(err error) bool {
 	}
 	// EOF is fine; the decoder reads only one top-level element.
 	return strings.Contains(msg, "EOF") || strings.Contains(msg, "<?xpacket")
-}
-
-// xmpDate formats a time for XMP photoshop:DateCreated. Exposed
-// for tests.
-func xmpDate(t time.Time, offset string) string {
-	if offset == "" {
-		offset = "+00:00"
-	}
-	return t.UTC().Format("2006-01-02T15:04:05") + offset
 }

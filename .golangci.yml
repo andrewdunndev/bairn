@@ -1,0 +1,30 @@
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+
+  exclusions:
+    rules:
+      # Tests routinely ignore Close/Fprintf returns on synthetic
+      # response writers and fixture files.
+      - path: _test\.go
+        linters: [errcheck]
+
+      # Idiomatic deferred-Close patterns: production code that
+      # cleans up files, sockets, and HTTP bodies on exit. The
+      # caller can't act on a Close error after the work is done.
+      - linters: [errcheck]
+        text: 'Error return value of `[^`]+\.Close` is not checked'
+
+      # Best-effort writes to stderr (interactive prompts, error
+      # messages). A failed write to stderr is unrecoverable.
+      - linters: [errcheck]
+        text: 'Error return value of `fmt\.Fprint(ln|f)?` is not checked'
