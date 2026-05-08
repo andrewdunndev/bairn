@@ -122,6 +122,26 @@ For unattended cron, put the env vars in a shell-init file (mode
 0600) and source it from your crontab or systemd unit. Anonymous
 inline, this is one line of crontab.
 
+### Or run the container
+
+Each tagged release ships a distroless OCI image at
+`registry.gitlab.com/dunn.dev/bairn/cli` (`:latest` and `:vX.Y.Z`):
+
+```
+docker pull registry.gitlab.com/dunn.dev/bairn/cli:latest
+
+docker run --rm \
+  -e FAMLY_EMAIL -e FAMLY_PASSWORD \
+  -v ~/Pictures/bairn:/data \
+  registry.gitlab.com/dunn.dev/bairn/cli:latest \
+  fetch --max-pages 1
+```
+
+The image's working directory is `/data`; saved photos and the JSON
+state file land there. Mount a host directory so the archive
+persists between runs. Optional Immich vars (`IMMICH_BASE_URL`,
+`IMMICH_API_KEY`) wire the secondary sink as in the binary case.
+
 ## Configuration
 
 Auth (one of these is required):
