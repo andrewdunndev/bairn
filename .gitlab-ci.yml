@@ -102,6 +102,6 @@ drift-gate:
   image: golang:1.25
   script:
     - go build -o bin/bairn ./cmd/bairn
-    - bin/bairn drift --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
+    - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
   rules:
     - if: $CI_COMMIT_TAG

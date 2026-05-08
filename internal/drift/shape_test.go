@@ -22,7 +22,7 @@ func TestShapePrimitives(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			got := Shape(c.in)
+			got := Shape(c.in, ShapeOpts{})
 			if !reflect.DeepEqual(got, c.want) {
 				t.Errorf("Shape(%v) = %v, want %v", c.in, got, c.want)
 			}
@@ -35,7 +35,7 @@ func TestShapeObjectUnion(t *testing.T) {
 		map[string]any{"a": "x", "b": float64(1)},
 		map[string]any{"b": float64(2), "c": true},
 	}
-	got := Shape(in)
+	got := Shape(in, ShapeOpts{})
 	wantArr, ok := got.([]any)
 	if !ok || len(wantArr) != 2 {
 		t.Fatalf("expected [merged, count], got %v", got)
@@ -60,7 +60,7 @@ func TestShapeRecursionLimit(t *testing.T) {
 	for i := 0; i < 9; i++ {
 		v = map[string]any{"x": v}
 	}
-	got := Shape(v)
+	got := Shape(v, ShapeOpts{})
 	// Walk down maxDepth+1 times; the value at that depth should be
 	// the "..." sentinel.
 	cursor := got
@@ -114,6 +114,26 @@ func TestDiffArrayDescent(t *testing.T) {
 	}
 }
 
+func TestShapeAnonymizedCounts(t *testing.T) {
+	in := map[string]any{
+		"relations": []any{
+			map[string]any{"id": "x", "name": "y"},
+			map[string]any{"id": "z", "name": "w"},
+			map[string]any{"id": "p", "name": "q"},
+		},
+		"empty": []any{},
+	}
+	got := Shape(in, ShapeOpts{AnonymizeCounts: true}).(map[string]any)
+	relArr := got["relations"].([]any)
+	if relArr[1] != "<n=*>" {
+		t.Errorf("expected anonymized count <n=*>, got %v", relArr[1])
+	}
+	emptyArr := got["empty"].([]any)
+	if emptyArr[0] != "<empty>" {
+		t.Errorf("empty array should still be <empty>, got %v", emptyArr[0])
+	}
+}
+
 func TestSignatureRoundTripsThroughJSON(t *testing.T) {
 	sig := Shape(map[string]any{
 		"users": []any{
@@ -122,7 +142,7 @@ func TestSignatureRoundTripsThroughJSON(t *testing.T) {
 		},
 		"empty": []any{},
 		"null":  nil,
-	})
+	}, ShapeOpts{})
 	b, err := json.Marshal(sig)
 	if err != nil {
 		t.Fatalf("marshal: %v", err)

@@ -20,7 +20,7 @@ import (
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "0.2.3"
+var Version = "0.2.4"
 
 const usage = `usage: bairn <subcommand> [flags]
 
@@ -203,6 +203,7 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	manifestPath := fs.String("manifest", "discovery/probe/manifest.toml", "TOML manifest path")
 	outDir := fs.String("out-dir", "discovery/baselines/current", "directory for written shape signatures")
 	diffDir := fs.String("diff", "", "prior baseline directory to diff against (optional)")
+	anonymize := fs.Bool("anonymize", false, "replace array length markers <n=N> with <n=*> so household-side cardinality (e.g. number of relations) does not leak into committed baselines")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -240,7 +241,11 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		return 2
 	}
 
-	opts := drift.ProbeOptions{Logger: logger, Token: token}
+	opts := drift.ProbeOptions{
+		Logger: logger,
+		Token:  token,
+		Shape:  drift.ShapeOpts{AnonymizeCounts: *anonymize},
+	}
 	if *diffDir != "" {
 		opts.Compare = func(id string) (any, bool) {
 			sig, err := drift.ReadSignature(*diffDir, id)

@@ -31,6 +31,7 @@ type ProbeOptions struct {
 	Logger     *slog.Logger
 	Compare    func(id string) (any, bool) // returns prior signature if available
 	Sleep      func(d time.Duration)       // injected for tests; defaults to time.Sleep
+	Shape      ShapeOpts                   // forwarded to Shape() for each response body
 }
 
 // Probe runs every endpoint in m in order and returns one
@@ -65,12 +66,12 @@ func Probe(ctx context.Context, m *Manifest, opts ProbeOptions) ([]ProbeResult, 
 		if i > 0 && delay > 0 {
 			opts.Sleep(delay)
 		}
-		results = append(results, hit(ctx, client, m, ep, token, ua, opts.Compare))
+		results = append(results, hit(ctx, client, m, ep, token, ua, opts.Compare, opts.Shape))
 	}
 	return results, nil
 }
 
-func hit(ctx context.Context, client *http.Client, m *Manifest, ep Endpoint, token, ua string, compare func(string) (any, bool)) ProbeResult {
+func hit(ctx context.Context, client *http.Client, m *Manifest, ep Endpoint, token, ua string, compare func(string) (any, bool), shapeOpts ShapeOpts) ProbeResult {
 	res := ProbeResult{ID: ep.ID}
 
 	path, err := ExpandEnv(ep.Path)
@@ -124,7 +125,7 @@ func hit(ctx context.Context, client *http.Client, m *Manifest, ep Endpoint, tok
 		res.NotJSON = true
 		res.Signature = "<not-json>"
 	} else {
-		res.Signature = Shape(parsed)
+		res.Signature = Shape(parsed, shapeOpts)
 	}
 
 	if compare != nil {

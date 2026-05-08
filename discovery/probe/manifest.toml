@@ -21,17 +21,25 @@
 # docs/decisions/0007-llm-augmented-ci.md for the posture.
 #
 # To regenerate the baseline locally (operator action), prefer
-# refreshing credentials over a short-lived static token:
+# refreshing credentials over a short-lived static token, and
+# always use --anonymize so household-side array cardinality
+# (number of relations, role counts, etc.) does not leak into the
+# committed baseline:
 #
 #   export FAMLY_EMAIL=...
 #   export FAMLY_PASSWORD=...
 #   export FAMLY_DEVICE_ID=...   # optional; bairn derives one if absent
-#   bairn drift --out-dir discovery/baselines/main
+#   bairn drift --anonymize --out-dir discovery/baselines/main
 #
 # Or, for one-off runs with a current session token:
 #
 #   export FAMLY_ACCESS_TOKEN=...
-#   bairn drift --out-dir discovery/baselines/main
+#   bairn drift --anonymize --out-dir discovery/baselines/main
+#
+# The drift-gate in .gitlab-ci.yml also passes --anonymize so the
+# probe shape and the committed baseline shape compare apples-to-
+# apples. If you re-seed without --anonymize, the next tag's
+# drift-gate will report cardinality drift on every array.
 #
 # bairn drift uses the same token resolution as bairn fetch:
 # email+password are preferred (refreshing) and the auth_env value

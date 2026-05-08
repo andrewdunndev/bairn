@@ -19,14 +19,28 @@ Famly credentials, then committed. The maintainer regenerates it
 before each bairn release to catch breakages early:
 
 ```bash
-export FAMLY_ACCESS_TOKEN=...
-bairn drift --out-dir discovery/baselines/main
+export FAMLY_EMAIL=...
+export FAMLY_PASSWORD=...
+bairn drift --anonymize --out-dir discovery/baselines/main
 ```
 
 The resulting `.shape` files contain JSON-key signatures only.
-Verify there are no values, no IDs, no PII before committing
-(the shape probe by design strips these, but a quick visual check
-is cheap).
+The probe by design strips values, IDs, and PII; `--anonymize`
+additionally replaces array length markers `<n=N>` with `<n=*>`
+so household-side cardinality (e.g. how many relations the
+operator's account has) does not leak into the committed
+baseline.
+
+Verify before committing: each file should have only string
+sentinels (`"str"`, `"int"`, `"bool"`, `"null"`), `<n=*>`, and
+`<empty>`. No literal numbers, no human-readable strings other
+than those sentinels.
+
+The drift-gate in `.gitlab-ci.yml` runs `bairn drift --anonymize
+... --diff discovery/baselines/main` on each tag, so the probe
+shape and the committed baseline shape compare apples-to-apples.
+Always re-seed with `--anonymize`; if you re-seed without it, the
+next tag's drift-gate reports cardinality drift on every array.
 
 ## What stays out of this directory
 

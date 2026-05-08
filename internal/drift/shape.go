@@ -17,6 +17,16 @@ import (
 
 const maxDepth = 6
 
+// ShapeOpts configures Shape's behavior.
+type ShapeOpts struct {
+	// AnonymizeCounts replaces actual array lengths in the
+	// "<n=N>" sentinel with "<n=*>". Useful when baselines are
+	// committed publicly and the count of household relations,
+	// roles, or feed items is operator-private context that
+	// should not leak via cardinality diffs.
+	AnonymizeCounts bool
+}
+
 // Shape returns a deterministic JSON-key-only signature for v.
 // Maps preserve their key set; arrays become a [merged-shape, "<n=N>"]
 // pair representing a union of the first 5 elements; primitives become
@@ -25,11 +35,11 @@ const maxDepth = 6
 // v is expected to be the result of json.Unmarshal into any. Numeric
 // values arrive as float64 and are tagged "int" or "float" by their
 // integer-ness.
-func Shape(v any) any {
-	return shape(v, 0)
+func Shape(v any, opts ShapeOpts) any {
+	return shape(v, 0, opts)
 }
 
-func shape(v any, depth int) any {
+func shape(v any, depth int, opts ShapeOpts) any {
 	if depth > maxDepth {
 		return "..."
 	}
@@ -37,7 +47,7 @@ func shape(v any, depth int) any {
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, vv := range t {
-			out[k] = shape(vv, depth+1)
+			out[k] = shape(vv, depth+1, opts)
 		}
 		return out
 	case []any:
@@ -50,7 +60,7 @@ func shape(v any, depth int) any {
 			n = 5
 		}
 		for i := 0; i < n; i++ {
-			sh := shape(t[i], depth+1)
+			sh := shape(t[i], depth+1, opts)
 			if shMap, ok := sh.(map[string]any); ok {
 				if merged == nil {
 					merged = copyMap(shMap)
@@ -66,7 +76,11 @@ func shape(v any, depth int) any {
 				break
 			}
 		}
-		return []any{merged, "<n=" + strconv.Itoa(len(t)) + ">"}
+		countMarker := "<n=" + strconv.Itoa(len(t)) + ">"
+		if opts.AnonymizeCounts {
+			countMarker = "<n=*>"
+		}
+		return []any{merged, countMarker}
 	case bool:
 		return "bool"
 	case float64:
