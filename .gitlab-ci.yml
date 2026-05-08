@@ -69,6 +69,11 @@ include:
       package_name: bairn
       release_title: "bairn $CI_COMMIT_TAG"
 
+# Images sourced via mirror.gcr.io (Google's free docker.io mirror)
+# rather than docker.io directly, because the storr runner is
+# unauthenticated to docker.io and hits the per-IP pull rate cap on
+# tag pipelines that fan out across multiple jobs. golangci/* is not
+# mirrored on gcr; lint allow_failure already covers transient pulls.
 lint:
   stage: lint
   image: golangci/golangci-lint:latest-alpine
@@ -78,7 +83,7 @@ lint:
 
 test:
   stage: test
-  image: golang:1.25
+  image: mirror.gcr.io/library/golang:1.25
   script:
     - go test -race ./...
 
@@ -99,7 +104,7 @@ test:
 # see this job fail at tag time; that is the intended signal.
 drift-gate:
   stage: drift-gate
-  image: golang:1.25
+  image: mirror.gcr.io/library/golang:1.25
   script:
     - go build -o bin/bairn ./cmd/bairn
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
