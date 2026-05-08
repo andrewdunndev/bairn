@@ -1,4 +1,4 @@
-.PHONY: build build-linux build-darwin build-all test smoke lint clean tidy gen gen-famly gen-immich
+.PHONY: build build-linux build-darwin build-all test smoke lint clean tidy gen gen-famly gen-immich refresh-immich-spec
 
 BINARY := bin/bairn
 
@@ -12,6 +12,21 @@ gen-famly:
 
 gen-immich:
 	cd api/immich && go tool oapi-codegen --config oapi-codegen.yaml openapi.json
+
+# Re-vendor api/immich/openapi.json from immich-app/immich main and
+# regenerate the typed client. Run before tagging if upstream drift
+# is suspected, or whenever Renovate flags the vendored file. The
+# committed spec is the contract bairn validates against; refresh
+# is the maintenance loop.
+#
+# Famly's schema is captured locally via introspection; their
+# clients are not publicly published. No analogous refresh target.
+refresh-immich-spec:
+	curl -sSfLo api/immich/openapi.json \
+	  https://raw.githubusercontent.com/immich-app/immich/main/open-api/immich-openapi-specs.json
+	$(MAKE) gen-immich
+	@echo "Refreshed Immich spec + regenerated client."
+	@echo "Review 'git diff api/immich/' before committing."
 
 build:
 	mkdir -p bin
