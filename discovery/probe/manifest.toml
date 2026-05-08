@@ -20,13 +20,27 @@
 # shapes. NOT fired on a CI schedule; see
 # docs/decisions/0007-llm-augmented-ci.md for the posture.
 #
-# To regenerate the baseline locally (operator action):
+# To regenerate the baseline locally (operator action), prefer
+# refreshing credentials over a short-lived static token:
 #
-#   export FAMLY_ACCESS_TOKEN=...   # operator's own token
+#   export FAMLY_EMAIL=...
+#   export FAMLY_PASSWORD=...
+#   export FAMLY_DEVICE_ID=...   # optional; bairn derives one if absent
 #   bairn drift --out-dir discovery/baselines/main
 #
+# Or, for one-off runs with a current session token:
+#
+#   export FAMLY_ACCESS_TOKEN=...
+#   bairn drift --out-dir discovery/baselines/main
+#
+# bairn drift uses the same token resolution as bairn fetch:
+# email+password are preferred (refreshing) and the auth_env value
+# below is used only as a fallback. The Authenticate mutation that
+# fetches a fresh token is part of normal authentication, not
+# something this manifest tries to drift-check.
+#
 # Authenticate mutations and other write-side operations are
-# deliberately absent.
+# deliberately absent from the manifest itself.
 #
 # Operators with private overrides (e.g. additional endpoints they
 # probe for their own debugging) should put those in

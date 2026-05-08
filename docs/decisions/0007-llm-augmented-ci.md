@@ -141,10 +141,15 @@ The relationship reasoning works for this trigger:
   operator's own token. Below any abuse-detection threshold and
   visibly tied to releases on the public Releases page.
 
-Operator setup is a single CI variable: `FAMLY_ACCESS_TOKEN` as
-masked + protected at the project level. A forker who does not
-set it sees the drift-gate job fail at tag time; that is the
-intended signal.
+Operator setup uses bairn's normal auth resolution: prefer
+`FAMLY_EMAIL` + `FAMLY_PASSWORD` (and optionally
+`FAMLY_DEVICE_ID`) as masked + protected project CI variables, so
+the drift-gate job can refresh its own token via the standard
+Authenticate mutation each tag pipeline. Falling back to a static
+`FAMLY_ACCESS_TOKEN` is supported for one-off runs but the token
+expires; the credentials path is the right shape for CI. A forker
+who sets neither sees the drift-gate job fail at tag time; that
+is the intended signal.
 
 ### Schedule: deliberately not used against Famly
 

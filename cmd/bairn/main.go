@@ -219,7 +219,19 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		"diff", *diffDir,
 	)
 
-	opts := drift.ProbeOptions{Logger: logger}
+	// Resolve a token via bairn's normal auth path: prefer
+	// FAMLY_EMAIL+FAMLY_PASSWORD (refreshing) over the short-lived
+	// FAMLY_ACCESS_TOKEN. Pass the resolved token into Probe so the
+	// manifest's auth_env hint is overridden with a token that is
+	// guaranteed live for this run.
+	tokenSrc := buildTokenSource(cfg)
+	token, err := tokenSrc.Token(ctx)
+	if err != nil {
+		logger.Error("drift", "phase", "token", "err", err)
+		return 2
+	}
+
+	opts := drift.ProbeOptions{Logger: logger, Token: token}
 	if *diffDir != "" {
 		opts.Compare = func(id string) (any, bool) {
 			sig, err := drift.ReadSignature(*diffDir, id)
