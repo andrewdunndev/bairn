@@ -72,16 +72,18 @@ test:
 smoke:
 	go test -tags=smoke ./internal/...
 
-# Pre-tag gate. Runs the unit test suite and the live Immich
-# round-trip smoke. Treat this as the contract before `git tag`:
-# don't cut a release that doesn't pass both. The smoke is the
-# guard that would have caught the v0.4.3 device-field regression.
+# Pre-tag gate. Runs lint, the unit test suite, and the live
+# Immich round-trip smoke. Treat this as the contract before
+# `git tag`: don't cut a release that doesn't pass all three. The
+# smoke is the guard that would have caught the v0.4.3 device-
+# field regression.
 #
+# Requires golangci-lint on PATH (mise: `mise install golangci-lint`).
 # Requires IMMICH_BAIRN_HOST/USER/PASSWORD (or IMMICH_BASE_URL/
 # IMMICH_API_KEY) so the smoke can reach an Immich.
-pre-tag-check: test smoke-immich
+pre-tag-check: lint test smoke-immich
 	@echo
-	@echo "✓ unit tests + live Immich smoke passed."
+	@echo "✓ lint + unit tests + live Immich smoke passed."
 	@echo "  Safe to git tag."
 
 lint:

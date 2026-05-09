@@ -26,7 +26,7 @@ func filter(raw any, t reflect.Type) any {
 	if raw == nil || t == nil {
 		return raw
 	}
-	for t.Kind() == reflect.Ptr {
+	for t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	switch t.Kind() {

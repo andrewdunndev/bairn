@@ -31,7 +31,11 @@ type pointed struct {
 	Sender *addr `json:"sender,omitempty"`
 }
 
-type customTime struct{ raw string }
+// customTime simulates a struct type whose JSON shape is a scalar
+// (custom UnmarshalJSON). The fields are irrelevant to the test;
+// what matters is that filter passes the raw value through when
+// the schema declares a struct but the wire value isn't a map.
+type customTime struct{}
 
 type withTime struct {
 	When customTime `json:"when"`

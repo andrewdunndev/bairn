@@ -347,7 +347,7 @@ func fieldNameFromMessage(msg string) string {
 		return ""
 	}
 	c := candidate[0]
-	if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')) {
+	if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') {
 		return ""
 	}
 	return candidate

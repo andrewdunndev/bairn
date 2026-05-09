@@ -4,7 +4,7 @@
 
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 ![Go](https://img.shields.io/badge/lang-Go_1.25+-00ADD8?logo=go&logoColor=white)
-![version](https://img.shields.io/badge/version-v0.1.0-blue)
+[![release](https://gitlab.com/dunn.dev/bairn/-/badges/release.svg)](https://gitlab.com/dunn.dev/bairn/-/releases)
 ![Built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)
 
 A personal archive tool for [Famly][famly]-using households. bairn
@@ -229,7 +229,7 @@ make gen           regenerate api/famly/gen.go and api/immich/imapi/imapi.go
 make test          go test -race ./...
 make smoke         run the longer-running fixture tests
 make smoke-immich  live round-trip against the operator's Immich
-make pre-tag-check test + smoke-immich (run before git tag)
+make pre-tag-check lint + test + smoke-immich (run before git tag)
 make lint          golangci-lint run
 make build         bin/bairn for the host
 make build-linux   bin/bairn-linux-amd64 (headless server deploy)
@@ -245,12 +245,13 @@ Before cutting a release tag, run:
 make pre-tag-check
 ```
 
-That runs the unit suite **and** a real-server round-trip against
-your Immich: login, mint an ephemeral API key, upload a tiny JPEG
-via the production sink, assert created, delete the asset, delete
-the API key. The round-trip catches controller-layer wire-contract
-enforcement that no static spec models. v0.4.3 shipped without
-this gate and broke uploads against Immich v2.7.5; v0.4.6 added it.
+That runs golangci-lint, the unit suite, **and** a real-server
+round-trip against your Immich: login, mint an ephemeral API key,
+upload a tiny JPEG via the production sink, assert created, delete
+the asset, delete the API key. The round-trip catches controller-
+layer wire-contract enforcement that no static spec models. v0.4.3
+shipped without this gate and broke uploads against Immich v2.7.5;
+v0.4.6 added the smoke and v0.5.0 folded lint into the same gate.
 
 `make smoke-immich` reads `IMMICH_BAIRN_HOST` /
 `IMMICH_BAIRN_USER` / `IMMICH_BAIRN_PASSWORD` (recommended: a
