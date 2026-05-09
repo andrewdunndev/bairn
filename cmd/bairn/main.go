@@ -20,7 +20,7 @@ import (
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "0.4.4"
+var Version = "0.4.5"
 
 const usage = `usage: bairn <subcommand> [flags]
 

@@ -77,6 +77,20 @@ type UploadInput struct {
 	FileCreatedAt  time.Time
 	FileModifiedAt time.Time
 
+	// DeviceID identifies the upload client. Required by the live
+	// Immich server (>= v2.7.5) even though it is absent from
+	// AssetMediaCreateDto in the published OpenAPI spec; v0.4.3
+	// trusted the spec, dropped this, and broke uploads. Stable
+	// across bairn versions so Immich's per-device library state
+	// is preserved.
+	DeviceID string
+
+	// DeviceAssetID is a client-side unique identifier for the
+	// asset. Required by the live server (see DeviceID note).
+	// bairn passes the vendor's stable image ID so Immich can
+	// dedupe at the device layer across bairn re-runs.
+	DeviceAssetID string
+
 	// Metadata is an arbitrary key/value bag persisted with the
 	// asset on the Immich side. bairn writes "famlyImageId" with
 	// the vendor's image ID for traceability.
@@ -152,17 +166,20 @@ func (c *Client) Upload(ctx context.Context, in UploadInput) (*UploadResult, err
 
 // buildUploadBody assembles the multipart payload Immich expects.
 //
-// Wire shape matches AssetMediaCreateDto in api/immich/openapi.json
-// (vendored from immich-app/immich main; refresh via
-// `make refresh-immich-spec`). Required fields: assetData,
-// fileCreatedAt, fileModifiedAt. Metadata is one JSON-array field
-// of {key, value:object} items per AssetMetadataUpsertItemDto.
-//
 // Wire format targets Immich >= v2.7.5 (post-zod-migration; upstream
-// PR immich-app/immich#26597, April 2026). Older Immich versions
-// were tolerant of looser shapes (per-entry metadata fields, string
-// values without object wrap) under class-validator; the migration
-// to zod hardened validation around the spec already published.
+// PR immich-app/immich#26597, April 2026). Required fields per the
+// LIVE SERVER (verified against v2.7.5):
+//   - assetData, fileCreatedAt, fileModifiedAt
+//   - deviceId, deviceAssetId
+//   - metadata items each with `value` as an object
+//
+// The published OpenAPI spec at api/immich/openapi.json does NOT
+// list deviceId / deviceAssetId on AssetMediaCreateDto. The live
+// server enforces them anyway. v0.4.3 trusted the spec, dropped the
+// fields, and broke uploads. v0.4.5 restores them per a downstream
+// user's runtime evidence (MR !2). Future spec drift in either
+// direction is one `make refresh-immich-spec` away from being
+// re-evaluated; live-server testing remains the truth.
 func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -172,6 +189,15 @@ func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 		return nil, "", err
 	}
 	if err := w.WriteField("fileModifiedAt", in.FileModifiedAt.UTC().Format(time.RFC3339)); err != nil {
+		return nil, "", err
+	}
+
+	// AssetMediaBase device fields. Server-required since v2.7.5.
+	// See type doc for the spec-vs-server mismatch.
+	if err := w.WriteField("deviceId", in.DeviceID); err != nil {
+		return nil, "", err
+	}
+	if err := w.WriteField("deviceAssetId", in.DeviceAssetID); err != nil {
 		return nil, "", err
 	}
 
