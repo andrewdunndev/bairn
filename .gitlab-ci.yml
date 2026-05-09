@@ -1,6 +1,16 @@
 default:
   tags:
     - storr
+  interruptible: true
+
+# v2.0.0 catalog: auto-cancel build/test on superseded MR pushes;
+# release-stage jobs (template-side interruptible: false) continue.
+# on_job_failure: all stops the pipeline the moment a release-blocking
+# job fails so we don't keep signing/uploading after a fail.
+workflow:
+  auto_cancel:
+    on_new_commit: interruptible
+    on_job_failure: all
 
 stages:
   - lint
@@ -22,79 +32,87 @@ include:
   # docs/decisions/0007-llm-augmented-ci.md for the relationship-side
   # reasoning. The component stays included so a future change of
   # posture is a one-line flip.
-  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@v1.8.0
+  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@2.0.0
     inputs:
       drift_command: "echo ''"
       issue_on_drift: true
       issue_label: "drift,ai-triaged"
       stage: drift-triage
 
-  # Lint-stage govulncheck against the source. Allow_failure by
-  # default; vulnerability database changes shouldn't block a
-  # release, but the report is still visible in the pipeline.
-  - component: gitlab.com/dunn.dev/pipeline/go-audit@v1.8.0
+  # Lint-stage golangci-lint via the catalog's pinned ci-go. Real
+  # gate (no allow_failure). The previous bespoke
+  # docker.io/golangci/golangci-lint:latest-alpine path forced
+  # allow_failure to absorb rate-cap pull flakes; that workaround
+  # was masking real lint hits.
+  - component: gitlab.com/dunn.dev/pipeline/go-lint@2.0.0
 
-  # Branch verification: cross-compile linux/amd64 + darwin/arm64
-  # on every push. Skipped on tag pipelines.
-  - component: gitlab.com/dunn.dev/pipeline/go-build@v1.8.0
+  # Lint-stage govulncheck. Allow_failure by default (vuln-DB
+  # shifts shouldn't block a release).
+  - component: gitlab.com/dunn.dev/pipeline/go-audit@2.0.0
+
+  # Branch verification: parallel:matrix cross-compile on every
+  # push (linux/amd64, linux/arm64, darwin/arm64). Module-cached.
+  # Skipped on tag pipelines (go-release-binary supersedes).
+  - component: gitlab.com/dunn.dev/pipeline/go-build@2.0.0
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
 
-  # Tag-only: cross-compile, generate checksums, sign each binary
-  # keyless via cosign + GitLab OIDC, upload everything to the
-  # project's generic package registry.
-  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@v1.8.0
+  # Tag-only: parallel:matrix cross-compile + per-binary cosign
+  # signature + per-binary .sha256 + upload to package registry.
+  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@2.0.0
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
       package_name: bairn
 
-  # Tag-only: CycloneDX SBOM per binary via syft, uploaded
-  # alongside the binaries.
-  - component: gitlab.com/dunn.dev/pipeline/go-sbom@v1.8.0
+  # Tag-only: CycloneDX SBOM per binary via syft.
+  - component: gitlab.com/dunn.dev/pipeline/go-sbom@2.0.0
     inputs:
       package_name: bairn
 
-  # Tag-only: SLSA v1.0 provenance per binary, keyless-signed via
-  # cosign + GitLab OIDC. Bundles upload to the project's
-  # provenance package.
-  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@v1.8.0
+  # Tag-only: SLSA v1.0 provenance per binary, cosign-signed via
+  # GitLab OIDC keyless.
+  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@2.0.0
 
-  # Tag-only: create the GitLab Release record from the annotated
-  # tag's message, then link the binaries, checksums, SBOMs, and
-  # SLSA attestations as Release assets.
-  - component: gitlab.com/dunn.dev/pipeline/release-create@v1.8.0
+  # Tag-only: GitLab Release with binaries + SBOMs + attestations
+  # linked. Idempotent across pipeline reruns.
+  - component: gitlab.com/dunn.dev/pipeline/release-create@2.0.0
     inputs:
       package_name: bairn
       release_title: "bairn $CI_COMMIT_TAG"
 
   # Container build: ships an OCI image alongside each tagged
-  # release at registry.gitlab.com/dunn.dev/bairn/cli:vX.Y.Z (and
-  # :latest). tag_pipeline: true makes the catalog component fire
-  # on every tag; VERSION is forwarded into the Containerfile as a
-  # build-arg so the embedded binary's --version reports the tag.
-  - component: gitlab.com/dunn.dev/pipeline/container-image@v1.8.0
+  # release at registry.gitlab.com/dunn.dev/bairn/cli:vX.Y.Z.
+  #
+  # from_artifacts: true means the Containerfile is a thin runtime
+  # layer that COPYs the already-built, cosign-signed binary from
+  # go-release-binary's dist/ output. Provable byte-for-byte parity
+  # between the binary verifiable via cosign verify-blob and the
+  # one running inside the container.
+  #
+  # multi_arch: false in v0.5.0 (storr runner's qemu-user-static
+  # support is unverified; flipping to true in v0.5.1 after confirming).
+  # Apple Silicon / Graviton users can still run via emulation
+  # against the amd64 image; flipping to multi_arch: true means
+  # native-arch images, no emulation overhead.
+  #
+  # sign_image: true cosign-signs the pushed image by digest.
+  - component: gitlab.com/dunn.dev/pipeline/container-image@2.0.0
     inputs:
       containerfile: Containerfile
       image_tag: cli
       stage: package
       tag_pipeline: true
+      from_artifacts: true
+      multi_arch: false
+      sign_image: true
 
-# test + drift-gate use the catalog's ci-go image (authenticated
-# pull from registry.gitlab.com, no docker.io rate cap). lint pulls
-# golangci/golangci-lint from docker.io and is allow_failure - any
-# transient pull failure surfaces as a non-blocking lint skip.
-lint:
-  stage: lint
-  image: golangci/golangci-lint:latest-alpine
-  script:
-    - golangci-lint run ./...
-  allow_failure: true
-
+# test uses the catalog's pinned ci-go image. Pinning to v2.0.0
+# matches the catalog tag bairn pins; keeps tooling deliberate.
 test:
   stage: test
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.0
   script:
     - go test -race ./...
 
@@ -115,37 +133,33 @@ test:
 # see this job fail at tag time; that is the intended signal.
 drift-gate:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.0
+  interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
   rules:
     - if: $CI_COMMIT_TAG
 
-# Tag-only pre-release drift gate against the operator's Immich
-# server. Same posture as the Famly drift gate: detects shape
-# changes in the Immich endpoints bairn touches before a release
-# ships against an upstream that has moved on (Immich is moving
-# toward v3 with breaking /assets contract changes).
+# Pre-release drift gate against the operator's Immich server.
+# Only fires on web/api triggers (operator-initiated, can pre-set
+# IMMICH_BASE_URL/IMMICH_API_KEY for the run). NOT on tag pipelines:
+# the storr runner cannot reach a typical homelab Immich (LAN
+# service, no NAT hairpin), and the previous tag-rule with
+# allow_failure: true was decorating every release with a red X
+# and training operators to ignore the signal.
 #
-# allow_failure: true because the storr runner cannot reach the
-# operator's Immich server unless IMMICH_BASE_URL is reachable from
-# CI (often it is not — Immich is typically a homelab/LAN service).
-# A forker without IMMICH_BASE_URL/IMMICH_API_KEY set sees this
-# job fail without blocking the tag pipeline.
-#
-# Operator who wants strict gating: set IMMICH_BASE_URL +
-# IMMICH_API_KEY as masked + protected CI variables, and override
-# allow_failure: false in their fork.
+# Local equivalent: `make pre-tag-check` runs the live smoke
+# before `git tag`; that's the actual gate.
 drift-gate-immich:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.0
+  interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest-immich.toml --diff discovery/baselines/main-immich
   rules:
-    - if: $CI_COMMIT_TAG
-  allow_failure: true
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"
 
 # Write-side smoke test against the operator's Immich. Round-trip:
 # login → mint ephemeral API key → upload tiny JPEG via bairn's
@@ -153,21 +167,14 @@ drift-gate-immich:
 # API key. Catches controller-layer wire-contract enforcement that
 # no vendored OpenAPI / TypeScript schema captures.
 #
-# Reads IMMICH_BAIRN_HOST / IMMICH_BAIRN_USER / IMMICH_BAIRN_PASSWORD
-# (set as masked + protected CI variables; the smoke skips with a
-# clear error when they're absent).
-#
-# allow_failure: true on every rule. Flip to false on web/api
-# triggers if your runner can reliably reach the configured
-# Immich host. Until then, run `make smoke-immich` locally before
-# tagging — see README "Pre-tag gate".
+# Same web/api-only posture as drift-gate-immich. The local
+# `make pre-tag-check` is the tag-time gate.
 smoke-immich:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.0
+  interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
     - bin/bairn smoke immich
   rules:
     - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"
-    - if: $CI_COMMIT_TAG
-  allow_failure: true
