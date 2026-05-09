@@ -15,7 +15,7 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [0.5.0] - 2026-05-09
 
-This release rebases bairn's CI onto the `dunn.dev/pipeline@2.0.2`
+This release rebases bairn's CI onto the `dunn.dev/pipeline@2.0.3`
 catalog overhaul. Tooling (golangci-lint, govulncheck, syft,
 cosign, Go itself) is now provably pinned to the catalog tag
 bairn references; previously templates floated tooling via
@@ -47,7 +47,7 @@ identical to v0.4.6.
 
 ### Changed
 
-- All catalog includes bumped to `@2.0.2`. See
+- All catalog includes bumped to `@2.0.3`. See
   `dunn.dev/pipeline` CHANGELOG.md for the catalog overhaul
   scope (component context interpolation, parallel:matrix,
   module cache, input validation, multi-arch container builds,
@@ -82,7 +82,7 @@ identical to v0.4.6.
   `make pre-tag-check` is the actual tag-time gate.
 
 - `test`, `drift-gate`, `smoke-immich`, `drift-gate-immich` now
-  pull `ci-go:2.0.2` (was `:latest`). Pinned tooling matches
+  pull `ci-go:2.0.3` (was `:latest`). Pinned tooling matches
   the catalog version bairn references.
 
 ### Fixed
