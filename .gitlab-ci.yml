@@ -146,3 +146,28 @@ drift-gate-immich:
   rules:
     - if: $CI_COMMIT_TAG
   allow_failure: true
+
+# Write-side smoke test against the operator's Immich. Round-trip:
+# login → mint ephemeral API key → upload tiny JPEG via bairn's
+# actual Upload code path → assert created → delete asset → delete
+# API key. Catches controller-layer wire-contract enforcement that
+# no vendored OpenAPI / TypeScript schema captures.
+#
+# Reads IMMICH_BAIRN_HOST / IMMICH_BAIRN_USER / IMMICH_BAIRN_PASSWORD
+# (set as masked + protected CI variables; the smoke skips with a
+# clear error when they're absent).
+#
+# allow_failure: true on every rule. Flip to false on web/api
+# triggers if your runner can reliably reach the configured
+# Immich host. Until then, run `make smoke-immich` locally before
+# tagging — see README "Pre-tag gate".
+smoke-immich:
+  stage: drift-gate
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
+  script:
+    - go build -o bin/bairn ./cmd/bairn
+    - bin/bairn smoke immich
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"
+    - if: $CI_COMMIT_TAG
+  allow_failure: true

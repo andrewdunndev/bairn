@@ -225,15 +225,45 @@ operator supplies coordinates explicitly.
 ## Local dev and smoke testing
 
 ```
-make gen        regenerate api/famly/gen.go and api/immich/imapi/imapi.go
-make test       go test -race ./...
-make smoke      run the longer-running fixture tests
-make lint       golangci-lint run
-make build      bin/bairn for the host
-make build-linux  bin/bairn-linux-amd64 (headless server deploy)
-make build-darwin bin/bairn-darwin-arm64 (Apple Silicon laptop)
-make build-all    both of the above
+make gen           regenerate api/famly/gen.go and api/immich/imapi/imapi.go
+make test          go test -race ./...
+make smoke         run the longer-running fixture tests
+make smoke-immich  live round-trip against the operator's Immich
+make pre-tag-check test + smoke-immich (run before git tag)
+make lint          golangci-lint run
+make build         bin/bairn for the host
+make build-linux   bin/bairn-linux-amd64 (headless server deploy)
+make build-darwin  bin/bairn-darwin-arm64 (Apple Silicon laptop)
+make build-all     both of the above
 ```
+
+### Pre-tag gate
+
+Before cutting a release tag, run:
+
+```
+make pre-tag-check
+```
+
+That runs the unit suite **and** a real-server round-trip against
+your Immich: login, mint an ephemeral API key, upload a tiny JPEG
+via the production sink, assert created, delete the asset, delete
+the API key. The round-trip catches controller-layer wire-contract
+enforcement that no static spec models. v0.4.3 shipped without
+this gate and broke uploads against Immich v2.7.5; v0.4.6 added it.
+
+`make smoke-immich` reads `IMMICH_BAIRN_HOST` /
+`IMMICH_BAIRN_USER` / `IMMICH_BAIRN_PASSWORD` (recommended: a
+quota-limited test user separate from your archive account), or
+falls back to `IMMICH_BASE_URL` / `IMMICH_API_KEY` for ad-hoc
+runs. The same gate is wired into CI as the `smoke-immich` job;
+it's `allow_failure: true` by default so a forker without the
+vars set sees yellow but isn't blocked.
+
+For the no-write case (auditing a server you can't upload to),
+`bairn smoke immich --probe-only` sends a deliberately incomplete
+POST and parses the validator's rejection. `--capture <path>`
+writes the captured required-field set as a static manifest.
 
 `make gen` requires a populated `discovery/baselines/__schema.json`
 for Famly. The schema dump is gitignored; each operator runs

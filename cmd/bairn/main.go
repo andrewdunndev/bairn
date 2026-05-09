@@ -29,6 +29,7 @@ subcommands:
   fetch    pull new photos and videos to disk (and Immich, if configured)
   status   summarise the most recent fetch
   drift    check the vendor surface for schema drift
+  smoke    non-destructive contract probe of a sink's live validator
 
 run "bairn <sub> -h" for subcommand flags.
 `
@@ -58,6 +59,8 @@ func main() {
 		os.Exit(runStatus(ctx, cfg, logger, os.Args[2:]))
 	case "drift":
 		os.Exit(runDrift(ctx, cfg, logger, os.Args[2:]))
+	case "smoke":
+		os.Exit(runSmoke(ctx, cfg, logger, os.Args[2:]))
 	case "-h", "--help", "help":
 		fmt.Print(usage)
 	default:
