@@ -32,7 +32,7 @@ include:
   # docs/decisions/0007-llm-augmented-ci.md for the relationship-side
   # reasoning. The component stays included so a future change of
   # posture is a one-line flip.
-  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@2.0.2
     inputs:
       drift_command: "echo ''"
       issue_on_drift: true
@@ -44,40 +44,40 @@ include:
   # docker.io/golangci/golangci-lint:latest-alpine path forced
   # allow_failure to absorb rate-cap pull flakes; that workaround
   # was masking real lint hits.
-  - component: gitlab.com/dunn.dev/pipeline/go-lint@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/go-lint@2.0.2
 
   # Lint-stage govulncheck. Allow_failure by default (vuln-DB
   # shifts shouldn't block a release).
-  - component: gitlab.com/dunn.dev/pipeline/go-audit@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/go-audit@2.0.2
 
   # Branch verification: parallel:matrix cross-compile on every
   # push (linux/amd64, linux/arm64, darwin/arm64). Module-cached.
   # Skipped on tag pipelines (go-release-binary supersedes).
-  - component: gitlab.com/dunn.dev/pipeline/go-build@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/go-build@2.0.2
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
 
   # Tag-only: parallel:matrix cross-compile + per-binary cosign
   # signature + per-binary .sha256 + upload to package registry.
-  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@2.0.2
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
       package_name: bairn
 
   # Tag-only: CycloneDX SBOM per binary via syft.
-  - component: gitlab.com/dunn.dev/pipeline/go-sbom@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/go-sbom@2.0.2
     inputs:
       package_name: bairn
 
   # Tag-only: SLSA v1.0 provenance per binary, cosign-signed via
   # GitLab OIDC keyless.
-  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@2.0.2
 
   # Tag-only: GitLab Release with binaries + SBOMs + attestations
   # linked. Idempotent across pipeline reruns.
-  - component: gitlab.com/dunn.dev/pipeline/release-create@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/release-create@2.0.2
     inputs:
       package_name: bairn
       release_title: "bairn $CI_COMMIT_TAG"
@@ -98,7 +98,7 @@ include:
   # native-arch images, no emulation overhead.
   #
   # sign_image: true cosign-signs the pushed image by digest.
-  - component: gitlab.com/dunn.dev/pipeline/container-image@2.0.1
+  - component: gitlab.com/dunn.dev/pipeline/container-image@2.0.2
     inputs:
       containerfile: Containerfile
       image_tag: cli
@@ -108,22 +108,12 @@ include:
       multi_arch: false
       sign_image: true
 
-# Override container-image rules to tag-only. The catalog v2.0.1
-# template still fires on main+Containerfile-changed, but with
-# from_artifacts:true there's no upstream dist/ on main pushes →
-# COPY fails → on_job_failure:all cancels everything.
-# Catalog 2.0.2 will fix this template-side; until then this
-# rules: override is the consumer-side guard. Drop after bumping
-# to @2.0.2.
-build-image:
-  rules:
-    - if: $CI_COMMIT_TAG
 
 # test uses the catalog's pinned ci-go image. Pinning to v2.0.0
 # matches the catalog tag bairn pins; keeps tooling deliberate.
 test:
   stage: test
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.1
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.2
   script:
     - go test -race ./...
 
@@ -144,7 +134,7 @@ test:
 # see this job fail at tag time; that is the intended signal.
 drift-gate:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.1
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.2
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
@@ -164,7 +154,7 @@ drift-gate:
 # before `git tag`; that's the actual gate.
 drift-gate-immich:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.1
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.2
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
@@ -182,7 +172,7 @@ drift-gate-immich:
 # `make pre-tag-check` is the tag-time gate.
 smoke-immich:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.1
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.0.2
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
