@@ -160,14 +160,13 @@ import Layout from '../layouts/Layout.astro';
       <div class="tile">
         <p class="tile-eyebrow">option b</p>
         <h3 class="tile-headline">Prebuilt binary</h3>
-        <pre>curl -L -o bairn https://gitlab.com/dunn.dev/bairn/-/releases/permalink/latest/downloads/bairn-linux-amd64
-chmod +x bairn</pre>
+        <pre>curl -L -o bairn https://gitlab.com/dunn.dev/bairn/-/releases/permalink/latest/downloads/bairn-linux-amd64</pre>
         <p class="tile-prose">
           Cosign-signed binary from the
-          <a href="https://gitlab.com/dunn.dev/bairn/-/releases">releases page</a>
-          — pair the download with the matching <code>.sig</code>
-          and verify against the GitLab OIDC issuer before running.
-          The hardened option that doesn't ask you to install a
+          <a href="https://gitlab.com/dunn.dev/bairn/-/releases">releases page</a>.
+          Pair the download with the matching <code>.sig</code> and
+          verify against the GitLab OIDC issuer before running. The
+          hardened option that doesn't ask you to install a Go
           toolchain.
         </p>
         <p class="tile-meta">linux/amd64 · linux/arm64 · darwin/arm64 · cosign</p>
@@ -175,19 +174,14 @@ chmod +x bairn</pre>
       <div class="tile">
         <p class="tile-eyebrow">option c</p>
         <h3 class="tile-headline">Container image</h3>
-        <pre>podman pull registry.gitlab.com/dunn.dev/bairn/cli:latest
-podman run --rm \
-  -v "$PWD/archive:/archive" \
-  -v "$PWD/config.toml:/config.toml:ro" \
-  registry.gitlab.com/dunn.dev/bairn/cli:latest \
-  --config /config.toml --out /archive</pre>
+        <pre>podman pull registry.gitlab.com/dunn.dev/bairn/cli:latest</pre>
         <p class="tile-prose">
           The OCI image is the prebuilt binary copied into a thin
-          runtime layer; the binary inside the image is the same
-          cosign-signed artifact as option B (byte-for-byte). Best
-          for cron on a homelab box where you don't want Go or a
-          random binary on disk. The image itself is cosign-signed
-          by digest.
+          runtime layer — same cosign-signed artifact as option B,
+          byte-for-byte. Best for cron on a homelab box where you
+          don't want Go or a loose binary on disk. The image itself
+          is cosign-signed by digest. Mount your archive and config
+          in via <code>-v</code> at run-time.
         </p>
         <p class="tile-meta">oci · cosign-signed-by-digest · rootless-ok</p>
       </div>
