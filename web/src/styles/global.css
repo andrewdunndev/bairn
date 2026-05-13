@@ -130,43 +130,98 @@ main.page {
   margin: 0 0 var(--space-6) 0;
 }
 
-/* hero: glyph on the left, title block on the right */
+/* hero: full-width type with a decorative glyph floated upper-right
+   at desktop. The title scales fluidly so it always fills the
+   column width at any viewport above mobile. */
 .hero {
-  display: grid;
-  grid-template-columns: 200px 1fr;
-  gap: var(--space-6);
-  align-items: center;
-  padding: var(--space-4) 0 var(--space-6) 0;
+  position: relative;
+  padding: var(--space-7) 0 var(--space-6) 0;
   border-bottom: 1px solid var(--border);
-  margin-bottom: var(--space-6);
+  margin-bottom: var(--space-7);
 }
 .hero-glyph {
-  width: 100%;
+  position: absolute;
+  top: var(--space-7);
+  right: 0;
+  width: 180px;
   height: auto;
-  max-width: 200px;
+  opacity: 0.95;
 }
 .hero-title {
-  font-size: var(--text-4xl, 3rem);
-  font-weight: 800;
+  font-size: clamp(3.5rem, 8vw, 6rem);
+  font-weight: 700;
+  margin: 0 0 var(--space-3) 0;
   color: var(--accent);
-  margin: 0 0 var(--space-2) 0;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.04em;
   line-height: 1;
 }
+.hero-lede {
+  font-size: var(--text-xl);
+  color: var(--text-2);
+  max-width: 60ch;
+  margin: 0 0 var(--space-3) 0;
+  line-height: 1.45;
+}
+.hero-lede em { color: var(--text); font-style: normal; font-weight: 600; }
 .hero-tagline {
   font-style: italic;
   color: var(--text-muted);
-  margin: var(--space-2) 0 0 0;
   font-size: var(--text-sm);
+  margin: 0 0 var(--space-5) 0;
+}
+.hero-cta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
 }
 @media (max-width: 720px) {
-  .hero {
-    grid-template-columns: 1fr;
-    gap: var(--space-3);
-    text-align: left;
-  }
-  .hero-glyph { max-width: 140px; }
+  .hero-glyph { position: static; width: 120px; margin-bottom: var(--space-4); }
+  .hero { padding-top: var(--space-5); }
 }
+
+.cta-primary {
+  display: inline-block;
+  padding: var(--space-3) var(--space-5);
+  background: var(--accent);
+  color: var(--bg);
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+}
+.cta-primary:hover { background: var(--dd-moss-500); text-decoration: none; }
+.cta-secondary {
+  display: inline-block;
+  padding: var(--space-3) var(--space-5);
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  font-weight: 600;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+}
+.cta-secondary:hover { background: var(--surface); text-decoration: none; }
+
+/* breathier section styling matching tutti's polish */
+.section-title {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--text);
+  margin: var(--space-7) 0 var(--space-4) 0;
+  letter-spacing: -0.015em;
+}
+.section-prose {
+  color: var(--text-2);
+  max-width: 70ch;
+  margin: 0 0 var(--space-3) 0;
+  font-size: var(--text-md);
+  line-height: 1.6;
+}
+.section-prose em { color: var(--text); font-style: italic; font-weight: 500; }
+.section-prose code { font-size: 0.85em; }
 
 /* diagram frame: paper card around an inline SVG */
 .diagram {
@@ -256,43 +311,7 @@ blockquote.callout cite {
   font-style: normal;
 }
 
-.section {
-  margin: var(--space-7) 0 var(--space-5) 0;
-}
-.section h2 {
-  font-size: var(--text-2xl);
-  font-weight: 700;
-  margin: 0 0 var(--space-3) 0;
-  letter-spacing: -0.015em;
-}
-.section p {
-  max-width: 64ch;
-  color: var(--text);
-  margin: 0 0 var(--space-3) 0;
-}
-
-.what-list {
-  list-style: none;
-  padding: 0;
-  margin: var(--space-3) 0;
-  display: grid;
-  gap: var(--space-3);
-}
-.what-list li {
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: var(--space-3) var(--space-4);
-  background: var(--bg);
-}
-.what-list strong {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: var(--text-xs);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: var(--space-1);
-}
+.section { margin: var(--space-7) 0 var(--space-5) 0; }
 
 @media (max-width: 640px) {
   .site-header-inner { padding: var(--space-3) var(--space-4); gap: var(--space-2); }
