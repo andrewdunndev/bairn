@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 280" role="img" aria-label="A horizontal flow showing Famly on the left, bairn pulling photos onto disk in the middle, and the on-disk archive on the right; events that disrupt Famly (outages, account closures, API changes) terminate at a barrier and never reach the on-disk archive.">
+  <style>
+    .stage-title { font: 700 14px 'IBM Plex Mono', Menlo, monospace; letter-spacing: 0.06em; fill: #0a0a0a; text-transform: uppercase; }
+    .stage-sub { font: 400 12px 'IBM Plex Sans', system-ui, sans-serif; fill: #404040; }
+    .event { font: 400 11px 'IBM Plex Mono', Menlo, monospace; fill: #707070; letter-spacing: 0.04em; text-transform: uppercase; }
+    .barrier-label { font: 600 10px 'IBM Plex Mono', Menlo, monospace; fill: #4a6741; letter-spacing: 0.08em; text-transform: uppercase; }
+    .axis { stroke: #4a6741; stroke-width: 1.5; fill: none; }
+    .axis-arrow { fill: #4a6741; }
+    .flow { stroke: #4a6741; stroke-width: 1.5; fill: none; }
+    .disrupt { stroke: #c46b5c; stroke-width: 1.25; fill: none; stroke-dasharray: 4 3; }
+    .disrupt-end { stroke: #c46b5c; stroke-width: 2; fill: none; }
+  </style>
+
+  <!-- top axis: the time/flow line, left to right -->
+  <line class="axis" x1="40" y1="120" x2="660" y2="120"/>
+  <polygon class="axis-arrow" points="660,120 652,116 652,124"/>
+
+  <!-- stage 1: Famly (vendor) -->
+  <rect x="60" y="80" width="140" height="80" rx="3" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text class="stage-title" x="130" y="108" text-anchor="middle">famly</text>
+  <text class="stage-sub" x="130" y="128" text-anchor="middle">nursery feed</text>
+  <text class="stage-sub" x="130" y="144" text-anchor="middle">photos, captions</text>
+
+  <!-- arrow famly → bairn -->
+  <line class="flow" x1="200" y1="120" x2="290" y2="120"/>
+  <polygon class="axis-arrow" points="290,120 282,116 282,124"/>
+  <text class="event" x="245" y="111" text-anchor="middle">pull</text>
+
+  <!-- stage 2: bairn (the binary) -->
+  <rect x="290" y="80" width="140" height="80" rx="3" fill="none" stroke="#4a6741" stroke-width="2"/>
+  <text class="stage-title" x="360" y="108" text-anchor="middle" fill="#4a6741">bairn</text>
+  <text class="stage-sub" x="360" y="128" text-anchor="middle">one binary</text>
+  <text class="stage-sub" x="360" y="144" text-anchor="middle">your machine</text>
+
+  <!-- arrow bairn → disk -->
+  <line class="flow" x1="430" y1="120" x2="520" y2="120"/>
+  <polygon class="axis-arrow" points="520,120 512,116 512,124"/>
+  <text class="event" x="475" y="111" text-anchor="middle">write</text>
+
+  <!-- stage 3: on-disk archive -->
+  <rect x="520" y="80" width="140" height="80" rx="3" fill="none" stroke="#0a0a0a" stroke-width="1.5"/>
+  <text class="stage-title" x="590" y="108" text-anchor="middle">your disk</text>
+  <text class="stage-sub" x="590" y="128" text-anchor="middle">dated folders</text>
+  <text class="stage-sub" x="590" y="144" text-anchor="middle">EXIF · XMP embedded</text>
+
+  <!-- the barrier: vertical line between bairn and disk where vendor problems terminate -->
+  <line class="disrupt-end" x1="475" y1="195" x2="475" y2="270"/>
+  <text class="barrier-label" x="498" y="234" text-anchor="start">vendor</text>
+  <text class="barrier-label" x="498" y="248" text-anchor="start">survives</text>
+
+  <!-- three disruption events that originate at the vendor (left) and terminate at the barrier -->
+  <line class="disrupt" x1="130" y1="200" x2="467" y2="210"/>
+  <text class="event" x="130" y="195" text-anchor="middle">outages</text>
+
+  <line class="disrupt" x1="130" y1="232" x2="467" y2="225"/>
+  <text class="event" x="130" y="249" text-anchor="middle">account closures</text>
+
+  <line class="disrupt" x1="290" y1="248" x2="467" y2="240"/>
+  <text class="event" x="290" y="265" text-anchor="middle">api changes</text>
+</svg>

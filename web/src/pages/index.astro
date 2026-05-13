@@ -1,77 +1,186 @@
 ---
 import Layout from '../layouts/Layout.astro';
 ---
-<Layout title="Home" description="A personal archive tool for Famly-using households. Pulls your kid's photos and videos from the nursery feed onto your own disk with full EXIF and XMP metadata.">
-  <p class="page-eyebrow">photo archive · cli</p>
-  <h1 class="page-title">bairn</h1>
-  <p class="page-lede">
-    A personal archive for Famly-using households. <code>bairn</code>
-    pulls your kid's photos and videos from the nursery feed onto your
-    own disk, with the post body, the educator's name, and the date
-    embedded into each file via EXIF and XMP. Your child's photo
-    history does not depend on Famly continuing to exist as a company.
-  </p>
+<Layout title="Home" description="A personal photo archive for Famly-using households. bairn pulls your kid's photos and videos from the nursery feed onto your own disk with the post body, the educator's name, and the date embedded into each file via EXIF and XMP — so your child's history doesn't depend on Famly continuing to exist as a company.">
+  <header class="hero">
+    <img class="hero-glyph" src="/album-glyph.svg" alt="" />
+    <div>
+      <p class="page-eyebrow">photo archive · cli</p>
+      <h1 class="hero-title">bairn</h1>
+      <p class="page-lede" style="margin-bottom:0">
+        Photos and videos from your kid's daycare, kept on your disk,
+        in a form that outlives the vendor.
+      </p>
+      <p class="hero-tagline">collected moments of early learning.</p>
+    </div>
+  </header>
 
   <section class="section">
-    <h2>What it does</h2>
-    <ul class="what-list">
-      <li>
-        <strong>Pull</strong>
-        Reads your Famly nursery feed and downloads every photo and
-        video it has access to, into date-organized folders on disk.
-      </li>
-      <li>
-        <strong>Embed</strong>
-        Writes the caption, the educator's name, the date, and the kid
-        tags into the file's own EXIF and XMP metadata — readable by
-        any photo viewer or archival workflow, today and in twenty
-        years.
-      </li>
-      <li>
-        <strong>Resume</strong>
-        Re-running is safe. Already-downloaded items are skipped; only
-        new posts since the last run are fetched.
-      </li>
-      <li>
-        <strong>Survive the vendor</strong>
-        Once a file is on disk with metadata embedded, Famly going
-        away, your account closing, or the API breaking does not lose
-        the history. The on-disk copy is the source of truth.
-      </li>
-    </ul>
+    <h2>What this is</h2>
+    <p>
+      Your daycare uses Famly. Every week the educators post a stream
+      of photos and short videos of your kid: lunch, the sand pit, a
+      collage they made on Wednesday, the moment they tried a new word.
+      Famly is built for the in-the-moment surfacing of that stream.
+      It is not built to be a long-term archive of your child's first
+      years.
+    </p>
+    <p>
+      <code>bairn</code> is a single Go binary that you run on your own
+      machine, against your own household, with your own login. It
+      pulls every photo and video the educators have posted, writes
+      them into date-organized folders on your disk, and embeds the
+      caption, the educator's name, the kid tags, and the date into
+      each file's own EXIF and XMP metadata. Any photo viewer or
+      future archival workflow can read those fields — today, and in
+      twenty years.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2>The vendor survives</h2>
+    <p>
+      The reason this matters is that an in-app feed is a handle to a
+      service, not an artifact. When the company changes its mind
+      about retention, sells to a different parent, deprecates the
+      mobile app, or simply goes away, what you remember of your
+      child's first three years of childcare goes with it.
+    </p>
+    <figure class="diagram">
+      <img src="/vendor-survives.svg" alt="Flow diagram: Famly's nursery feed flows into bairn, which writes to your disk. Outages, account closures, and API changes originate at Famly but terminate at a barrier between bairn and the disk — the on-disk archive is unaffected." />
+      <p class="diagram-caption">disruption stops at the disk boundary</p>
+    </figure>
+    <p>
+      Once the bytes are on your disk with metadata embedded, none of
+      those vendor outcomes touches the history. The file is the
+      artifact, not a handle to a service.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2>How <code>bairn</code> is shaped</h2>
+    <div class="pillars">
+      <div class="pillar">
+        <p class="pillar-eyebrow">flow · in</p>
+        <p class="pillar-headline">feed pages</p>
+        <p class="pillar-prose">
+          Famly's parent-side GraphQL surface, walked one page at a
+          time at the rate a single human user would naturally
+          generate. Schema introspected from the live endpoint, types
+          codegen'd, response shapes pinned by a drift baseline.
+        </p>
+        <p class="pillar-spec">graphql · typed · introspected</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-eyebrow">discipline · posture</p>
+        <p class="pillar-headline">personal</p>
+        <p class="pillar-prose">
+          One household, one operator, one set of credentials. No
+          aggregation across families, no telemetry, no shared
+          identifiers, no third-party calls. The binary doesn't know
+          there is more than one of you.
+        </p>
+        <p class="pillar-spec">one household · rate-limited</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-eyebrow">flow · out</p>
+        <p class="pillar-headline">files</p>
+        <p class="pillar-prose">
+          JPEG and MP4 written to dated folders on your disk, with the
+          caption, the educator's name, the kid tags, and the date
+          embedded as EXIF and XMP. Optionally pushed into Immich
+          after the on-disk write; the disk copy is always the source
+          of truth.
+        </p>
+        <p class="pillar-spec">disk first · immich optional</p>
+      </div>
+      <div class="pillar">
+        <p class="pillar-eyebrow">discipline · lifetime</p>
+        <p class="pillar-headline">archival</p>
+        <p class="pillar-prose">
+          The file is the artifact, not a handle to a service.
+          Open formats, standard metadata, no proprietary container.
+          Readable in any year by any tool that has ever read a
+          JPEG.
+        </p>
+        <p class="pillar-spec">exif/xmp · open format · any year</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <h2>Why Famly</h2>
+    <p>
+      Vendors fall along a spectrum when an outside party builds
+      against their surface. The hostile ones forbid access in their
+      terms and chase violations. The silent ones forbid access but
+      ignore violations and tolerate the drift. A third group — the
+      <em>engaged</em> ones — restricts usage in their terms,
+      acknowledges the use case in support interactions, and points
+      users toward self-service solutions. Famly is in that third
+      group.
+    </p>
+    <blockquote class="callout">
+      The stance Famly chose — decline gracefully, stay
+      architecturally inspectable, let users solve it themselves with
+      the help they have — is the right stance for a world where users
+      will increasingly act through agents.
+      <cite>
+        andrew.dunn.dev / a progressive vendor stance for the
+        agent-native future
+      </cite>
+    </blockquote>
+    <p>
+      That posture is what makes <code>bairn</code> possible. The
+      surface is inspectable, the schema is introspectable, and the
+      vendor's response when asked about export was to decline
+      gracefully and point at the surface they already publish. This
+      isn't a license — it's reputational, and the reciprocal
+      obligation is to stay careful: one household, one operator, the
+      rate a human generates, no aggregation, no resale, no agent
+      farm.
+    </p>
   </section>
 
   <section class="section">
     <h2>Install</h2>
-    <p>Single Go binary. Latest release lives on GitLab:</p>
+    <p>Single Go binary. Latest tagged release lives on GitLab:</p>
     <pre>go install gitlab.com/dunn.dev/bairn/cmd/bairn@latest</pre>
     <p>
-      Or grab a prebuilt binary from
+      Or grab a prebuilt, cosign-signed binary from
       <a href="https://gitlab.com/dunn.dev/bairn/-/releases">the releases page</a>
-      (linux/amd64, linux/arm64, darwin/arm64).
+      (linux/amd64, linux/arm64, darwin/arm64). The release also
+      ships a CycloneDX SBOM and a SLSA v1.0 provenance attestation
+      per binary, both verifiable against GitLab's OIDC issuer.
     </p>
   </section>
 
   <section class="section">
     <h2>Who this is for</h2>
     <p>
-      A parent, co-parent, or household admin whose kid's daycare uses
-      Famly and who wants a permanent local copy of every photo and
-      video the educators post, with metadata that survives any future
-      tooling change. If your school doesn't use Famly, or if you're
-      happy enough with how the mobile app surfaces history,
-      <code>bairn</code> is not for you.
+      A parent, co-parent, or household admin whose kid's daycare
+      uses Famly and who wants a permanent local copy of every photo
+      and video the educators post, with metadata that survives any
+      future tooling change.
+    </p>
+    <p>
+      If your school doesn't use Famly, or if you're happy enough
+      with how the mobile app surfaces history, <code>bairn</code>
+      is not for you. It's also not multi-tenant — one binary, one
+      household, one disk.
     </p>
   </section>
 
   <section class="section">
-    <h2>What it isn't</h2>
+    <h2>What this isn't</h2>
     <p>
-      Not a privacy gateway. Every piece of context the vendor exposes
-      lands inside the file you keep — that's the whole point of EXIF
-      and XMP for archival. What happens to those files after you have
-      them is your call. Not a multi-tenant service either: one
-      binary, one household, one disk.
+      Not a privacy gateway. Every piece of context the vendor
+      exposes lands inside the file you keep — that's the whole
+      point of EXIF and XMP for archival. What happens to those
+      files after you have them is your call. Not a scraping service
+      either: one operator, the rate of one human, written to feel
+      like a parent backing up their own photos because that's what
+      it is.
     </p>
   </section>
 </Layout>

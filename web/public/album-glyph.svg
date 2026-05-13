@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 140 80" role="img" aria-label="bairn glyph: an open photo album spread with two facing pages, each holding two photographs above caption lines.">
+  <g stroke="#4a6741" fill="none" stroke-linecap="round">
+    <!-- page-stack depth indicator on the right edge -->
+    <line x1="126" y1="10" x2="130" y2="10" stroke-width="0.7"/>
+    <line x1="126" y1="14" x2="130" y2="14" stroke-width="0.7"/>
+    <line x1="126" y1="18" x2="130" y2="18" stroke-width="0.7"/>
+    <line x1="126" y1="22" x2="130" y2="22" stroke-width="0.7"/>
+    <!-- album outline -->
+    <rect x="2" y="4" width="124" height="62" stroke-width="2"/>
+    <!-- centre binding -->
+    <line x1="64" y1="4" x2="64" y2="66" stroke-width="1.5"/>
+    <!-- left page: two photos, each with caption lines beside it -->
+    <rect x="8" y="10" width="22" height="16" stroke-width="1.2"/>
+    <line x1="36" y1="14" x2="58" y2="14" stroke-width="0.8"/>
+    <line x1="36" y1="18" x2="54" y2="18" stroke-width="0.8"/>
+    <line x1="36" y1="22" x2="58" y2="22" stroke-width="0.8"/>
+    <rect x="8" y="34" width="22" height="16" stroke-width="1.2"/>
+    <line x1="36" y1="38" x2="58" y2="38" stroke-width="0.8"/>
+    <line x1="36" y1="42" x2="54" y2="42" stroke-width="0.8"/>
+    <line x1="36" y1="46" x2="58" y2="46" stroke-width="0.8"/>
+    <!-- right page: same layout, mirrored -->
+    <rect x="72" y="10" width="22" height="16" stroke-width="1.2"/>
+    <line x1="100" y1="14" x2="122" y2="14" stroke-width="0.8"/>
+    <line x1="100" y1="18" x2="118" y2="18" stroke-width="0.8"/>
+    <line x1="100" y1="22" x2="122" y2="22" stroke-width="0.8"/>
+    <rect x="72" y="34" width="22" height="16" stroke-width="1.2"/>
+    <line x1="100" y1="38" x2="122" y2="38" stroke-width="0.8"/>
+    <line x1="100" y1="42" x2="118" y2="42" stroke-width="0.8"/>
+    <line x1="100" y1="46" x2="122" y2="46" stroke-width="0.8"/>
+  </g>
+</svg>

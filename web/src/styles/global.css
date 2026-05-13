@@ -130,6 +130,132 @@ main.page {
   margin: 0 0 var(--space-6) 0;
 }
 
+/* hero: glyph on the left, title block on the right */
+.hero {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: var(--space-6);
+  align-items: center;
+  padding: var(--space-4) 0 var(--space-6) 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: var(--space-6);
+}
+.hero-glyph {
+  width: 100%;
+  height: auto;
+  max-width: 200px;
+}
+.hero-title {
+  font-size: var(--text-4xl, 3rem);
+  font-weight: 800;
+  color: var(--accent);
+  margin: 0 0 var(--space-2) 0;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+.hero-tagline {
+  font-style: italic;
+  color: var(--text-muted);
+  margin: var(--space-2) 0 0 0;
+  font-size: var(--text-sm);
+}
+@media (max-width: 720px) {
+  .hero {
+    grid-template-columns: 1fr;
+    gap: var(--space-3);
+    text-align: left;
+  }
+  .hero-glyph { max-width: 140px; }
+}
+
+/* diagram frame: paper card around an inline SVG */
+.diagram {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  margin: var(--space-4) 0;
+}
+.diagram img, .diagram svg {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.diagram-caption {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  margin: var(--space-3) 0 0 0;
+}
+
+/* pillars grid: 2x2 of tiles matching the hero's FLOW/DISCIPLINE */
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
+}
+@media (max-width: 640px) {
+  .pillars { grid-template-columns: 1fr; }
+}
+.pillar {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-4);
+  background: var(--bg);
+}
+.pillar-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-1) 0;
+}
+.pillar-headline {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  color: var(--accent);
+  margin: 0 0 var(--space-2) 0;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+}
+.pillar-prose {
+  font-size: var(--text-sm);
+  color: var(--text-2);
+  margin: 0 0 var(--space-2) 0;
+}
+.pillar-spec {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin: 0;
+}
+
+/* a quoted callout for the vendor-stance framing */
+blockquote.callout {
+  margin: var(--space-4) 0;
+  padding: var(--space-3) var(--space-4);
+  border-left: 3px solid var(--accent);
+  background: var(--bg);
+  color: var(--text);
+  font-size: var(--text-md);
+}
+blockquote.callout cite {
+  display: block;
+  margin-top: var(--space-2);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-style: normal;
+}
+
 .section {
   margin: var(--space-7) 0 var(--space-5) 0;
 }
