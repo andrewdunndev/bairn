@@ -1,0 +1,21 @@
+# bairn site — Cloudflare Worker with Static Assets.
+#
+# The Astro static build output sits in dist/; wrangler ships it
+# as the worker's bound assets and the worker has no script entry,
+# so requests resolve directly to the assets.
+#
+# Custom domain (bairn.dunn.dev) is bound to this worker via the
+# Cloudflare dashboard after the first successful deploy.
+
+name = "bairn"
+compatibility_date = "2026-05-10"
+workers_dev = false
+
+[[routes]]
+pattern = "bairn.dunn.dev"
+custom_domain = true
+zone_name = "dunn.dev"
+
+[assets]
+directory = "./dist"
+not_found_handling = "404-page"

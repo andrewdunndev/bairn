@@ -1,0 +1,176 @@
+@import '@dunn.dev/reference/tokens/index.css';
+/* Tokens-only consumption — bairn brings its own chrome below.
+   Per the design-system standard's minimum floor: every value
+   resolves against the published tokens. */
+
+* { box-sizing: border-box; }
+
+html {
+  /* Bairn pins to light. The avatar metaphor is an open photo
+     album spread, and the README diagrams are line-art at 1.2px
+     stroke against paper — dark mode washes them out. */
+  color-scheme: light;
+  background: var(--surface);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, pre { font-family: var(--font-mono); font-size: 0.92em; }
+pre {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  overflow-x: auto;
+  font-size: var(--text-sm);
+}
+code:not(pre code) {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.05rem 0.3rem;
+  font-size: 0.85em;
+}
+
+.site-header {
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+.site-header-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-4) var(--space-5);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-5);
+}
+.brand {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: var(--text-md);
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.brand-name { color: var(--accent); }
+.site-nav {
+  margin-left: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  letter-spacing: 0.04em;
+}
+.site-nav a {
+  color: var(--text-muted);
+  text-transform: uppercase;
+}
+.site-nav a:hover { color: var(--accent); text-decoration: none; }
+
+main.page {
+  flex: 1;
+  width: 100%;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: var(--space-6) var(--space-5);
+}
+
+.site-footer {
+  border-top: 1px solid var(--border);
+  background: var(--bg);
+  padding: var(--space-4) var(--space-5);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.site-footer-inner {
+  max-width: 1080px;
+  margin: 0 auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--space-1) var(--space-4);
+}
+
+.page-eyebrow {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin: 0 0 var(--space-2) 0;
+}
+.page-title {
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  margin: 0 0 var(--space-3) 0;
+  color: var(--accent);
+  letter-spacing: -0.02em;
+}
+.page-lede {
+  font-size: var(--text-lg);
+  color: var(--text-2);
+  max-width: 62ch;
+  margin: 0 0 var(--space-6) 0;
+}
+
+.section {
+  margin: var(--space-7) 0 var(--space-5) 0;
+}
+.section h2 {
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  margin: 0 0 var(--space-3) 0;
+  letter-spacing: -0.015em;
+}
+.section p {
+  max-width: 64ch;
+  color: var(--text);
+  margin: 0 0 var(--space-3) 0;
+}
+
+.what-list {
+  list-style: none;
+  padding: 0;
+  margin: var(--space-3) 0;
+  display: grid;
+  gap: var(--space-3);
+}
+.what-list li {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg);
+}
+.what-list strong {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-bottom: var(--space-1);
+}
+
+@media (max-width: 640px) {
+  .site-header-inner { padding: var(--space-3) var(--space-4); gap: var(--space-2); }
+  .site-nav { margin-left: 0; width: 100%; gap: var(--space-2) var(--space-3); }
+  main.page { padding: var(--space-5) var(--space-4); }
+  .site-footer { padding: var(--space-3) var(--space-4); }
+}

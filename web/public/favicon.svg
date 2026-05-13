@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="bairn: an open photo album spread holding two facing pages.">
+  <!-- album outline -->
+  <rect x="8" y="18" width="48" height="32" rx="1.5" fill="none" stroke="#4a6741" stroke-width="2.5"/>
+  <!-- centre binding -->
+  <line x1="32" y1="18" x2="32" y2="50" stroke="#4a6741" stroke-width="1.5"/>
+  <!-- two facing photos (filled for legibility at 16px) -->
+  <rect x="14" y="26" width="12" height="10" rx="0.5" fill="#4a6741"/>
+  <rect x="38" y="26" width="12" height="10" rx="0.5" fill="#4a6741"/>
+  <!-- caption lines beneath each photo -->
+  <line x1="14" y1="42" x2="26" y2="42" stroke="#4a6741" stroke-width="1.25" stroke-linecap="round"/>
+  <line x1="38" y1="42" x2="50" y2="42" stroke="#4a6741" stroke-width="1.25" stroke-linecap="round"/>
+</svg>

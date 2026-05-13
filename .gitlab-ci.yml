@@ -19,6 +19,7 @@ stages:
   - drift-gate
   - package
   - release
+  - deploy
   - drift-triage
 
 variables:
@@ -107,6 +108,20 @@ include:
       from_artifacts: true
       multi_arch: false
       sign_image: true
+
+  # One-pager site at bairn.dunn.dev. Astro static build under web/,
+  # shipped as a Cloudflare Worker with bound static assets. Build
+  # runs on every push + MR; deploy runs only on main. Custom-domain
+  # binding to bairn.dunn.dev is configured in wrangler.toml; the
+  # zone-side DNS record needs to exist before the first deploy.
+  - component: gitlab.com/dunn.dev/pipeline/cloudflare-worker@2.2.3
+    inputs:
+      wrangler_config: web/wrangler.toml
+      build_command: npm run build
+      output_dir: web/dist
+      needs_npm_install: true
+      npm_dir: web
+      production_url: https://bairn.dunn.dev
 
 
 # test uses the catalog's pinned ci-go image. Pinning to v2.0.0

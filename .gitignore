@@ -5,6 +5,11 @@
 *.out
 coverage.txt
 
+# bairn.dunn.dev site build artifacts (web/ is an Astro project)
+/web/node_modules/
+/web/dist/
+/web/.astro/
+
 # Local config: never commit credentials
 /config.toml
 /*.env

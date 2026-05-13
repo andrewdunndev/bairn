@@ -1,0 +1,77 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+<Layout title="Home" description="A personal archive tool for Famly-using households. Pulls your kid's photos and videos from the nursery feed onto your own disk with full EXIF and XMP metadata.">
+  <p class="page-eyebrow">photo archive · cli</p>
+  <h1 class="page-title">bairn</h1>
+  <p class="page-lede">
+    A personal archive for Famly-using households. <code>bairn</code>
+    pulls your kid's photos and videos from the nursery feed onto your
+    own disk, with the post body, the educator's name, and the date
+    embedded into each file via EXIF and XMP. Your child's photo
+    history does not depend on Famly continuing to exist as a company.
+  </p>
+
+  <section class="section">
+    <h2>What it does</h2>
+    <ul class="what-list">
+      <li>
+        <strong>Pull</strong>
+        Reads your Famly nursery feed and downloads every photo and
+        video it has access to, into date-organized folders on disk.
+      </li>
+      <li>
+        <strong>Embed</strong>
+        Writes the caption, the educator's name, the date, and the kid
+        tags into the file's own EXIF and XMP metadata — readable by
+        any photo viewer or archival workflow, today and in twenty
+        years.
+      </li>
+      <li>
+        <strong>Resume</strong>
+        Re-running is safe. Already-downloaded items are skipped; only
+        new posts since the last run are fetched.
+      </li>
+      <li>
+        <strong>Survive the vendor</strong>
+        Once a file is on disk with metadata embedded, Famly going
+        away, your account closing, or the API breaking does not lose
+        the history. The on-disk copy is the source of truth.
+      </li>
+    </ul>
+  </section>
+
+  <section class="section">
+    <h2>Install</h2>
+    <p>Single Go binary. Latest release lives on GitLab:</p>
+    <pre>go install gitlab.com/dunn.dev/bairn/cmd/bairn@latest</pre>
+    <p>
+      Or grab a prebuilt binary from
+      <a href="https://gitlab.com/dunn.dev/bairn/-/releases">the releases page</a>
+      (linux/amd64, linux/arm64, darwin/arm64).
+    </p>
+  </section>
+
+  <section class="section">
+    <h2>Who this is for</h2>
+    <p>
+      A parent, co-parent, or household admin whose kid's daycare uses
+      Famly and who wants a permanent local copy of every photo and
+      video the educators post, with metadata that survives any future
+      tooling change. If your school doesn't use Famly, or if you're
+      happy enough with how the mobile app surfaces history,
+      <code>bairn</code> is not for you.
+    </p>
+  </section>
+
+  <section class="section">
+    <h2>What it isn't</h2>
+    <p>
+      Not a privacy gateway. Every piece of context the vendor exposes
+      lands inside the file you keep — that's the whole point of EXIF
+      and XMP for archival. What happens to those files after you have
+      them is your call. Not a multi-tenant service either: one
+      binary, one household, one disk.
+    </p>
+  </section>
+</Layout>
