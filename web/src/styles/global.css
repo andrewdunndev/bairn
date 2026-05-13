@@ -50,7 +50,7 @@ code:not(pre code) {
   background: var(--bg);
 }
 .site-header-inner {
-  max-width: 1080px;
+  max-width: 880px;
   margin: 0 auto;
   padding: var(--space-4) var(--space-5);
   display: flex;
@@ -84,7 +84,7 @@ code:not(pre code) {
 main.page {
   flex: 1;
   width: 100%;
-  max-width: 1080px;
+  max-width: 880px;
   margin: 0 auto;
   padding: var(--space-6) var(--space-5);
 }
@@ -100,7 +100,7 @@ main.page {
   text-transform: uppercase;
 }
 .site-footer-inner {
-  max-width: 1080px;
+  max-width: 880px;
   margin: 0 auto;
   display: flex;
   flex-wrap: wrap;
