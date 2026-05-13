@@ -247,23 +247,33 @@ main.page {
   margin: var(--space-3) 0 0 0;
 }
 
-/* pillars grid: 2x2 of tiles matching the hero's FLOW/DISCIPLINE */
-.pillars {
+/* tiles: labeled-rectangle primitive with two layout wrappers.
+   .tile-grid is 2-up for comparable facets; .tile-list is a
+   vertical stack of wide rectangles for ordered sequence. The
+   .tile unit is layout-agnostic — same eyebrow/headline/prose/meta
+   slots inside both. */
+.tile-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
   gap: var(--space-3);
   margin: var(--space-4) 0;
 }
-@media (max-width: 640px) {
-  .pillars { grid-template-columns: 1fr; }
+.tile-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--space-3);
+  margin: var(--space-4) 0;
 }
-.pillar {
+@media (max-width: 640px) {
+  .tile-grid { grid-template-columns: 1fr; }
+}
+.tile {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: var(--space-4);
   background: var(--bg);
 }
-.pillar-eyebrow {
+.tile-eyebrow {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   letter-spacing: 0.1em;
@@ -271,26 +281,31 @@ main.page {
   color: var(--text-muted);
   margin: 0 0 var(--space-1) 0;
 }
-.pillar-headline {
-  font-size: var(--text-2xl);
+.tile-headline {
+  font-size: var(--text-xl);
   font-weight: 700;
   color: var(--accent);
   margin: 0 0 var(--space-2) 0;
   letter-spacing: -0.015em;
-  line-height: 1.1;
+  line-height: 1.15;
 }
-.pillar-prose {
+.tile-grid .tile-headline { font-size: var(--text-2xl); }
+.tile-prose {
   font-size: var(--text-sm);
   color: var(--text-2);
   margin: 0 0 var(--space-2) 0;
+  line-height: 1.55;
 }
-.pillar-spec {
+.tile-meta {
   font-family: var(--font-mono);
   font-size: var(--text-xs);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-muted);
   margin: 0;
+}
+.tile pre {
+  margin: var(--space-2) 0;
 }
 
 /* a quoted callout for the vendor-stance framing */

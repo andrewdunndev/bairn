@@ -61,50 +61,50 @@ import Layout from '../layouts/Layout.astro';
 
   <section>
     <h2 class="section-title">How <code>bairn</code> is shaped</h2>
-    <div class="pillars">
-      <div class="pillar">
-        <p class="pillar-eyebrow">flow · in</p>
-        <p class="pillar-headline">feed pages</p>
-        <p class="pillar-prose">
+    <div class="tile-grid">
+      <div class="tile">
+        <p class="tile-eyebrow">flow · in</p>
+        <p class="tile-headline">feed pages</p>
+        <p class="tile-prose">
           Famly's parent-side GraphQL surface, walked one page at a
           time at the rate a single human user would naturally
           generate. Schema introspected from the live endpoint, types
           codegen'd, response shapes pinned by a drift baseline.
         </p>
-        <p class="pillar-spec">graphql · typed · introspected</p>
+        <p class="tile-meta">graphql · typed · introspected</p>
       </div>
-      <div class="pillar">
-        <p class="pillar-eyebrow">discipline · posture</p>
-        <p class="pillar-headline">personal</p>
-        <p class="pillar-prose">
+      <div class="tile">
+        <p class="tile-eyebrow">discipline · posture</p>
+        <p class="tile-headline">personal</p>
+        <p class="tile-prose">
           One household, one operator, one set of credentials. No
           aggregation across families, no telemetry, no shared
           identifiers, no third-party calls. The binary doesn't know
           there is more than one of you.
         </p>
-        <p class="pillar-spec">one household · rate-limited</p>
+        <p class="tile-meta">one household · rate-limited</p>
       </div>
-      <div class="pillar">
-        <p class="pillar-eyebrow">flow · out</p>
-        <p class="pillar-headline">files</p>
-        <p class="pillar-prose">
+      <div class="tile">
+        <p class="tile-eyebrow">flow · out</p>
+        <p class="tile-headline">files</p>
+        <p class="tile-prose">
           JPEG and MP4 written to dated folders on your disk, with
           the caption, the educator's name, the kid tags, and the
           date embedded as EXIF and XMP. Optionally pushed into
           Immich after the on-disk write; the disk copy is always
           the source of truth.
         </p>
-        <p class="pillar-spec">disk first · immich optional</p>
+        <p class="tile-meta">disk first · immich optional</p>
       </div>
-      <div class="pillar">
-        <p class="pillar-eyebrow">discipline · lifetime</p>
-        <p class="pillar-headline">archival</p>
-        <p class="pillar-prose">
+      <div class="tile">
+        <p class="tile-eyebrow">discipline · lifetime</p>
+        <p class="tile-headline">archival</p>
+        <p class="tile-prose">
           The file is the artifact, not a handle to a service. Open
           formats, standard metadata, no proprietary container.
           Readable in any year by any tool that has ever read a JPEG.
         </p>
-        <p class="pillar-spec">exif/xmp · open format · any year</p>
+        <p class="tile-meta">exif/xmp · open format · any year</p>
       </div>
     </div>
   </section>
@@ -137,16 +137,61 @@ import Layout from '../layouts/Layout.astro';
 
   <section>
     <h2 class="section-title">Install</h2>
-    <p class="section-prose">Single Go binary. Latest tagged release lives on GitLab:</p>
-    <pre>go install gitlab.com/dunn.dev/bairn/cmd/bairn@latest</pre>
     <p class="section-prose">
-      Or grab a prebuilt, cosign-signed binary from
-      <a href="https://gitlab.com/dunn.dev/bairn/-/releases">the
-      releases page</a> (linux/amd64, linux/arm64, darwin/arm64).
-      The release also ships a CycloneDX SBOM and a SLSA v1.0
-      provenance attestation per binary, both verifiable against
+      Three ways to run <code>bairn</code>, in increasing order of
+      isolation from your day-to-day machine. Each release ships
+      cosign-signed binaries, a CycloneDX SBOM per architecture, and
+      a SLSA v1.0 provenance attestation, all verifiable against
       GitLab's OIDC issuer.
     </p>
+    <div class="tile-list">
+      <div class="tile">
+        <p class="tile-eyebrow">option a</p>
+        <h3 class="tile-headline">Go install</h3>
+        <pre>go install gitlab.com/dunn.dev/bairn/cmd/bairn@latest</pre>
+        <p class="tile-prose">
+          Build from source against your local Go toolchain. Best
+          for contributors and anyone who already runs Go for other
+          work. No signature verification — trust comes from the
+          module proxy.
+        </p>
+        <p class="tile-meta">go 1.25+ · module-cached</p>
+      </div>
+      <div class="tile">
+        <p class="tile-eyebrow">option b</p>
+        <h3 class="tile-headline">Prebuilt binary</h3>
+        <pre>curl -L -o bairn https://gitlab.com/dunn.dev/bairn/-/releases/permalink/latest/downloads/bairn-linux-amd64
+chmod +x bairn</pre>
+        <p class="tile-prose">
+          Cosign-signed binary from the
+          <a href="https://gitlab.com/dunn.dev/bairn/-/releases">releases page</a>
+          — pair the download with the matching <code>.sig</code>
+          and verify against the GitLab OIDC issuer before running.
+          The hardened option that doesn't ask you to install a
+          toolchain.
+        </p>
+        <p class="tile-meta">linux/amd64 · linux/arm64 · darwin/arm64 · cosign</p>
+      </div>
+      <div class="tile">
+        <p class="tile-eyebrow">option c</p>
+        <h3 class="tile-headline">Container image</h3>
+        <pre>podman pull registry.gitlab.com/dunn.dev/bairn/cli:latest
+podman run --rm \
+  -v "$PWD/archive:/archive" \
+  -v "$PWD/config.toml:/config.toml:ro" \
+  registry.gitlab.com/dunn.dev/bairn/cli:latest \
+  --config /config.toml --out /archive</pre>
+        <p class="tile-prose">
+          The OCI image is the prebuilt binary copied into a thin
+          runtime layer; the binary inside the image is the same
+          cosign-signed artifact as option B (byte-for-byte). Best
+          for cron on a homelab box where you don't want Go or a
+          random binary on disk. The image itself is cosign-signed
+          by digest.
+        </p>
+        <p class="tile-meta">oci · cosign-signed-by-digest · rootless-ok</p>
+      </div>
+    </div>
   </section>
 
   <section>
