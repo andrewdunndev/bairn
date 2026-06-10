@@ -35,6 +35,16 @@ code:not(pre code) {
   font-size: 0.85em;
 }
 
+/* prose fills the content column. The project sites are data-sheets,
+   not blog posts: body prose should match the width of every diagram,
+   tile grid, and pre block beneath it, so the page column is the
+   single content measure. Canonical site.css caps .section-prose at
+   64ch — a reading measure right for docs sites like reference.dunn.dev,
+   but here it leaves prose as a narrow ribbon against full-width boxes
+   (the "disjointed text" regression). Restore the fill-column rule the
+   site was authored with. */
+.section-prose { max-width: none; }
+
 /* hero: full-width type with a decorative glyph floated upper-right
    at desktop. Bespoke — canonical .hero is a grid keyed to a
    .hero-mark column; bairn positions .hero-glyph absolutely so the
