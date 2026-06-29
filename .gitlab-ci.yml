@@ -72,7 +72,7 @@ include:
   # Branch verification: parallel:matrix cross-compile on every
   # push (linux/amd64, linux/arm64, darwin/arm64). Module-cached.
   # Skipped on tag pipelines (go-release-binary supersedes).
-  - component: gitlab.com/dunn.dev/pipeline/go-build@2.7.0
+  - component: gitlab.com/dunn.dev/pipeline/go-build@29436fe1b8798dda1c68137ca8f16dcaec4b18e2
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
@@ -212,3 +212,10 @@ smoke-immich:
     - bin/bairn smoke immich
   rules:
     - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"
+
+# TEST ONLY (do not merge): exercise the just-driven go-build component
+# (pipeline@29436fe1) against the freshly published ci-go:latest, which
+# carries the baked recipes. SHA-includes resolve the image tag to empty,
+# so pin it here to the recipe-bearing image.
+build:
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:latest
