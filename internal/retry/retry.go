@@ -1,4 +1,4 @@
-// Package retry wraps cenkalti/backoff/v5 with bairn-specific
+// Package retry wraps cenkalti/backoff/v6 with bairn-specific
 // defaults and an HTTP-aware predicate.
 //
 // We don't reinvent the backoff math; we add only the policy that
@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cenkalti/backoff/v5"
+	"github.com/cenkalti/backoff/v6"
 )
 
 // DefaultExponential returns a sensible policy for transient

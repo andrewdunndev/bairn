@@ -89,7 +89,7 @@ This binary targets Go 1.25+. Idioms in use:
 - `context.Context` end-to-end including iterators
 - `slices`, `maps`, `cmp` stdlib packages
 - `testing/synctest` for deterministic time tests
-- `cenkalti/backoff/v5` for retry primitive
+- `cenkalti/backoff/v6` for retry primitive
 - `dsoprea/go-exif/v3` for EXIF rewrite
 - `genqlient` for typed GraphQL against the captured schema
 - `oapi-codegen` for typed Immich client
