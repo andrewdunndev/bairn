@@ -146,7 +146,7 @@ include:
 # matches the catalog tag bairn pins; keeps tooling deliberate.
 test:
   stage: test
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.6.0@sha256:7a3c497387b45417249f0b9833d61e0db65c7fc83bbc01ffb315c8229f6f28d8
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
   script:
     - go test -race ./...
 
@@ -167,7 +167,7 @@ test:
 # see this job fail at tag time; that is the intended signal.
 drift-gate:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.6.0@sha256:7a3c497387b45417249f0b9833d61e0db65c7fc83bbc01ffb315c8229f6f28d8
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
@@ -187,7 +187,7 @@ drift-gate:
 # before `git tag`; that's the actual gate.
 drift-gate-immich:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.6.0@sha256:7a3c497387b45417249f0b9833d61e0db65c7fc83bbc01ffb315c8229f6f28d8
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
@@ -205,7 +205,7 @@ drift-gate-immich:
 # `make pre-tag-check` is the tag-time gate.
 smoke-immich:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.6.0@sha256:7a3c497387b45417249f0b9833d61e0db65c7fc83bbc01ffb315c8229f6f28d8
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
