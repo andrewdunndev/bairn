@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cenkalti/backoff/v6"
+	"github.com/cenkalti/backoff/v7"
 )
 
 func TestDoSucceedsOnFirstTry(t *testing.T) {

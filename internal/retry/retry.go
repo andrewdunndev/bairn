@@ -1,4 +1,4 @@
-// Package retry wraps cenkalti/backoff/v6 with bairn-specific
+// Package retry wraps cenkalti/backoff/v7 with bairn-specific
 // defaults and an HTTP-aware predicate.
 //
 // We don't reinvent the backoff math; we add only the policy that
@@ -13,7 +13,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cenkalti/backoff/v6"
+	"github.com/cenkalti/backoff/v7"
 )
 
 // DefaultExponential returns a sensible policy for transient
@@ -65,7 +65,8 @@ func HTTPDo(ctx context.Context, op func(context.Context) (*http.Response, error
 			retryAfter := parseRetryAfter(resp.Header.Get("Retry-After"))
 			_ = resp.Body.Close()
 			if retryAfter > 0 {
-				return nil, backoff.RetryAfter(retryAfter)
+				cause := fmt.Errorf("429 Too Many Requests")
+				return nil, backoff.RetryAfter(time.Duration(retryAfter)*time.Second, cause)
 			}
 			return nil, fmt.Errorf("429 Too Many Requests")
 		case resp.StatusCode == http.StatusRequestTimeout, resp.StatusCode >= 500:
