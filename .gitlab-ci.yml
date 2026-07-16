@@ -7,7 +7,20 @@ default:
 # release-stage jobs (template-side interruptible: false) continue.
 # on_job_failure: all stops the pipeline the moment a release-blocking
 # job fails so we don't keep signing/uploading after a fail.
+#
+# workflow.rules: prevent duplicate pipelines. When a branch has an
+# open MR, suppress the redundant push pipeline and let the
+# merge_request_event pipeline be the only pipeline for that commit
+# (Renovate pushes land on a branch that already has an open MR, which
+# otherwise fires BOTH a push and an MR-event pipeline for the same
+# commit). Mirrors dunn.dev/othala's fix for the same defect.
 workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
+      when: never
+    - if: $CI_COMMIT_BRANCH
+    - if: $CI_COMMIT_TAG
   auto_cancel:
     on_new_commit: interruptible
     on_job_failure: all
@@ -142,11 +155,39 @@ include:
       production_url: https://bairn.dunn.dev
 
 
+# Job-set parity for the workflow guard above: go-lint (lint) and
+# go-audit (audit) ship with NO rules of their own, so they fall back
+# to the classic implicit `only: [branches, tags]` default -- which
+# does NOT include merge_request_event. That made them push-pipeline
+# only; with push suppressed on a branch with an open MR, they'd never
+# run at all. Minimal consumer-side override: restate only `rules`,
+# every other key (image, script, allow_failure, ...) still comes from
+# the catalog component.
+lint:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG'
+
+audit:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG'
+
 # test uses the catalog's pinned ci-go image. Pinning to v2.0.0
 # matches the catalog tag bairn pins; keeps tooling deliberate.
+#
+# rules: same job-set-parity fix as lint/audit above -- this local job
+# had no rules block, which meant the implicit only:[branches,tags]
+# default kept it off merge_request_event pipelines.
 test:
   stage: test
   image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG'
   script:
     - go test -race ./...
 
