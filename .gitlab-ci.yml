@@ -87,6 +87,7 @@ include:
   # Skipped on tag pipelines (go-release-binary supersedes).
   - component: gitlab.com/dunn.dev/pipeline/go-build@3.1.0
     inputs:
+      job_name: go-build
       binary_name: bairn
       package_path: ./cmd/bairn
 
