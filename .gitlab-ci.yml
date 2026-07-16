@@ -51,8 +51,8 @@ include:
   # required check is present and pass. The gate job stage is named
   # automerge-gate to avoid colliding with the pre-existing drift-gate
   # stage.
-  - component: gitlab.com/dunn.dev/pipeline/osv-verdict@3.0.0
-  - component: gitlab.com/dunn.dev/pipeline/automerge-gate@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/osv-verdict@3.1.0
+  - component: gitlab.com/dunn.dev/pipeline/automerge-gate@3.1.0
     inputs:
       stage: automerge-gate
       required-checks: "osv"
@@ -64,7 +64,7 @@ include:
   # docs/decisions/0007-llm-augmented-ci.md for the relationship-side
   # reasoning. The component stays included so a future change of
   # posture is a one-line flip.
-  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@3.1.0
     inputs:
       drift_command: "echo ''"
       issue_on_drift: true
@@ -76,40 +76,40 @@ include:
   # docker.io/golangci/golangci-lint:latest-alpine path forced
   # allow_failure to absorb rate-cap pull flakes; that workaround
   # was masking real lint hits.
-  - component: gitlab.com/dunn.dev/pipeline/go-lint@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/go-lint@3.1.0
 
   # Lint-stage govulncheck. Allow_failure by default (vuln-DB
   # shifts shouldn't block a release).
-  - component: gitlab.com/dunn.dev/pipeline/go-audit@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/go-audit@3.1.0
 
   # Branch verification: parallel:matrix cross-compile on every
   # push (linux/amd64, linux/arm64, darwin/arm64). Module-cached.
   # Skipped on tag pipelines (go-release-binary supersedes).
-  - component: gitlab.com/dunn.dev/pipeline/go-build@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/go-build@3.1.0
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
 
   # Tag-only: parallel:matrix cross-compile + per-binary cosign
   # signature + per-binary .sha256 + upload to package registry.
-  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/go-release-binary@3.1.0
     inputs:
       binary_name: bairn
       package_path: ./cmd/bairn
       package_name: bairn
 
   # Tag-only: CycloneDX SBOM per binary via syft.
-  - component: gitlab.com/dunn.dev/pipeline/go-sbom@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/go-sbom@3.1.0
     inputs:
       package_name: bairn
 
   # Tag-only: SLSA v1.0 provenance per binary, cosign-signed via
   # GitLab OIDC keyless.
-  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/slsa-attest@3.1.0
 
   # Tag-only: GitLab Release with binaries + SBOMs + attestations
   # linked. Idempotent across pipeline reruns.
-  - component: gitlab.com/dunn.dev/pipeline/release-create@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/release-create@3.1.0
     inputs:
       package_name: bairn
       release_title: "bairn $CI_COMMIT_TAG"
@@ -130,7 +130,7 @@ include:
   # native-arch images, no emulation overhead.
   #
   # sign_image: true cosign-signs the pushed image by digest.
-  - component: gitlab.com/dunn.dev/pipeline/container-image@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/container-image@3.1.0
     inputs:
       containerfile: Containerfile
       image_tag: cli
@@ -145,7 +145,7 @@ include:
   # runs on every push + MR; deploy runs only on main. Custom-domain
   # binding to bairn.dunn.dev is configured in wrangler.toml; the
   # zone-side DNS record needs to exist before the first deploy.
-  - component: gitlab.com/dunn.dev/pipeline/cloudflare-worker@3.0.0
+  - component: gitlab.com/dunn.dev/pipeline/cloudflare-worker@3.1.0
     inputs:
       wrangler_config: web/wrangler.toml
       build_command: npm run build
