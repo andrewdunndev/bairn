@@ -13,7 +13,7 @@ require (
 	github.com/cenkalti/backoff/v7 v7.0.0
 	github.com/dsoprea/go-exif/v3 v3.0.1
 	github.com/dsoprea/go-jpeg-image-structure/v2 v2.0.0-20221012074422-4f3f7e934102
-	github.com/oapi-codegen/runtime v1.4.2
+	github.com/oapi-codegen/runtime v1.5.0
 	golang.org/x/sys v0.47.0
 	golang.org/x/term v0.44.0
 )
