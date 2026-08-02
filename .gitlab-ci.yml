@@ -184,7 +184,7 @@ audit:
 # default kept it off merge_request_event pipelines.
 test:
   stage: test
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.0.1@sha256:549fd2d7d03733b06dbec7f6409c5fca5fd20fb21805b256363099eacb80bd9d
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push"'
@@ -209,7 +209,7 @@ test:
 # see this job fail at tag time; that is the intended signal.
 drift-gate:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.0.1@sha256:549fd2d7d03733b06dbec7f6409c5fca5fd20fb21805b256363099eacb80bd9d
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
@@ -229,7 +229,7 @@ drift-gate:
 # before `git tag`; that's the actual gate.
 drift-gate-immich:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.0.1@sha256:549fd2d7d03733b06dbec7f6409c5fca5fd20fb21805b256363099eacb80bd9d
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
@@ -247,7 +247,7 @@ drift-gate-immich:
 # `make pre-tag-check` is the tag-time gate.
 smoke-immich:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:2.7.0@sha256:5cb4821ec6728139014473920d4cbf3c9d3520d29e99197a191e40566fa559c7
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.0.1@sha256:549fd2d7d03733b06dbec7f6409c5fca5fd20fb21805b256363099eacb80bd9d
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
