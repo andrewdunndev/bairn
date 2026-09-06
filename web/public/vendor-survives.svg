@@ -10,6 +10,7 @@
     .flow { stroke: #4a6741; stroke-width: 1.5; fill: none; }
     .flow-head { fill: #4a6741; }
     .disrupt { stroke: #c46b5c; stroke-width: 1.25; fill: none; stroke-dasharray: 4 3; }
+    .disrupt-head { fill: #c46b5c; }
     .barrier { stroke: #c46b5c; stroke-width: 2; fill: none; }
   </style>
 
@@ -43,18 +44,21 @@
 
   <!-- the barrier: a 2px muted-red vertical line between bairn and disk
        where every disruption arrow terminates. The single red focal. -->
-  <line class="barrier" x1="472" y1="192" x2="472" y2="268"/>
-  <text class="barrier-label" x="484" y="232" text-anchor="start">vendor</text>
-  <text class="barrier-label" x="484" y="248" text-anchor="start">survives</text>
+  <line class="barrier" x1="472" y1="174" x2="472" y2="268"/>
+  <text class="barrier-label" x="484" y="252" text-anchor="start">vendor</text>
+  <text class="barrier-label" x="484" y="266" text-anchor="start">survives</text>
 
-  <!-- three disruption events — all originate at famly (left) and stop
-       at the barrier. Dashed, supporting weight, never reach the disk. -->
-  <line class="disrupt" x1="132" y1="200" x2="464" y2="212"/>
-  <text class="event" x="132" y="192" text-anchor="middle">outages</text>
+  <!-- three disruption events - one origin under the famly box, each running
+       into its own lane and stopping at the barrier with a head. -->
+  <path class="disrupt" d="M132,160 L330,190 H464"/>
+  <polygon class="disrupt-head" points="472,190 464,186 464,194"/>
+  <text class="event" x="338" y="184" text-anchor="start">outages</text>
 
-  <line class="disrupt" x1="132" y1="232" x2="464" y2="224"/>
-  <text class="event" x="132" y="252" text-anchor="middle">account closures</text>
+  <path class="disrupt" d="M132,160 L290,214 H464"/>
+  <polygon class="disrupt-head" points="472,214 464,210 464,218"/>
+  <text class="event" x="298" y="208" text-anchor="start">account closures</text>
 
-  <line class="disrupt" x1="288" y1="248" x2="464" y2="240"/>
-  <text class="event" x="288" y="264" text-anchor="middle">api changes</text>
+  <path class="disrupt" d="M132,160 L250,238 H464"/>
+  <polygon class="disrupt-head" points="472,238 464,234 464,242"/>
+  <text class="event" x="258" y="232" text-anchor="start">api changes</text>
 </svg>
