@@ -82,6 +82,15 @@ include:
   # shifts shouldn't block a release).
   - component: gitlab.com/dunn.dev/pipeline/go-audit@4.6.0
 
+  # Advisory dunn.dev/reference conformance check (lint stage, runs
+  # before build). fail_on_violation: false during estate-wide
+  # adoption -- surfaces findings without blocking merges until this
+  # repo is flipped to enforcing.
+  - component: gitlab.com/dunn.dev/pipeline/reference-check@4.6.0
+    inputs:
+      reference_ref: main
+      fail_on_violation: false
+
   # Branch verification: parallel:matrix cross-compile on every
   # push (linux/amd64, linux/arm64, darwin/arm64). Module-cached.
   # Skipped on tag pipelines (go-release-binary supersedes).
