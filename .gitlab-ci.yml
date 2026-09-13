@@ -1,6 +1,4 @@
 default:
-  tags:
-    - storr
   interruptible: true
 
 # v2.0.0 catalog: auto-cancel build/test on superseded MR pushes;
