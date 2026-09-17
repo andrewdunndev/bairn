@@ -15,7 +15,7 @@ require (
 	github.com/dsoprea/go-jpeg-image-structure/v2 v2.0.0-20221012074422-4f3f7e934102
 	github.com/oapi-codegen/runtime v1.7.0
 	golang.org/x/sys v0.48.0
-	golang.org/x/term v0.45.0
+	golang.org/x/term v0.46.0
 )
 
 require (
