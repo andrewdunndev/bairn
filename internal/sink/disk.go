@@ -139,10 +139,29 @@ func (d *Disk) Put(ctx context.Context, in PutInput) (Receipt, error) {
 	}
 
 	receipt := Receipt{DestPath: dest, Status: "created", Size: written}
+	if len(in.Sidecar) > 0 {
+		if err := writeFileAtomic(dest+".xmp", in.Sidecar); err != nil {
+			return receipt, fmt.Errorf("sink: sidecar %s: %w", dest, err)
+		}
+	}
 	if exifErr != nil {
 		return receipt, fmt.Errorf("sink: reinject %s: %w", dest, exifErr)
 	}
 	return receipt, nil
+}
+
+// writeFileAtomic writes data to path via a tmp file and rename,
+// private like the media it sits beside.
+func writeFileAtomic(path string, data []byte) error {
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, path); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func isJPEG(filename string) bool {

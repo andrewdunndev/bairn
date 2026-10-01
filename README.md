@@ -74,8 +74,9 @@ bairn does five jobs:
    JPEG carries the post body, the post timestamp, the educator's
    name, and any per-image kid-tags as both [EXIF][exif] (legacy +
    ubiquitous) and [XMP][xmp] (modern, what Apple Photos and
-   Lightroom prefer). No sidecar files; everything travels with the
-   image. See [ADR 0005][adr-0005] for the archival contract.
+   Lightroom prefer). Photos need no sidecar; everything travels with
+   the image. Videos get a `<file>.xmp` beside them (description, date,
+   tags), which Immich also receives as `sidecarData`. See [ADR 0005][adr-0005] for the archival contract.
 
 5. **Track progress in a JSON state file.** A single
    `state.json` records what's been downloaded, saved, and
@@ -340,7 +341,7 @@ The seven ADRs as of v0.1.0:
 - [0002](./docs/decisions/0002-typestate-asset-lifecycle.md) typestate for the asset lifecycle
 - [0003](./docs/decisions/0003-auth-token-and-refresh.md) Famly auth: token-first with optional refresh
 - [0004](./docs/decisions/0004-state-as-json-file.md) state as a JSON file with file lock
-- [0005](./docs/decisions/0005-archival-posture.md) archival posture, no sidecars
+- [0005](./docs/decisions/0005-archival-posture.md) archival posture, in-file metadata (video XMP sidecar only)
 - [0006](./docs/decisions/0006-sink-abstraction.md) sink abstraction (disk + Immich + future)
 - [0007](./docs/decisions/0007-llm-augmented-ci.md) LLM-augmented CI (deferred)
 
@@ -349,7 +350,7 @@ The seven ADRs as of v0.1.0:
 - [`jacobbunk/famly-fetch`][jacobbunk] (Python). Built an integration
   against Famly's API first; bairn's REST surface follows that map.
   Different design (streamed downloads, JSON state, optional Immich
-  layer, in-file metadata only, no sidecars) and different language
+  layer, in-file photo metadata, XMP sidecar for video only) and different language
   but same conceptual lineage. Established prior art; see
   [`NOTICE.md`](./NOTICE.md) for context.
 

@@ -99,6 +99,16 @@ func (d Discovered) EXIF(software string) exif.Fields {
 	}
 }
 
+// Sidecar returns the standalone XMP packet for a video, or nil for
+// any other asset: photos embed their XMP, and a sidecar date would
+// override the timezone embedded in the file.
+func (d Discovered) Sidecar(software string) ([]byte, error) {
+	if d.source != SourceFeedVideo {
+		return nil, nil
+	}
+	return exif.Sidecar(d.EXIF(software))
+}
+
 // DiscoverImage constructs a Discovered from a feed image and its
 // parent post.
 func DiscoverImage(img famly.Image, item famly.FeedItem) Discovered {
@@ -163,6 +173,7 @@ type Saved struct {
 	finalPath string
 	exifError string
 	duplicate bool
+	sidecar   []byte // video XMP packet, re-sent on upload
 }
 
 func (s Saved) Downloaded() Downloaded { return s.dl }

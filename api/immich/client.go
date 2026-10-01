@@ -91,6 +91,10 @@ type UploadInput struct {
 	// dedupe at the device layer across bairn re-runs.
 	DeviceAssetID string
 
+	// Sidecar is an optional XMP packet sent as the sidecarData
+	// multipart part (AssetMediaCreateDto.sidecarData).
+	Sidecar []byte
+
 	// Metadata is an arbitrary key/value bag persisted with the
 	// asset on the Immich side. bairn writes "famlyImageId" with
 	// the vendor's image ID for traceability.
@@ -244,6 +248,19 @@ func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 	}
 	if _, err := part.Write(in.Data); err != nil {
 		return nil, "", err
+	}
+
+	if len(in.Sidecar) > 0 {
+		sh := textproto.MIMEHeader{}
+		sh.Set("Content-Disposition", `form-data; name="sidecarData"; filename="sidecar.xmp"`)
+		sh.Set("Content-Type", "application/octet-stream")
+		sp, err := w.CreatePart(sh)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := sp.Write(in.Sidecar); err != nil {
+			return nil, "", err
+		}
 	}
 
 	if err := w.Close(); err != nil {

@@ -169,6 +169,16 @@ func needsXMP(f Fields) bool {
 		!f.DateTimeOriginal.IsZero()
 }
 
+// Sidecar returns a standalone XMP packet for f, for media that
+// cannot carry an embedded one (videos). It is nil when f holds
+// nothing XMP-relevant.
+func Sidecar(f Fields) ([]byte, error) {
+	if !needsXMP(f) {
+		return nil, nil
+	}
+	return buildXMPPacket(f)
+}
+
 // buildXMPPacket emits a self-described XMP packet matching
 // Adobe's expected boilerplate. We write the namespaces and
 // elements bairn cares about; readers ignore the rest of the

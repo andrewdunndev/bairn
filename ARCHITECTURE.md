@@ -30,9 +30,10 @@ metadata reinjected, optionally also push to Immich.
 5. **No live vendor calls in default `make test`.** Every test
    uses `httptest.Server` against fixtures. The `bairn drift`
    subcommand is the explicit exception.
-6. **All asset metadata embeds in-file.** No sidecar JSON, XMP,
-   or text files. EXIF/XMP/IPTC for JPEG/TIFF; filename + mtime
-   for video. See ADR 0005.
+6. **Photo metadata embeds in-file.** No sidecar JSON or text
+   files. EXIF/XMP/IPTC for JPEG/TIFF. Videos cannot carry it, so
+   each gets one standalone `<file>.xmp` (also sent to Immich as
+   `sidecarData`); photos never get one. See ADR 0005.
 7. **Privacy boundary at the repository edge.** Discovery captures,
    schema dumps, and vendor-specific manifests are gitignored. The
    committed surface stays minimal.

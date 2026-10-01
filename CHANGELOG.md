@@ -25,6 +25,10 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 - XMP `digiKam:TagsList` (flat child names, same source as
   `dc:subject`) in the photo packet; Immich reads it and ignores
   `dc:subject`.
+- Videos now carry metadata: a standalone `<file>.xmp` (description,
+  date with its offset, tags) is written beside each video and sent to
+  Immich as `sidecarData`. Photos still embed their XMP and get no
+  sidecar.
 
 ### Fixed
 
