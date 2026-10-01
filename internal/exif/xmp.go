@@ -17,7 +17,7 @@ import (
 // payloads here and splice them into the file's bytes at write
 // time.
 var (
-	pendingXMPMu          sync.Mutex
+	pendingXMPMu            sync.Mutex
 	pendingXMPBySegmentList = map[*jis.SegmentList][]byte{}
 )
 
@@ -218,12 +218,10 @@ func buildXMPPacket(f Fields) ([]byte, error) {
 	}
 
 	if !f.DateTimeOriginal.IsZero() {
-		offset := f.OffsetTimeOriginal
-		if offset == "" {
-			offset = "+00:00"
-		}
-		// XMP photoshop:DateCreated wants ISO 8601.
-		stamp := f.DateTimeOriginal.UTC().Format("2006-01-02T15:04:05") + offset
+		// XMP photoshop:DateCreated wants ISO 8601: local clock
+		// time followed by the offset it is local to.
+		local, offset := wallClock(f.DateTimeOriginal, f.OffsetTimeOriginal)
+		stamp := local.Format("2006-01-02T15:04:05") + offset
 		b.WriteString(`<photoshop:DateCreated>`)
 		if err := xml.EscapeText(&b, []byte(stamp)); err != nil {
 			return nil, err

@@ -23,6 +23,13 @@ changes; patch bumps within `0.x.y` are bug fixes only.
   verified against via `make pre-tag-check`; Renovate tracks it with
   automerge off.
 
+### Fixed
+
+- EXIF `DateTimeOriginal` and XMP `photoshop:DateCreated` now carry the
+  wall-clock time in the labelled offset. Previously the UTC clock
+  reading was written next to a non-UTC offset, so the label disagreed
+  with the time. Files already archived keep the old values.
+
 ### Removed
 
 - CI: the `drift-gate-immich` and `smoke-immich` jobs (web/api only,
