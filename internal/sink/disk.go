@@ -42,7 +42,7 @@ func NewDisk(root, filenamePattern, dirPattern string) (*Disk, error) {
 	if dirPattern == "" {
 		dirPattern = DefaultDirPattern
 	}
-	if err := os.MkdirAll(root, 0o755); err != nil {
+	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("sink: mkdir %s: %w", root, err)
 	}
 	return &Disk{root: root, filenamePattern: filenamePattern, dirPattern: dirPattern}, nil
@@ -73,21 +73,43 @@ func (d *Disk) Put(ctx context.Context, in PutInput) (Receipt, error) {
 		return Receipt{}, fmt.Errorf("sink: filename pattern produced empty name")
 	}
 	destDir := filepath.Join(d.root, subdir)
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
+	dest := filepath.Join(destDir, name)
+	// Ids come from the vendor; a pattern fed a "../" must not
+	// write outside the archive root.
+	if !within(d.root, dest) || !within(d.root, destDir) {
+		return Receipt{}, fmt.Errorf("sink: %s resolves outside the save directory", name)
+	}
+	if err := os.MkdirAll(destDir, 0o700); err != nil {
 		return Receipt{}, fmt.Errorf("sink: mkdir %s: %w", destDir, err)
 	}
-	dest := filepath.Join(destDir, name)
 
 	// Idempotency: if a file already exists at the destination,
 	// trust the state DB upstream and don't overwrite. The
 	// orchestration loop should have skipped this asset; if we got
 	// here anyway, return duplicate so the caller knows.
 	if stat, err := os.Stat(dest); err == nil && !stat.IsDir() {
+		// A media file on disk without its sidecar (saved before
+		// sidecars existed) gets the sidecar now.
+		if len(in.Sidecar) > 0 {
+			if _, err := os.Stat(dest + ".xmp"); os.IsNotExist(err) {
+				if err := writeFileAtomic(dest+".xmp", in.Sidecar); err != nil {
+					return Receipt{}, fmt.Errorf("sink: sidecar %s: %w", dest, err)
+				}
+			}
+		}
 		return Receipt{
 			DestPath: dest,
 			Status:   "duplicate",
 			Size:     stat.Size(),
 		}, nil
+	}
+
+	// Sidecar first: a media file on disk always has its sidecar,
+	// so a kill between the two writes leaves no sidecar-less media.
+	if len(in.Sidecar) > 0 {
+		if err := writeFileAtomic(dest+".xmp", in.Sidecar); err != nil {
+			return Receipt{}, fmt.Errorf("sink: sidecar %s: %w", dest, err)
+		}
 	}
 
 	src, err := os.Open(in.SourcePath)
@@ -139,15 +161,16 @@ func (d *Disk) Put(ctx context.Context, in PutInput) (Receipt, error) {
 	}
 
 	receipt := Receipt{DestPath: dest, Status: "created", Size: written}
-	if len(in.Sidecar) > 0 {
-		if err := writeFileAtomic(dest+".xmp", in.Sidecar); err != nil {
-			return receipt, fmt.Errorf("sink: sidecar %s: %w", dest, err)
-		}
-	}
 	if exifErr != nil {
 		return receipt, fmt.Errorf("sink: reinject %s: %w", dest, exifErr)
 	}
 	return receipt, nil
+}
+
+// within reports whether path is root or lies under it.
+func within(root, path string) bool {
+	rel, err := filepath.Rel(root, path)
+	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // writeFileAtomic writes data to path via a tmp file and rename,

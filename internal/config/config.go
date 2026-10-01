@@ -149,7 +149,7 @@ func dataDir() (string, error) {
 }
 
 func ensureDir(p string) (string, error) {
-	if err := os.MkdirAll(p, 0o755); err != nil {
+	if err := os.MkdirAll(p, 0o700); err != nil {
 		return "", err
 	}
 	return p, nil

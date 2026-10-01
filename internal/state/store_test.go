@@ -3,6 +3,7 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -209,6 +210,9 @@ func TestFlushIsBatched(t *testing.T) {
 	ctx := context.Background()
 	size := func() int64 {
 		fi, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return 0
+		}
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -271,5 +275,31 @@ func TestLegacyEntryDecodesAsNotUploaded(t *testing.T) {
 	}
 	if up, _ := s.IsUploaded(context.Background(), "x"); up {
 		t.Fatal("legacy entry should not count as uploaded")
+	}
+}
+
+// The state file is replaced by rename on every flush; the lock must
+// outlive that.
+func TestLockSurvivesFlush(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	first, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+	for i := 0; i < DefaultFlushEvery; i++ {
+		if err := first.Discover(context.Background(), fmt.Sprintf("a%d", i), Asset{Source: "s"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("state not flushed: %v", err)
+	}
+	second, err := Open(context.Background(), path)
+	if err == nil {
+		_ = second.Close()
+	}
+	if !errors.Is(err, ErrLocked) {
+		t.Fatalf("second Open after a flush: err = %v, want ErrLocked", err)
 	}
 }

@@ -70,13 +70,16 @@ var ErrLocked = errors.New("state: another bairn process holds the lock on this 
 
 // Open loads the state file, creating it if absent, and acquires an
 // exclusive non-blocking flock for the duration of the Store's life.
+// The lock is on a sibling <path>.lock that is never renamed: the
+// state file itself is replaced on every flush, which would leave a
+// lock on it pointing at an unlinked inode.
 func Open(ctx context.Context, path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("state: create dir for %s: %w", path, err)
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("state: open %s: %w", path, err)
+		return nil, fmt.Errorf("state: open lock for %s: %w", path, err)
 	}
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		_ = f.Close()
@@ -87,18 +90,13 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	}
 
 	s := &Store{path: path, lock: f, data: map[string]*Asset{}, flushEvery: DefaultFlushEvery}
-	stat, err := f.Stat()
-	if err != nil {
+	buf, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		_ = s.Close()
-		return nil, fmt.Errorf("state: stat %s: %w", path, err)
+		return nil, fmt.Errorf("state: read %s: %w", path, err)
 	}
-	if stat.Size() > 0 {
-		if _, err := f.Seek(0, 0); err != nil {
-			_ = s.Close()
-			return nil, fmt.Errorf("state: seek %s: %w", path, err)
-		}
-		dec := json.NewDecoder(f)
-		if err := dec.Decode(&s.data); err != nil {
+	if len(buf) > 0 {
+		if err := json.Unmarshal(buf, &s.data); err != nil {
 			_ = s.Close()
 			return nil, fmt.Errorf("state: decode %s: %w", path, err)
 		}

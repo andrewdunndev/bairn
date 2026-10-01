@@ -59,7 +59,8 @@ Format: a flat object keyed by Famly image ID, values are records:
 ```
 
 Concurrency: an OS file lock (`syscall.Flock` LOCK_EX|LOCK_NB on
-unix; `LockFileEx` on Windows) is held for the duration of a run.
+unix; `LockFileEx` on Windows) is held for the duration of a run, on a sibling `<state-path>.lock`
+that is never renamed (the state file is replaced on every flush).
 A second `bairn fetch` against the same state file fails fast with
 a prescriptive message naming the lock holder if discoverable.
 

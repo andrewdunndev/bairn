@@ -33,6 +33,13 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- The state lock lives on `<state-path>.lock`; on the state file itself it
+  was lost at the first flush, so a second `bairn fetch` could run.
+- A video's `.xmp` sidecar is written before the media file, and added
+  beside media already on disk, so a retry-from-disk never lacks it.
+- The save path is refused when a vendor id would resolve outside the
+  save directory.
+- State, config and archive directories are created 0700.
 - A `Retry-After` longer than the 30s backoff cap is honoured up to five
   minutes; a longer one ends the retries instead of hammering a 429.
 - A feed walk whose cursor stops moving ends with `feed cursor did not

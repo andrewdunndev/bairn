@@ -71,7 +71,7 @@ metadata reinjected, optionally also push to Immich.
   fields.
 - **Directory pattern**: `%Y-%m-%d/` per-day buckets by default.
 - **State file**: `$XDG_STATE_HOME/bairn/state.json` by default,
-  with `flock` for single-writer enforcement. Override via
+  with `flock` on `state.json.lock` for single-writer enforcement. Override via
   `--state-path` or `BAIRN_STATE_PATH`. A common alternate is
   `<save-dir>/.bairn-state.json`.
 
