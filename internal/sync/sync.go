@@ -50,6 +50,10 @@ type Options struct {
 	// MaxPages caps the feed walk. 0 means unlimited.
 	MaxPages int
 
+	// Zone is the fallback zone for the date of a video in a post
+	// with no zoned image. nil means time.Local.
+	Zone *time.Location
+
 	// DryRun stops short of any actual fetch: assets are
 	// enumerated and skip-checked but no file lands on disk.
 	DryRun bool
@@ -216,7 +220,7 @@ func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedIt
 			res.Skipped++
 			continue
 		}
-		processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item), res, logger)
+		processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item, opts.Zone), res, logger)
 	}
 }
 

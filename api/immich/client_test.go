@@ -20,16 +20,15 @@ import (
 
 // fakeImmich captures the most recent upload request for assertions.
 type fakeImmich struct {
-	srv               *httptest.Server
-	lastChecksum      string
-	lastAPIKey        string
-	lastFilename      string
-	lastMetadata      map[string]string
-	lastFileCreated   string
-	lastDeviceID      string
-	lastDeviceAssetID string
-	lastSidecar       []byte
-	sidecarFilename   string
+	srv             *httptest.Server
+	lastChecksum    string
+	lastAPIKey      string
+	lastFilename    string
+	lastMetadata    map[string]string
+	lastFileCreated string
+	sawDeviceField  bool
+	lastSidecar     []byte
+	sidecarFilename string
 
 	respondWith struct {
 		statusCode int
@@ -79,10 +78,8 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 				f.lastFileCreated = string(body)
 			case "filename":
 				f.lastFilename = string(body)
-			case "deviceId":
-				f.lastDeviceID = string(body)
-			case "deviceAssetId":
-				f.lastDeviceAssetID = string(body)
+			case "deviceId", "deviceAssetId":
+				f.sawDeviceField = true
 			case "metadata":
 				// v2.7.5+: single field, JSON-encoded array of
 				// {key, value} where value is an object wrapping
@@ -120,8 +117,6 @@ func TestUploadCreated(t *testing.T) {
 		Filename:       "img-001.jpg",
 		FileCreatedAt:  now,
 		FileModifiedAt: now,
-		DeviceID:       "bairn",
-		DeviceAssetID:  "img-001",
 		Metadata:       map[string]string{"famlyImageId": "img-001"},
 	})
 	if err != nil {
@@ -141,11 +136,8 @@ func TestUploadCreated(t *testing.T) {
 	if f.lastFilename != "img-001.jpg" {
 		t.Errorf("filename = %q", f.lastFilename)
 	}
-	if f.lastDeviceID != "bairn" {
-		t.Errorf("deviceId = %q", f.lastDeviceID)
-	}
-	if f.lastDeviceAssetID != "img-001" {
-		t.Errorf("deviceAssetId = %q", f.lastDeviceAssetID)
+	if f.sawDeviceField {
+		t.Error("deviceId/deviceAssetId sent; Immich 3.x dropped them")
 	}
 	if f.lastMetadata["famlyImageId"] != "img-001" {
 		t.Errorf("metadata.famlyImageId = %q", f.lastMetadata["famlyImageId"])
@@ -211,7 +203,6 @@ func TestUploadSidecarField(t *testing.T) {
 	in := UploadInput{
 		Data: []byte("fake video bytes"), Filename: "vid-001.mp4",
 		FileCreatedAt: now, FileModifiedAt: now,
-		DeviceID: "bairn", DeviceAssetID: "vid-001",
 		Sidecar: []byte("<x:xmpmeta/>"),
 	}
 	if _, err := c.Upload(context.Background(), in); err != nil {

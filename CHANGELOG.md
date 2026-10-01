@@ -15,6 +15,14 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- A video in a post with no zoned image was dated as UTC, so it showed
+  hours late in the timeline. It now uses the zone of the running
+  machine (override with `--tz` or `BAIRN_TZ`), with the offset
+  computed at the post's date.
+- The Immich upload no longer sends `deviceId` / `deviceAssetId`;
+  Immich 3.x dropped them. The Immich floor is now v3.0.2, and
+  `IMMICH_VERSION` is pinned to 3.0.2, the version the home server
+  runs.
 - A failed Immich upload is retried on the next run. Assets saved to
   disk but not confirmed in Immich (a failed upload, an Immich outage,
   or an earlier `--no-immich` run) are uploaded from the disk sink,
@@ -29,6 +37,9 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Added
 
+- `--tz` / `BAIRN_TZ` set the fallback zone for video dates. `--max-pages
+  0` (unlimited) is documented and tested as the way to walk a full
+  history.
 - Both the Famly and Immich clients retry transport errors, 429
   (honouring `Retry-After`) and 5xx with capped exponential backoff and
   jitter; other 4xx fail at once. A retried Immich upload is safe: the

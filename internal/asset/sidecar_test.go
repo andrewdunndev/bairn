@@ -23,7 +23,7 @@ func TestVideoSidecarOnly(t *testing.T) {
 	item := famly.FeedItem{
 		FeedItemID: "post-001", Body: "Nap time", CreatedDate: famly.FamlyTime{Time: created},
 	}
-	vid := DiscoverVideo(famly.Video{VideoID: "vid-001", URL: "https://fixture/v"}, item)
+	vid := DiscoverVideo(famly.Video{VideoID: "vid-001", URL: "https://fixture/v"}, item, time.UTC)
 	sc, err := vid.Sidecar("bairn")
 	if err != nil || sc == nil {
 		t.Fatalf("video sidecar = %q, err %v", sc, err)
@@ -78,7 +78,7 @@ func TestSaveWritesVideoSidecarOnly(t *testing.T) {
 		disc    Discovered
 		sidecar bool
 	}{
-		{DiscoverVideo(famly.Video{VideoID: "vid-001", URL: srv.URL + "/v"}, item), true},
+		{DiscoverVideo(famly.Video{VideoID: "vid-001", URL: srv.URL + "/v"}, item, time.UTC), true},
 		{DiscoverImage(famly.Image{ImageID: "img-001", BigURL: srv.URL + "/i"}, item), false},
 	} {
 		dl, err := c.disc.Download(context.Background(), nil)
@@ -126,7 +126,7 @@ func TestUploadSendsVideoSidecar(t *testing.T) {
 	disk, _ := sink.NewDisk(t.TempDir(), "", "")
 	item := famly.FeedItem{FeedItemID: "p", Body: "Nap time",
 		CreatedDate: famly.FamlyTime{Time: time.Date(2026, 5, 6, 14, 0, 0, 0, time.UTC)}}
-	dl, err := DiscoverVideo(famly.Video{VideoID: "vid-001", URL: srv.URL + "/v"}, item).Download(context.Background(), nil)
+	dl, err := DiscoverVideo(famly.Video{VideoID: "vid-001", URL: srv.URL + "/v"}, item, time.UTC).Download(context.Background(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -159,7 +159,7 @@ func TestVideoSidecarOffsetFollowsSiblingImageZone(t *testing.T) {
 				CreatedDate: famly.FamlyTime{Time: c.created},
 				Images:      []famly.Image{{ImageID: "img-001", CreatedAt: famly.ImageTime{Timezone: "America/Detroit"}}},
 			}
-			sc, err := DiscoverVideo(famly.Video{VideoID: "vid-001"}, item).Sidecar("bairn")
+			sc, err := DiscoverVideo(famly.Video{VideoID: "vid-001"}, item, nil).Sidecar("bairn")
 			if err != nil || sc == nil {
 				t.Fatalf("sidecar = %q, err %v", sc, err)
 			}
@@ -176,5 +176,40 @@ func TestImageOffsetEvaluatedAtPickedInstant(t *testing.T) {
 	img := famly.Image{ImageID: "img-001", CreatedAt: famly.ImageTime{Timezone: "America/Detroit"}}
 	if got := DiscoverImage(img, item).tzOffset; got != "-05:00" {
 		t.Errorf("tzOffset = %q, want -05:00", got)
+	}
+}
+
+func TestVideoOffsetDefaultsToZone(t *testing.T) {
+	detroit, err := time.LoadLocation("America/Detroit")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	cases := []struct {
+		name    string
+		created time.Time
+		zone    *time.Location
+		want    string
+	}{
+		{"summer dst", time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC), detroit, "-04:00"},
+		{"winter", time.Date(2026, 1, 15, 17, 0, 0, 0, time.UTC), detroit, "-05:00"},
+		{"utc zone", time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC), time.UTC, "+00:00"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			item := famly.FeedItem{FeedItemID: "p", CreatedDate: famly.FamlyTime{Time: c.created}}
+			if got := DiscoverVideo(famly.Video{VideoID: "v"}, item, c.zone).tzOffset; got != c.want {
+				t.Errorf("offset = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestVideoOffsetNilZoneIsLocal(t *testing.T) {
+	old := time.Local
+	t.Cleanup(func() { time.Local = old })
+	time.Local = time.FixedZone("test", -7*3600)
+	item := famly.FeedItem{CreatedDate: famly.FamlyTime{Time: time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC)}}
+	if got := DiscoverVideo(famly.Video{VideoID: "v"}, item, nil).tzOffset; got != "-07:00" {
+		t.Errorf("offset = %q, want -07:00", got)
 	}
 }

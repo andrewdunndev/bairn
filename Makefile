@@ -5,7 +5,7 @@
 # home Immich to the new release, recapture api/immich/required-fields.json
 # with `make refresh-immich-validator`, then run `make pre-tag-check`.
 # renovate: datasource=github-releases depName=immich-app/immich
-IMMICH_VERSION := 3.2.4
+IMMICH_VERSION := 3.0.2
 
 BINARY := bin/bairn
 

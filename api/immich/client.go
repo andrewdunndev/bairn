@@ -84,20 +84,6 @@ type UploadInput struct {
 	FileCreatedAt  time.Time
 	FileModifiedAt time.Time
 
-	// DeviceID identifies the upload client. Required by the live
-	// Immich server (>= v2.7.5) even though it is absent from
-	// AssetMediaCreateDto in the published OpenAPI spec; v0.4.3
-	// trusted the spec, dropped this, and broke uploads. Stable
-	// across bairn versions so Immich's per-device library state
-	// is preserved.
-	DeviceID string
-
-	// DeviceAssetID is a client-side unique identifier for the
-	// asset. Required by the live server (see DeviceID note).
-	// bairn passes the vendor's stable image ID so Immich can
-	// dedupe at the device layer across bairn re-runs.
-	DeviceAssetID string
-
 	// Sidecar is an optional XMP packet sent as the sidecarData
 	// multipart part (AssetMediaCreateDto.sidecarData).
 	Sidecar []byte
@@ -181,20 +167,11 @@ func (c *Client) Upload(ctx context.Context, in UploadInput) (*UploadResult, err
 
 // buildUploadBody assembles the multipart payload Immich expects.
 //
-// Wire format targets Immich >= v2.7.5 (post-zod-migration; upstream
-// PR immich-app/immich#26597, April 2026). Required fields per the
-// LIVE SERVER (verified against v2.7.5):
-//   - assetData, fileCreatedAt, fileModifiedAt
-//   - deviceId, deviceAssetId
-//   - metadata items each with `value` as an object
-//
-// The published Immich OpenAPI spec does NOT
-// list deviceId / deviceAssetId on AssetMediaCreateDto. The live
-// server enforces them anyway. v0.4.3 trusted the spec, dropped the
-// fields, and broke uploads. v0.4.5 restores them per a downstream
-// user's runtime evidence (MR !2). Future spec drift in either
-// direction is re-evaluated by `make pre-tag-check` against
-// IMMICH_VERSION; live-server testing remains the truth.
+// Fields follow AssetMediaCreateDto at the release pinned as
+// IMMICH_VERSION: assetData, fileCreatedAt and fileModifiedAt are
+// required; filename, metadata and sidecarData are optional. Metadata
+// items carry `value` as an object. Immich 3.x dropped deviceId and
+// deviceAssetId, so they are not sent.
 func buildUploadBody(in UploadInput) ([]byte, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -204,15 +181,6 @@ func buildUploadBody(in UploadInput) ([]byte, string, error) {
 		return nil, "", err
 	}
 	if err := w.WriteField("fileModifiedAt", in.FileModifiedAt.UTC().Format(time.RFC3339)); err != nil {
-		return nil, "", err
-	}
-
-	// AssetMediaBase device fields. Server-required since v2.7.5.
-	// See type doc for the spec-vs-server mismatch.
-	if err := w.WriteField("deviceId", in.DeviceID); err != nil {
-		return nil, "", err
-	}
-	if err := w.WriteField("deviceAssetId", in.DeviceAssetID); err != nil {
 		return nil, "", err
 	}
 

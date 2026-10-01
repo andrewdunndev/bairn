@@ -58,7 +58,8 @@ bairn does five jobs:
 
 2. **Paginate the feed.** bairn walks Famly's
    `/api/feed/feed/feed` endpoint, page by page, stopping at
-   `--max-pages` (default 3) or when Famly returns no more items.
+   `--max-pages` (default 3; `0` walks the whole feed, which a
+   full-history backfill needs) or when Famly returns no more items.
    The default `--source=all` mode includes every image and video on
    each post; alternative `--source=tagged` and `--source=liked`
    filters are available for households whose schools tag photos per
@@ -166,6 +167,7 @@ Save and state:
 |---|---|---|
 | `BAIRN_SAVE_DIR` | Root for saved photos and videos | `$XDG_DATA_HOME/bairn/assets` |
 | `BAIRN_STATE_PATH` | JSON state file | `$XDG_STATE_HOME/bairn/state.json` |
+| `BAIRN_TZ` | IANA zone (`America/Detroit`) for the date of videos in posts with no zoned image; same as `--tz` | machine's local zone |
 | `BAIRN_LOG_FORMAT` | `json` (cron) or `text` (interactive) | `json` |
 
 Optional Immich sink (uploads alongside disk save):
@@ -175,15 +177,17 @@ Optional Immich sink (uploads alongside disk save):
 | `IMMICH_BASE_URL` | Immich server URL, e.g. `https://photos.example.com` | unset |
 | `IMMICH_API_KEY` | Immich API key (User Settings → API Keys) | unset |
 
-**Immich version requirement: v2.7.5 or later.** bairn targets the
-post-zod-migration `/assets` upload contract
-([immich-app/immich#26597](https://github.com/immich-app/immich/pull/26597),
-April 2026). Older Immich versions are not supported.
+**Immich version requirement: v3.0.2 or later.** bairn targets the
+Immich 3.x `/assets` upload contract, which no longer takes
+`deviceId` / `deviceAssetId`; bairn does not send them, and 2.x
+servers that still require them are not supported.
 
 CLI flag overrides for `bairn fetch`:
 
 ```
 --max-pages N            stop after N feed pages (default 3, 0 = unlimited)
+--tz ZONE                zone for videos in posts with no zoned image
+                         (default: the machine's local zone)
 --dry-run                enumerate without fetching or saving
 --source MODE            feed filter: all (default; every image and video),
                          tagged (only images tagged with one of your children),
@@ -226,6 +230,13 @@ Concretely:
 | XMP `dc:description` | full body | Newlines preserved; XMP can carry them safely. |
 | XMP `dc:subject`, `digiKam:TagsList` | per-image kid tag names (flat; Immich reads TagsList) | When Famly tags the photo per child. |
 | XMP `photoshop:DateCreated` | image timestamp | ISO 8601 with offset. |
+
+A video carries no zone, so its sidecar date borrows the zone of a
+zoned image in the same post. A post with no zoned image uses `--tz` /
+`BAIRN_TZ`, else the zone of the machine running bairn, with the
+offset computed at the post's date (daylight saving included). Run
+the backfill on a machine whose clock is in the family's zone, or set
+`--tz`.
 
 GPS coordinates are off by default. They embed only when the
 operator supplies coordinates explicitly.

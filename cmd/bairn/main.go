@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+	_ "time/tzdata"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
@@ -86,6 +88,7 @@ func newLogger(format string) *slog.Logger {
 func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
 	fs := flag.NewFlagSet("fetch", flag.ExitOnError)
 	maxPages := fs.Int("max-pages", 3, "stop after this many feed pages (0 = unlimited)")
+	tz := fs.String("tz", cfg.Zone, "IANA zone for videos in posts with no zoned image (default: the machine's local zone)")
 	dryRun := fs.Bool("dry-run", false, "enumerate without saving or uploading")
 	source := fs.String("source", "all", "feed filter: all (every image and video), tagged (only images tagged with one of our children), or liked (only images liked by a household login)")
 	saveDir := fs.String("save-dir", cfg.SaveDir, "root directory for saved photos and videos")
@@ -94,6 +97,12 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	dirPat := fs.String("dir-pattern", "", "directory template under save-dir (default: %Y-%m-%d)")
 	includeSystem := fs.Bool("include-system-posts", false, "include automated Famly posts (check-ins, sign-outs); off by default to keep templated text out of photo captions")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+
+	zone, err := resolveZone(*tz)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fetch:", err)
 		return 2
 	}
 
@@ -171,6 +180,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		MaxPages:           *maxPages,
 		DryRun:             *dryRun,
 		Source:             src,
+		Zone:               zone,
 		HouseholdLogins:    logins,
 		HouseholdChildren:  children,
 		Software:           "bairn " + Version,
@@ -383,4 +393,17 @@ func famlyOpts(cfg *config.Config) []famly.Option {
 		opts = append(opts, famly.WithBaseURL(cfg.FamlyBaseURL))
 	}
 	return opts
+}
+
+// resolveZone maps --tz / BAIRN_TZ to a location; empty is the
+// machine's local zone.
+func resolveZone(name string) (*time.Location, error) {
+	if name == "" {
+		return time.Local, nil
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, fmt.Errorf("--tz %q: %w", name, err)
+	}
+	return loc, nil
 }

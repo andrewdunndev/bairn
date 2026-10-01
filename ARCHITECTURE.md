@@ -37,6 +37,8 @@ metadata reinjected, optionally also push to Immich.
    files. EXIF/XMP/IPTC for JPEG/TIFF. Videos cannot carry it, so
    each gets one standalone `<file>.xmp` (also sent to Immich as
    `sidecarData`); photos never get one. See ADR 0005.
+   A video's date takes a sibling image's zone, else `--tz`, else the
+   running machine's local zone, at the post's date.
 7. **Privacy boundary at the repository edge.** Discovery captures,
    schema dumps, and vendor-specific manifests are gitignored. The
    committed surface stays minimal.
