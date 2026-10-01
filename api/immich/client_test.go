@@ -184,6 +184,26 @@ func TestUploadUnauthorized(t *testing.T) {
 	}
 }
 
+func TestUploadForbiddenIsUnauthorized(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/assets", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := New(srv.URL, "narrow-key")
+	_, err := c.Upload(context.Background(), UploadInput{
+		Data:           []byte("x"),
+		Filename:       "x.jpg",
+		FileCreatedAt:  time.Now(),
+		FileModifiedAt: time.Now(),
+	})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
 // independent SHA1 helper to assert client.go's sha1Hex matches
 // the canonical encoding callers will compute.
 func TestSHA1HexMatchesCanonical(t *testing.T) {
@@ -303,5 +323,28 @@ func TestUploadClientErrorsNotRetried(t *testing.T) {
 		if err == nil || n != 1 {
 			t.Errorf("%d: err=%v attempts=%d, want an error after 1 attempt", code, err, n)
 		}
+	}
+}
+
+func TestUploadDoesNotFollowRedirectWithKey(t *testing.T) {
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("x-api-key") != ""
+	}))
+	t.Cleanup(other.Close)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/assets", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New(srv.URL, "secret-key", WithRetry(retry.Policy{Attempts: 1}))
+	_, err := c.Upload(context.Background(), UploadInput{
+		Data: []byte("x"), Filename: "x.jpg", FileCreatedAt: time.Now(), FileModifiedAt: time.Now(),
+	})
+	if err == nil {
+		t.Fatal("a redirect must not count as a successful upload")
+	}
+	if leaked {
+		t.Error("API key was replayed to the redirect target")
 	}
 }

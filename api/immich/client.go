@@ -54,11 +54,16 @@ func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.logger = l }
 // API key (managed under user settings; sent as x-api-key).
 func New(baseURL, apiKey string, opts ...Option) *Client {
 	c := &Client{
-		baseURL:    strings.TrimRight(baseURL, "/"),
-		apiKey:     apiKey,
-		httpClient: &http.Client{Timeout: 5 * time.Minute},
-		logger:     slog.Default(),
-		retry:      retry.Default(),
+		baseURL: strings.TrimRight(baseURL, "/"),
+		apiKey:  apiKey,
+		httpClient: &http.Client{
+			Timeout: 5 * time.Minute,
+			// The key rides a custom header that net/http would replay
+			// to another host on a 307/308; a redirect is an error.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		},
+		logger: slog.Default(),
+		retry:  retry.Default(),
 	}
 	for _, o := range opts {
 		o(c)
@@ -110,7 +115,7 @@ type UploadResult struct {
 
 // ErrUnauthorized is returned on 401. The operator should check
 // IMMICH_API_KEY and the configured base URL.
-var ErrUnauthorized = errors.New("immich: unauthorized; check IMMICH_API_KEY and IMMICH_BASE_URL")
+var ErrUnauthorized = errors.New("immich: unauthorized (401 or 403); check IMMICH_API_KEY, its permissions and IMMICH_BASE_URL")
 
 // Upload posts an asset to Immich. The Content-Length-bearing
 // multipart body is constructed in memory; the SHA1 of the file
@@ -143,7 +148,7 @@ func (c *Client) Upload(ctx context.Context, in UploadInput) (*UploadResult, err
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return nil, ErrUnauthorized
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

@@ -90,13 +90,23 @@ const DefaultPageDelay = time.Second
 // New constructs a Client with a TokenSource and optional overrides.
 func New(src TokenSource, opts ...Option) *Client {
 	c := &Client{
-		baseURL:    DefaultBaseURL,
-		userAgent:  DefaultUserAgent,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		logger:     slog.Default(),
-		tokenSrc:   src,
-		retry:      retry.Default(),
-		pageDelay:  DefaultPageDelay,
+		baseURL:   DefaultBaseURL,
+		userAgent: DefaultUserAgent,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			// The token rides a custom header that net/http would replay
+			// to another host on a redirect.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if req.URL.Host != via[0].URL.Host {
+					return errors.New("famly: refusing cross-host redirect")
+				}
+				return nil
+			},
+		},
+		logger:    slog.Default(),
+		tokenSrc:  src,
+		retry:     retry.Default(),
+		pageDelay: DefaultPageDelay,
 	}
 	for _, o := range opts {
 		o(c)

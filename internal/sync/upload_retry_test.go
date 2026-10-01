@@ -33,6 +33,10 @@ func scriptedImmich(t *testing.T, script ...string) (*httptest.Server, *atomic.I
 			parts = append(parts, k)
 		}
 		bodies = append(bodies, strings.Join(parts, ",")+" @"+r.FormValue("fileCreatedAt"))
+		if script[i] == "forbid" {
+			http.Error(w, "no", http.StatusForbidden)
+			return
+		}
 		if script[i] == "fail" {
 			http.Error(w, "no", http.StatusBadRequest)
 			return
@@ -179,5 +183,65 @@ func TestVideoRetryResendsSidecarFromDisk(t *testing.T) {
 	}
 	if len(*parts) != 2 || !strings.Contains((*parts)[1], "sidecarData") {
 		t.Fatalf("retry upload parts = %v, want sidecarData present", *parts)
+	}
+}
+
+// manyImagesFamly serves one page of n images, then an empty page.
+func manyImagesFamly(t *testing.T, n int) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	body := jpegBytes(t)
+	mux.HandleFunc("/api/feed/feed/feed", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("cursor") != "" {
+			_, _ = w.Write([]byte(`{"feedItems": []}`))
+			return
+		}
+		var imgs []string
+		for i := 0; i < n; i++ {
+			imgs = append(imgs, fmt.Sprintf(`{"imageId":"img-%d","url":"%s/img/%d","createdAt":{"date":"2026-05-06T14:00:00Z"}}`, i, srv.URL, i))
+		}
+		fmt.Fprintf(w, `{"feedItems":[{"feedItemId":"p","originatorId":"Post:e",
+"createdDate":"2026-05-06T14:00:00Z","body":"b","images":[%s]}]}`, strings.Join(imgs, ","))
+	})
+	mux.HandleFunc("/img/", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(body)
+	})
+	return srv
+}
+
+func TestUploadsStopAfterConsecutiveFailures(t *testing.T) {
+	famlySrv := manyImagesFamly(t, 8)
+	imSrv, hits, _ := scriptedImmich(t, "fail", "fail", "fail", "fail", "fail", "created")
+	disk, _ := sink.NewDisk(t.TempDir(), "", "")
+	im := sink.NewImmich(immich.New(imSrv.URL, "k"))
+	st := openTestStore(t)
+
+	r1 := runWith(t, famlySrv, disk, im, st)
+	if r1.Saved != 8 || r1.UploadFailed != 8 || r1.Uploaded != 0 {
+		t.Fatalf("run1 saved=%d failed=%d uploaded=%d, want 8/8/0", r1.Saved, r1.UploadFailed, r1.Uploaded)
+	}
+	if hits.Load() != maxUploadFailures {
+		t.Fatalf("immich hits = %d, want %d", hits.Load(), maxUploadFailures)
+	}
+
+	// The rest were saved without being sent; a rerun uploads all 8.
+	r2 := runWith(t, famlySrv, disk, im, st)
+	if r2.Uploaded != 8 || r2.UploadFailed != 0 {
+		t.Fatalf("run2 uploaded=%d failed=%d, want 8/0", r2.Uploaded, r2.UploadFailed)
+	}
+}
+
+func TestUploadsStopAtOnceOnForbidden(t *testing.T) {
+	famlySrv := manyImagesFamly(t, 4)
+	imSrv, hits, _ := scriptedImmich(t, "forbid")
+	disk, _ := sink.NewDisk(t.TempDir(), "", "")
+	st := openTestStore(t)
+
+	r := runWith(t, famlySrv, disk, sink.NewImmich(immich.New(imSrv.URL, "k")), st)
+	if hits.Load() != 1 || r.UploadFailed != 4 || r.Saved != 4 {
+		t.Fatalf("hits=%d failed=%d saved=%d, want 1/4/4", hits.Load(), r.UploadFailed, r.Saved)
 	}
 }

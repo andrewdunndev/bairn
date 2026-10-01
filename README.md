@@ -86,7 +86,10 @@ bairn does five jobs:
    from the disk sink, including its video `.xmp` sidecar, so a failed
    or skipped upload is fixed by rerunning `bairn fetch`. The run
    summary counts `saved`, `uploaded`, `uploadDuplicates` and
-   `uploadFailed`; the exit status is 1 while any upload failed. State
+   `uploadFailed`; the exit status is 1 while any upload failed. A 401 or 403 from
+   Immich, or five failed uploads in a row, stops uploads for the rest
+   of the run: the remaining assets are still saved to disk and counted
+   in `uploadFailed`, and a rerun uploads them. State
    is flushed every 50 changes and on exit, so a hard kill redoes at
    most that many (disk and Immich checksum dedupe absorb the repeat).
    The state file lives under [`$XDG_STATE_HOME`][xdg] by default and is held
@@ -236,7 +239,7 @@ zoned image in the same post. A post with no zoned image uses `--tz` /
 `BAIRN_TZ`, else the zone of the machine running bairn, with the
 offset computed at the post's date (daylight saving included). Run
 the backfill on a machine whose clock is in the family's zone, or set
-`--tz`.
+`--tz`. The zone in use is logged at the start of every fetch.
 
 GPS coordinates are off by default. They embed only when the
 operator supplies coordinates explicitly.

@@ -15,6 +15,11 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Changed
 
+- A 401 or 403 from Immich, or five failed uploads in a row, stops
+  uploads for the rest of the run instead of retrying every asset; the
+  rest are saved to disk, counted in `uploadFailed`, and a rerun
+  uploads them. A 403 now reports as unauthorized.
+- `bairn fetch` logs the zone it will use for zoneless posts.
 - Scheduled pipelines run only `drift-gate`; every other job sits behind
   an include that skips schedules.
 - `bairn drift --diff` exits 2 when a manifest endpoint has no readable
@@ -33,6 +38,8 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- Neither client follows a redirect that would replay its credential
+  header to another host (Immich follows none, Famly stays on its host).
 - An image with no zone of its own is dated in the local zone (as videos
   are), not as a UTC wall clock.
 - A download error no longer carries the signed CDN query string.

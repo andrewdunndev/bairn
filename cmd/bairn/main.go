@@ -88,7 +88,7 @@ func newLogger(format string) *slog.Logger {
 func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
 	fs := flag.NewFlagSet("fetch", flag.ExitOnError)
 	maxPages := fs.Int("max-pages", 3, "stop after this many feed pages (0 = unlimited)")
-	tz := fs.String("tz", cfg.Zone, "IANA zone for videos in posts with no zoned image (default: the machine's local zone)")
+	tz := fs.String("tz", cfg.Zone, "IANA zone for videos in posts with no zoned image (default: the machine's local zone, logged at start)")
 	dryRun := fs.Bool("dry-run", false, "enumerate without saving or uploading")
 	source := fs.String("source", "all", "feed filter: all (every image and video), tagged (only images tagged with one of our children), or liked (only images liked by a household login)")
 	saveDir := fs.String("save-dir", cfg.SaveDir, "root directory for saved photos and videos")
@@ -105,6 +105,9 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		fmt.Fprintln(os.Stderr, "fetch:", err)
 		return 2
 	}
+
+	logger.Info("zone for zoneless posts", "zone", zone.String(),
+		"offsetNow", time.Now().In(zone).Format("-07:00"))
 
 	src := sync.Source(*source)
 	if err := src.Validate(); err != nil {

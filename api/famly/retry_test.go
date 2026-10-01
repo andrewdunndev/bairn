@@ -151,3 +151,25 @@ func TestDefaultPageDelayIsOneSecond(t *testing.T) {
 		t.Errorf("default page delay = %v, want 1s", c.pageDelay)
 	}
 }
+
+func TestCrossHostRedirectDoesNotCarryToken(t *testing.T) {
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get(authHeader) != ""
+		_, _ = w.Write([]byte(`{"feedItems": []}`))
+	}))
+	t.Cleanup(other.Close)
+	srv := serve(t, func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+r.URL.Path, http.StatusTemporaryRedirect)
+	})
+	c := New(NewStaticToken("t"), WithBaseURL(srv.URL), WithPageDelay(0), fastRetry())
+	for _, err := range c.Pages(context.Background()) {
+		if err == nil {
+			t.Fatal("cross-host redirect should fail the walk")
+		}
+		break
+	}
+	if leaked {
+		t.Error("token was replayed to the redirect target")
+	}
+}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
+	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/asset"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
@@ -88,6 +89,41 @@ type Deps struct {
 	State  *state.Store
 	Logger *slog.Logger
 	HTTP   *http.Client
+
+	gate *uploadGate // set by Run
+}
+
+// maxUploadFailures is how many uploads in a row may fail before the
+// run stops trying Immich. The disk archive is the backup and a rerun
+// uploads from it, so a dead or refusing server should cost seconds,
+// not a retry cycle per remaining asset.
+const maxUploadFailures = 5
+
+// uploadGate stops Immich uploads for the rest of a run after an
+// authorization failure or maxUploadFailures failures in a row.
+type uploadGate struct {
+	fails   int
+	stopped bool
+}
+
+func (g *uploadGate) isStopped() bool { return g != nil && g.stopped }
+
+func (g *uploadGate) succeeded() {
+	if g != nil {
+		g.fails = 0
+	}
+}
+
+func (g *uploadGate) failed(err error, logger *slog.Logger) {
+	if g == nil || g.stopped {
+		return
+	}
+	g.fails++
+	if errors.Is(err, immich.ErrUnauthorized) || g.fails >= maxUploadFailures {
+		g.stopped = true
+		logger.Error("immich uploads stopped for this run; the rest stay on disk and a rerun uploads them",
+			"consecutiveFailures", g.fails, "err", err)
+	}
 }
 
 // Result is the JSON-shaped fetch summary.
@@ -136,6 +172,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 	}
 
 	res := Result{StartedAt: time.Now().UTC()}
+	deps.gate = &uploadGate{}
 
 	for page, err := range deps.Famly.Pages(ctx) {
 		if err != nil {
@@ -267,6 +304,8 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 			if uploaded, _ := deps.State.IsUploaded(ctx, id); !uploaded {
 				if opts.DryRun {
 					logger.Info("dry-run: would upload saved asset", "id", id)
+				} else if deps.gate.isStopped() {
+					res.UploadFailed++
 				} else {
 					uploadSaved(ctx, deps, id, res, logger)
 				}
@@ -329,11 +368,21 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		return
 	}
 
+	if deps.gate.isStopped() {
+		res.UploadFailed++
+		if _, recErr := saved.Record(ctx, deps.State); recErr != nil {
+			res.Errors++
+			logger.Error("record (saved-only)", "id", id, "err", recErr)
+		}
+		return
+	}
+
 	up, err := saved.Upload(ctx, deps.Immich)
 	if err != nil {
 		res.Errors++
 		res.UploadFailed++
 		logger.Error("upload", "id", id, "err", err)
+		deps.gate.failed(err, logger)
 		// Saved without uploaded: a rerun uploads it from disk.
 		if _, recErr := saved.Record(ctx, deps.State); recErr != nil {
 			logger.Error("record (saved-after-upload-failure)", "id", id, "err", recErr)
@@ -348,6 +397,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		return
 	}
 
+	deps.gate.succeeded()
 	countUpload(res, up.ImmichStatus())
 	logger.Info("complete",
 		"id", id, "path", saved.FinalPath(),
@@ -371,9 +421,11 @@ func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger 
 		res.Errors++
 		res.UploadFailed++
 		logger.Error("upload (retry from disk)", "id", id, "err", err)
+		deps.gate.failed(err, logger)
 		_ = deps.State.MarkError(ctx, id, err.Error())
 		return
 	}
+	deps.gate.succeeded()
 	countUpload(res, status)
 	logger.Info("uploaded from disk", "id", id, "immich_status", status)
 }
