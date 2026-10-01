@@ -14,7 +14,7 @@ Tests run without either, against fixture servers.
 ## The make targets that matter
 
 ```
-make gen        regenerate api/famly/gen.go and api/immich/imapi/imapi.go
+make gen        regenerate api/famly/gen.go
 make test       go test -short ./... (recommended for fast iteration)
 make smoke      go test -tags=smoke ./internal/... (longer-running)
 make lint       golangci-lint run
@@ -28,9 +28,11 @@ the vendor with a valid token. The schema dump is gitignored; each
 operator runs discovery on their own credentials. `api/famly/schema.graphql`
 is the hand-curated SDL bairn actually validates operations against.
 
-`api/immich/openapi.json` is vendored from
-`immich-app/immich:open-api/immich-openapi-specs.json`. Refresh it
-periodically; the URL is documented in `api/immich/oapi-codegen.yaml`.
+The Immich client in `api/immich` is hand-written. `IMMICH_VERSION`
+in the Makefile is the Immich release it is verified against via
+`make pre-tag-check`; Renovate bumps it, and a bump MR means upgrade
+the home Immich, run `make refresh-immich-validator`, then
+`make pre-tag-check`.
 
 ## Code conventions
 

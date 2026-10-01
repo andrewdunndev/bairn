@@ -173,13 +173,13 @@ func (c *Client) Upload(ctx context.Context, in UploadInput) (*UploadResult, err
 //   - deviceId, deviceAssetId
 //   - metadata items each with `value` as an object
 //
-// The published OpenAPI spec at api/immich/openapi.json does NOT
+// The published Immich OpenAPI spec does NOT
 // list deviceId / deviceAssetId on AssetMediaCreateDto. The live
 // server enforces them anyway. v0.4.3 trusted the spec, dropped the
 // fields, and broke uploads. v0.4.5 restores them per a downstream
 // user's runtime evidence (MR !2). Future spec drift in either
-// direction is one `make refresh-immich-spec` away from being
-// re-evaluated; live-server testing remains the truth.
+// direction is re-evaluated by `make pre-tag-check` against
+// IMMICH_VERSION; live-server testing remains the truth.
 func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)

@@ -19,6 +19,9 @@ changes; patch bumps within `0.x.y` are bug fixes only.
   Famly account (two GETs). Drift diffing now treats `<empty>` and
   `null` shapes as wildcards and merges nested shapes across the
   sampled feed items, so a week with photos is not reported as drift.
+- `IMMICH_VERSION` in the Makefile names the Immich release bairn is
+  verified against via `make pre-tag-check`; Renovate tracks it with
+  automerge off.
 
 ### Removed
 
@@ -26,6 +29,10 @@ changes; patch bumps within `0.x.y` are bug fixes only.
   never reachable from the runner), the Immich drift manifest and
   its empty baseline, and the `claude-drift-triage` include. `make
   pre-tag-check` remains the Immich gate.
+- The vendored Immich `openapi.json`, the unused generated `imapi`
+  client, the oapi-codegen config, `make gen-immich` and
+  `make refresh-immich-spec`, and the oapi-codegen `go.mod` tool.
+  The hand-written `api/immich` client and its contract test stay.
 
 ## [0.5.0] - 2026-05-09
 

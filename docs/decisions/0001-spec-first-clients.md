@@ -16,17 +16,14 @@ inherit the rot.
 
 ## Decision
 
-![spec-first clients](../../diagrams/spec-first-clients.svg)
-
-The Famly and Immich clients are generated from their respective
-specs, not hand-written.
+The Famly client is generated from its schema, not hand-written.
+(Amended 2026-10: the Immich client is now hand-written; the
+vendored OpenAPI spec and generated `imapi` client were removed as
+unused. `IMMICH_VERSION` in the Makefile is the verified release.)
 
 - Famly: `genqlient` against the introspected schema. Operations
   live in `api/famly/operations.graphql`. Generated client lives
   in `api/famly/gen.go` and is committed.
-- Immich: `oapi-codegen` against a vendored copy of Immich's
-  OpenAPI spec, filtered to the asset and album endpoints. Generated
-  client lives in `api/immich/imapi/imapi.go` and is committed.
 
 Generated files carry the `// Code generated ... DO NOT EDIT.`
 header. Hand edits to those files are prohibited; they will be

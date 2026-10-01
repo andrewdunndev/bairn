@@ -225,7 +225,7 @@ operator supplies coordinates explicitly.
 ## Local dev and smoke testing
 
 ```
-make gen           regenerate api/famly/gen.go and api/immich/imapi/imapi.go
+make gen           regenerate api/famly/gen.go
 make test          go test -race ./...
 make smoke         run the longer-running fixture tests
 make smoke-immich  live round-trip against the operator's Immich
@@ -258,6 +258,12 @@ v0.4.6 added the smoke and v0.5.0 folded lint into the same gate.
 quota-limited test user separate from your archive account), or
 falls back to `IMMICH_BASE_URL` / `IMMICH_API_KEY` for ad-hoc
 runs. It is a local gate only: CI runners cannot reach a LAN Immich.
+
+`IMMICH_VERSION` in the Makefile is the Immich release bairn is
+verified against via `make pre-tag-check`. Renovate proposes bumps
+(automerge off); a bump MR means: upgrade the home Immich, recapture
+`api/immich/required-fields.json` with `make refresh-immich-validator`,
+then run `make pre-tag-check`.
 
 For the no-write case (auditing a server you can't upload to),
 `bairn smoke immich --probe-only` sends a deliberately incomplete
