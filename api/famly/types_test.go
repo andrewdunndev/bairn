@@ -32,6 +32,17 @@ func TestImageTimeOffsetString(t *testing.T) {
 	}
 }
 
+func TestImageTimeOffsetAtUsesGivenInstant(t *testing.T) {
+	// The image date is in summer; the stamped instant is in winter.
+	it := ImageTime{Date: FamlyTime{Time: time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)}, Timezone: "America/Detroit"}
+	if got := it.OffsetAt(time.Date(2026, 1, 15, 12, 0, 0, 0, time.UTC)); got != "-05:00" {
+		t.Errorf("winter = %q, want -05:00", got)
+	}
+	if got := it.OffsetAt(time.Date(2026, 7, 4, 12, 0, 0, 0, time.UTC)); got != "-04:00" {
+		t.Errorf("summer = %q, want -04:00", got)
+	}
+}
+
 func TestFeedItemIsSystemGenerated(t *testing.T) {
 	if (FeedItem{}).IsSystemGenerated() {
 		t.Error("empty FeedItem should not be flagged system-generated")

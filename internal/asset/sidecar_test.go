@@ -29,7 +29,7 @@ func TestVideoSidecarOnly(t *testing.T) {
 		t.Fatalf("video sidecar = %q, err %v", sc, err)
 	}
 	s := string(sc)
-	for _, want := range []string{"Nap time", "<photoshop:DateCreated>2026-05-06T14:00:00+00:00<"} {
+	for _, want := range []string{"Nap time", "<photoshop:DateCreated>2026-05-06T14:00:00+00:00<", "<exif:DateTimeOriginal>2026-05-06T14:00:00+00:00<"} {
 		if !strings.Contains(s, want) {
 			t.Errorf("sidecar missing %q:\n%s", want, s)
 		}
@@ -140,5 +140,41 @@ func TestUploadSendsVideoSidecar(t *testing.T) {
 	}
 	if !strings.Contains(got, "Nap time") {
 		t.Errorf("sidecarData = %q", got)
+	}
+}
+
+func TestVideoSidecarOffsetFollowsSiblingImageZone(t *testing.T) {
+	cases := []struct {
+		name    string
+		created time.Time
+		want    string
+	}{
+		{"summer", time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC), "2026-07-04T12:00:00-04:00"},
+		{"winter", time.Date(2026, 1, 15, 17, 0, 0, 0, time.UTC), "2026-01-15T12:00:00-05:00"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			item := famly.FeedItem{
+				FeedItemID:  "post-001",
+				CreatedDate: famly.FamlyTime{Time: c.created},
+				Images:      []famly.Image{{ImageID: "img-001", CreatedAt: famly.ImageTime{Timezone: "America/Detroit"}}},
+			}
+			sc, err := DiscoverVideo(famly.Video{VideoID: "vid-001"}, item).Sidecar("bairn")
+			if err != nil || sc == nil {
+				t.Fatalf("sidecar = %q, err %v", sc, err)
+			}
+			if !strings.Contains(string(sc), "<exif:DateTimeOriginal>"+c.want+"<") {
+				t.Errorf("sidecar missing %q:\n%s", c.want, sc)
+			}
+		})
+	}
+}
+
+func TestImageOffsetEvaluatedAtPickedInstant(t *testing.T) {
+	// No image date: the post date is stamped, so its offset is used.
+	item := famly.FeedItem{CreatedDate: famly.FamlyTime{Time: time.Date(2026, 1, 15, 17, 0, 0, 0, time.UTC)}}
+	img := famly.Image{ImageID: "img-001", CreatedAt: famly.ImageTime{Timezone: "America/Detroit"}}
+	if got := DiscoverImage(img, item).tzOffset; got != "-05:00" {
+		t.Errorf("tzOffset = %q, want -05:00", got)
 	}
 }

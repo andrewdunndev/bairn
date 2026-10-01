@@ -275,6 +275,7 @@ func TestReinjectWritesXMP(t *testing.T) {
 		"<rdf:li>Child B</rdf:li>",
 		"<rdf:li>Outdoor</rdf:li>",
 		"<photoshop:DateCreated>2026-05-06T18:33:21+00:00",
+		"<exif:DateTimeOriginal>2026-05-06T18:33:21+00:00<",
 	}
 	for _, w := range want {
 		if !strings.Contains(string(body), w) {
@@ -353,6 +354,9 @@ func TestReinjectWritesLocalWallClock(t *testing.T) {
 			}
 			if !strings.Contains(string(body), "<photoshop:DateCreated>"+c.wantXMP+"<") {
 				t.Errorf("XMP missing DateCreated %q", c.wantXMP)
+			}
+			if !strings.Contains(string(body), "<exif:DateTimeOriginal>"+c.wantXMP+"<") {
+				t.Errorf("XMP missing exif:DateTimeOriginal %q", c.wantXMP)
 			}
 		})
 	}

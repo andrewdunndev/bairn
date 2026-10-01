@@ -198,9 +198,25 @@ func TestShapeMergesNestedAcrossItems(t *testing.T) {
 	if sender["id"] != "str" || sender["name"] != "str" {
 		t.Fatalf("sender not unioned: %v", sender)
 	}
+	if len(imgs) != 2 || imgs[1] != "<n=*>" {
+		t.Fatalf("count marker lost when first item is empty: %v", imgs)
+	}
 	// Item 1 empty images vs item 2 image map, in either order, diff clean.
 	rev := []any{feed[1], feed[0]}
 	if d := Diff(got, Shape(rev, ShapeOpts{AnonymizeCounts: true})); len(d) != 0 {
 		t.Fatalf("order-dependent shape: %v", d)
+	}
+}
+
+func TestDiffReportsRenamedKeyInsideSeededArray(t *testing.T) {
+	base := Shape([]any{
+		map[string]any{"images": []any{}},
+		map[string]any{"images": []any{map[string]any{"url_big": "u"}}},
+	}, ShapeOpts{AnonymizeCounts: true})
+	live := Shape([]any{
+		map[string]any{"images": []any{map[string]any{"urlBig": "u"}}},
+	}, ShapeOpts{AnonymizeCounts: true})
+	if d := Diff(base, live); len(d) == 0 {
+		t.Fatal("renamed image key not reported")
 	}
 }

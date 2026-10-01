@@ -293,12 +293,27 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 
 	driftCount := 0
 	writeFails := 0
+	transportFails := 0
+	// With --anonymize the body size is left out: it tracks household
+	// cardinality (role counts, how much the feed holds), which the
+	// shapes hide, and the log of a scheduled job is public.
+	size := func(n int) string {
+		if *anonymize {
+			return ""
+		}
+		return fmt.Sprintf(", %dB", n)
+	}
 	for _, r := range results {
 		switch {
 		case r.Error != "":
+			transportFails++
 			fmt.Printf("  %s: ERROR %s\n", r.ID, r.Error)
 		case r.NotJSON:
-			fmt.Printf("  %s: HTTP %d, %dB, not JSON\n", r.ID, r.Status, r.BodySize)
+			transportFails++
+			fmt.Printf("  %s: HTTP %d%s, not JSON\n", r.ID, r.Status, size(r.BodySize))
+		case r.Status < 200 || r.Status > 299:
+			transportFails++
+			fmt.Printf("  %s: HTTP %d%s, not 2xx\n", r.ID, r.Status, size(r.BodySize))
 		default:
 			if err := drift.WriteSignature(*outDir, r.ID, r.Signature); err != nil {
 				logger.Error("drift", "phase", "write", "id", r.ID, "err", err)
@@ -307,16 +322,23 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 			switch {
 			case len(r.Drift) > 0:
 				driftCount++
-				fmt.Printf("  %s: HTTP %d, %dB, DRIFT (%d changes)\n", r.ID, r.Status, r.BodySize, len(r.Drift))
+				fmt.Printf("  %s: HTTP %d%s, DRIFT (%d changes)\n", r.ID, r.Status, size(r.BodySize), len(r.Drift))
 				for _, d := range r.Drift {
 					fmt.Printf("    %s\n", d)
 				}
 			case *diffDir != "":
-				fmt.Printf("  %s: HTTP %d, %dB, ok\n", r.ID, r.Status, r.BodySize)
+				fmt.Printf("  %s: HTTP %d%s, ok\n", r.ID, r.Status, size(r.BodySize))
 			default:
-				fmt.Printf("  %s: HTTP %d, %dB\n", r.ID, r.Status, r.BodySize)
+				fmt.Printf("  %s: HTTP %d%s\n", r.ID, r.Status, size(r.BodySize))
 			}
 		}
+	}
+
+	// A failed endpoint is not a pass: an HTML error page or a timeout
+	// must not read as a healthy gate.
+	if transportFails > 0 {
+		logger.Error("drift", "phase", "transport", "failed", transportFails)
+		return 2
 	}
 
 	// Trap B (cont.): if --diff was set and zero comparisons

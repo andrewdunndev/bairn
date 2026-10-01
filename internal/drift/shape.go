@@ -130,6 +130,10 @@ func mergeShapes(a, b any) any {
 		if !ok || len(ta) == 0 || len(tb) == 0 {
 			return a
 		}
+		if len(ta) == 1 && isWildcard(ta[0]) {
+			// a saw no elements, so it has no count marker; b whole.
+			return b
+		}
 		out := append([]any{mergeShapes(ta[0], tb[0])}, ta[1:]...)
 		return out
 	}

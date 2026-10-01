@@ -194,6 +194,7 @@ func buildXMPPacket(f Fields) ([]byte, error) {
 	b.WriteString(` xmlns:dc="http://purl.org/dc/elements/1.1/"`)
 	b.WriteString(` xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"`)
 	b.WriteString(` xmlns:digiKam="http://www.digikam.org/ns/1.0/"`)
+	b.WriteString(` xmlns:exif="http://ns.adobe.com/exif/1.0/"`)
 	b.WriteString(`>`)
 
 	if f.XMPDescription != "" {
@@ -249,6 +250,13 @@ func buildXMPPacket(f Fields) ([]byte, error) {
 			return nil, err
 		}
 		b.WriteString(`</photoshop:DateCreated>`)
+		// Immich's date tags include exif:DateTimeOriginal but not
+		// photoshop:DateCreated, so a video sidecar needs this one.
+		b.WriteString(`<exif:DateTimeOriginal>`)
+		if err := xml.EscapeText(&b, []byte(stamp)); err != nil {
+			return nil, err
+		}
+		b.WriteString(`</exif:DateTimeOriginal>`)
 	}
 
 	b.WriteString(`</rdf:Description></rdf:RDF></x:xmpmeta>`)

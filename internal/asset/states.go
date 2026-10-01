@@ -112,6 +112,7 @@ func (d Discovered) Sidecar(software string) ([]byte, error) {
 // DiscoverImage constructs a Discovered from a feed image and its
 // parent post.
 func DiscoverImage(img famly.Image, item famly.FeedItem) Discovered {
+	at := pickImageTime(img, item)
 	tags := make([]string, 0, len(img.Tags))
 	for _, t := range img.Tags {
 		if t.Name != "" {
@@ -124,8 +125,8 @@ func DiscoverImage(img famly.Image, item famly.FeedItem) Discovered {
 		feedItemID:    item.FeedItemID,
 		url:           img.BestURL(),
 		filename:      img.ImageID + ".jpg", // initial; Save may rewrite the extension from Content-Type
-		fileCreatedAt: pickImageTime(img, item),
-		tzOffset:      img.CreatedAt.OffsetString(),
+		fileCreatedAt: at,
+		tzOffset:      img.CreatedAt.OffsetAt(at),
 		body:          pickBody(item),
 		senderName:    item.SenderName(),
 		tagNames:      tags,
@@ -142,7 +143,7 @@ func DiscoverVideo(vid famly.Video, item famly.FeedItem) Discovered {
 		url:           vid.URL,
 		filename:      vid.VideoID + ".mp4",
 		fileCreatedAt: item.CreatedDate.Time,
-		tzOffset:      "+00:00",
+		tzOffset:      videoOffset(item),
 		body:          pickBody(item),
 		senderName:    item.SenderName(),
 	}
@@ -204,6 +205,19 @@ type Recorded struct {
 func (r Recorded) Saved() Saved             { return r.saved }
 func (r Recorded) Uploaded() *Uploaded      { return r.uploaded }
 func (r Recorded) RecordedAt() time.Time    { return r.recordedAt }
+
+// videoOffset is the offset for a video's sidecar date. A video
+// carries no zone of its own, so it borrows the zone of a sibling
+// image in the same post, evaluated at the post date; a post with
+// no zoned image gets +00:00.
+func videoOffset(item famly.FeedItem) string {
+	for _, img := range item.Images {
+		if img.CreatedAt.Timezone != "" {
+			return img.CreatedAt.OffsetAt(item.CreatedDate.Time)
+		}
+	}
+	return "+00:00"
+}
 
 // pickImageTime selects the most-trusted timestamp for an image:
 // the image's own CreatedAt if populated, otherwise the parent

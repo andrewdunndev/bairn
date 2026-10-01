@@ -1,11 +1,11 @@
 // Package immich is bairn's typed client for Immich's asset upload
 // surface.
 //
-// The generated client in gen.go provides typed responses for all
-// operations declared in the vendored OpenAPI spec. This file adds
-// a thin operator-friendly wrapper for the asset-upload flow,
-// including SHA1-based dedup via the x-immich-checksum header that
-// modern Immich expects.
+// The client is hand-written for the one endpoint bairn uses, the
+// multipart asset upload, including SHA1-based dedup via the
+// x-immich-checksum header that modern Immich expects. It is
+// verified against the release pinned as IMMICH_VERSION in the
+// Makefile.
 package immich
 
 import (
@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-// Client is bairn's wrapper around the generated Immich client.
+// Client uploads assets to one Immich server.
 type Client struct {
 	baseURL    string
 	apiKey     string

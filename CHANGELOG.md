@@ -32,6 +32,15 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- `bairn drift` exits 2 when an endpoint errors, answers non-2xx, or
+  serves a non-JSON page, instead of passing on the endpoints that
+  did answer. With `--anonymize` it no longer prints response sizes.
+- A merged array shape keeps its `<n=*>` marker when the first sampled
+  item had an empty array.
+- The video sidecar also carries `exif:DateTimeOriginal`, the date tag
+  Immich reads, and its offset comes from the zone of a sibling image
+  in the post instead of a fixed `+00:00`. An image's offset is now
+  evaluated at the instant that is stamped.
 - EXIF `DateTimeOriginal` and XMP `photoshop:DateCreated` now carry the
   wall-clock time in the labelled offset. Previously the UTC clock
   reading was written next to a non-UTC offset, so the label disagreed

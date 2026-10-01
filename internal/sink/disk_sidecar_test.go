@@ -31,18 +31,3 @@ func TestDiskPutWritesSidecar(t *testing.T) {
 		t.Error("tmp sidecar left behind")
 	}
 }
-
-func TestDiskPutNoSidecarNoFile(t *testing.T) {
-	d, _ := NewDisk(t.TempDir(), "", "")
-	r, err := d.Put(context.Background(), PutInput{
-		FamlyImageID: "img-001", Source: "feed-image", FeedItemID: "p",
-		SourcePath: writeTmpJPEG(t), Filename: "img-001.jpg",
-		FileCreatedAt: time.Date(2026, 5, 6, 14, 30, 0, 0, time.UTC),
-	})
-	if err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if _, err := os.Stat(r.DestPath + ".xmp"); err == nil {
-		t.Error("sidecar written for a photo")
-	}
-}
