@@ -144,6 +144,46 @@ func (s Saved) Upload(ctx context.Context, immich *sink.Immich) (Uploaded, error
 	return Uploaded{saved: s, immichID: receipt.DestPath, status: receipt.Status}, nil
 }
 
+// UploadFromDisk is the recovery path for an asset the state store
+// holds as saved but not uploaded (a failed upload, an Immich outage,
+// or a --no-immich run). It rebuilds the upload from the disk sink:
+// the media file at the recorded path plus, for a video, its .xmp
+// sidecar. fileCreatedAt is the value Record stored as DownloadedAt.
+// On a confirmed upload (created or duplicate) it records the receipt.
+func UploadFromDisk(ctx context.Context, immich *sink.Immich, store *state.Store, id string) (status string, err error) {
+	a, err := store.Get(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("asset: upload %s: %w", id, err)
+	}
+	if a.SavedPath == "" {
+		return "", fmt.Errorf("asset: upload %s: no saved path in state", id)
+	}
+	var sidecar []byte
+	if a.Source == string(SourceFeedVideo) {
+		sidecar, err = os.ReadFile(a.SavedPath + ".xmp")
+		if err != nil {
+			return "", fmt.Errorf("asset: upload %s: read sidecar: %w", id, err)
+		}
+	}
+	receipt, err := immich.Put(ctx, sink.PutInput{
+		FamlyImageID:  id,
+		Source:        a.Source,
+		FeedItemID:    a.FeedItemID,
+		SourcePath:    a.SavedPath,
+		Filename:      filepath.Base(a.SavedPath),
+		SHA1:          a.SHA1,
+		FileCreatedAt: a.DownloadedAt,
+		Sidecar:       sidecar,
+	})
+	if err != nil {
+		return "", fmt.Errorf("asset: upload %s: %w", id, err)
+	}
+	if err := store.MarkUploaded(ctx, id, receipt.DestPath, receipt.Status, time.Now()); err != nil {
+		return "", fmt.Errorf("asset: record (uploaded) %s: %w", id, err)
+	}
+	return receipt.Status, nil
+}
+
 // Record persists the saved-only state to the state DB. The
 // commit boundary for runs without Immich.
 func (s Saved) Record(ctx context.Context, store *state.Store) (Recorded, error) {

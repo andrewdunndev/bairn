@@ -183,6 +183,10 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(res)
+	if res.UploadFailed > 0 {
+		fmt.Fprintf(os.Stderr, "fetch: %d asset(s) saved to disk but not uploaded to Immich; rerun to retry\n", res.UploadFailed)
+		return 1
+	}
 	return 0
 }
 

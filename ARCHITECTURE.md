@@ -20,6 +20,9 @@ metadata reinjected, optionally also push to Immich.
    happened). A run interrupted between `Saved` and `Recorded`
    recovers on the next start because the state file shows
    `savedAt` set and `recordedAt` empty.
+   The same rule drives Immich: `savedAt` set and `uploadedAt` empty
+   means on disk but unconfirmed, and the next run uploads it from the
+   disk sink (`asset.UploadFromDisk`) rather than re-downloading.
 3. **Generated code is read-only.** Anything under `api/*/gen.go`
    is produced by `make gen`. The
    `// Code generated ... DO NOT EDIT.` header is the contract.

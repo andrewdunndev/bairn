@@ -13,6 +13,20 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [Unreleased]
 
+### Fixed
+
+- A failed Immich upload is retried on the next run. Assets saved to
+  disk but not confirmed in Immich (a failed upload, an Immich outage,
+  or an earlier `--no-immich` run) are uploaded from the disk sink,
+  with the video `.xmp` sidecar, instead of being skipped. `duplicate`
+  counts as confirmed. The fetch summary gains `uploadDuplicates` and
+  `uploadFailed`, and `bairn fetch` exits 1 while any upload failed.
+  Entries in existing state files without `uploadedAt` count as not
+  uploaded.
+- The state file is flushed every 50 changes and on exit instead of
+  being rewritten and fsynced on every change, which was quadratic
+  over a full history.
+
 ### Added
 
 - Both the Famly and Immich clients retry transport errors, 429

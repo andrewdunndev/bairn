@@ -96,8 +96,14 @@ type Result struct {
 	Saved       int       `json:"saved"`
 	Uploaded    int       `json:"uploaded"`
 	Duplicates  int       `json:"duplicates"`
-	ExifErrors  int       `json:"exifErrors"`
-	Errors      int       `json:"errors"`
+	// UploadDuplicates counts Immich uploads the server answered with
+	// "duplicate"; they are confirmed, like a fresh upload.
+	UploadDuplicates int `json:"uploadDuplicates"`
+	// UploadFailed counts assets on disk but not confirmed in Immich.
+	// A rerun retries them; the CLI exits non-zero while any remain.
+	UploadFailed int `json:"uploadFailed"`
+	ExifErrors   int `json:"exifErrors"`
+	Errors       int `json:"errors"`
 	// SystemPostsFiltered counts source-matching images that were
 	// skipped because their feed item was system-generated and the
 	// run did not pass --include-system-posts. Surfaces the
@@ -251,18 +257,19 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		logger.Warn("state.IsSaved", "id", id, "err", err)
 	}
 	if already {
-		res.Skipped++
-		// Idempotent re-upload to Immich if it's configured and
-		// state says we haven't uploaded yet. Common case: a
-		// previous run saved files but Immich was offline.
+		// On disk but maybe not in Immich: a failed upload, an
+		// Immich outage, or a save-only run. Upload from the disk sink.
 		if deps.Immich != nil {
 			if uploaded, _ := deps.State.IsUploaded(ctx, id); !uploaded {
-				logger.Debug("retrying upload for already-saved asset", "id", id)
-				// We don't have a Saved value here without re-walking
-				// the typestate; deferred to a future "bairn upload-pending"
-				// subcommand.
+				if opts.DryRun {
+					logger.Info("dry-run: would upload saved asset", "id", id)
+				} else {
+					uploadSaved(ctx, deps, id, res, logger)
+				}
+				return
 			}
 		}
+		res.Skipped++
 		return
 	}
 
@@ -321,8 +328,9 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 	up, err := saved.Upload(ctx, deps.Immich)
 	if err != nil {
 		res.Errors++
+		res.UploadFailed++
 		logger.Error("upload", "id", id, "err", err)
-		// Record what we have (saved without uploaded).
+		// Saved without uploaded: a rerun uploads it from disk.
 		if _, recErr := saved.Record(ctx, deps.State); recErr != nil {
 			logger.Error("record (saved-after-upload-failure)", "id", id, "err", recErr)
 		}
@@ -336,12 +344,32 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		return
 	}
 
-	if up.ImmichStatus() == "duplicate" {
-		// Server-side dedup: not counted as a fresh upload.
-	} else {
-		res.Uploaded++
-	}
+	countUpload(res, up.ImmichStatus())
 	logger.Info("complete",
 		"id", id, "path", saved.FinalPath(),
 		"immich_id", up.ImmichAssetID(), "immich_status", up.ImmichStatus())
+}
+
+// countUpload tallies a confirmed Immich upload.
+func countUpload(res *Result, status string) {
+	if status == "duplicate" {
+		res.UploadDuplicates++
+	} else {
+		res.Uploaded++
+	}
+}
+
+// uploadSaved uploads an asset the state store holds as saved but not
+// confirmed in Immich, reading it back from the disk sink.
+func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger *slog.Logger) {
+	status, err := asset.UploadFromDisk(ctx, deps.Immich, deps.State, id)
+	if err != nil {
+		res.Errors++
+		res.UploadFailed++
+		logger.Error("upload (retry from disk)", "id", id, "err", err)
+		_ = deps.State.MarkError(ctx, id, err.Error())
+		return
+	}
+	countUpload(res, status)
+	logger.Info("uploaded from disk", "id", id, "immich_status", status)
 }

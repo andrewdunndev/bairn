@@ -80,8 +80,15 @@ bairn does five jobs:
 
 5. **Track progress in a JSON state file.** A single
    `state.json` records what's been downloaded, saved, and
-   (optionally) uploaded. Reruns skip work already done. The state
-   file lives under [`$XDG_STATE_HOME`][xdg] by default and is held
+   (optionally) uploaded. Reruns skip work already done, and upload
+   any saved asset Immich has not confirmed (uploaded or duplicate)
+   from the disk sink, including its video `.xmp` sidecar, so a failed
+   or skipped upload is fixed by rerunning `bairn fetch`. The run
+   summary counts `saved`, `uploaded`, `uploadDuplicates` and
+   `uploadFailed`; the exit status is 1 while any upload failed. State
+   is flushed every 50 changes and on exit, so a hard kill redoes at
+   most that many (disk and Immich checksum dedupe absorb the repeat).
+   The state file lives under [`$XDG_STATE_HOME`][xdg] by default and is held
    under an OS file lock so concurrent runs fail fast rather than
    corrupt state.
 

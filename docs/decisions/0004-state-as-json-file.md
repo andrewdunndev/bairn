@@ -64,7 +64,18 @@ A second `bairn fetch` against the same state file fails fast with
 a prescriptive message naming the lock holder if discoverable.
 
 Atomic update: write to `<state-path>.tmp` then `os.Rename`. Survives
-crash mid-write; the prior file remains intact.
+crash mid-write; the prior file remains intact. The write is batched:
+every 50 changes, plus on `Flush` and `Close`. A hard kill loses at
+most one batch; the next run redoes it, and the disk sink and
+Immich's checksum dedupe absorb the repeats. Rewriting the whole file
+per change was quadratic over a full-history backfill.
+
+Upload state: an asset with `savedAt` and no `uploadedAt` is on disk
+but not confirmed in Immich. A rerun that has the Immich sink uploads
+it from `savedPath` (and the `.xmp` beside a video). Entries written
+before this rule decode the same way: no `uploadedAt` means not
+uploaded, and Immich's checksum answers `duplicate` if it already has
+the bytes.
 
 Schema evolution: the JSON record is a Go struct with `omitempty`
 tags. Adding a new optional field is a no-op for existing files;
