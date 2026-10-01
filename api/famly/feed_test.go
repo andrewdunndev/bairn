@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -81,5 +82,31 @@ func TestPagesEarlyStop(t *testing.T) {
 	}
 	if pages != 1 {
 		t.Errorf("early-stop: pages = %d, want 1", pages)
+	}
+}
+
+func TestPagesStopsWhenCursorDoesNotAdvance(t *testing.T) {
+	page1 := fixture(t, "feed-page1.json")
+	var calls int
+	srv := serve(t, func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls > 5 {
+			t.Error("walk did not stop on a repeated page")
+		}
+		_, _ = w.Write(page1)
+	})
+	c := New(NewStaticToken("t"), WithBaseURL(srv.URL), WithPageDelay(0))
+	var gotErr error
+	for _, err := range c.Pages(context.Background()) {
+		if err != nil {
+			gotErr = err
+			break
+		}
+	}
+	if gotErr == nil || !strings.Contains(gotErr.Error(), "did not advance") {
+		t.Fatalf("err = %v, want cursor did not advance", gotErr)
+	}
+	if calls != 2 {
+		t.Errorf("calls = %d, want 2", calls)
 	}
 }

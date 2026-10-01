@@ -2,6 +2,7 @@ package famly
 
 import (
 	"context"
+	"errors"
 	"iter"
 	"net/http"
 	"net/url"
@@ -45,6 +46,10 @@ func (c *Client) Pages(ctx context.Context) iter.Seq2[FeedPage, error] {
 				return
 			}
 			last := page.FeedItems[len(page.FeedItems)-1]
+			if last.FeedItemID == cursor || (!olderThan.IsZero() && last.CreatedDate.Time.After(olderThan)) {
+				yield(FeedPage{}, errors.New("famly: feed cursor did not advance"))
+				return
+			}
 			cursor = last.FeedItemID
 			olderThan = last.CreatedDate.Time
 			if err := retry.Sleep(ctx, c.pageDelay); err != nil {

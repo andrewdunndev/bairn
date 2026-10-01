@@ -91,12 +91,12 @@ func TestHonoursRetryAfterOn429(t *testing.T) {
 	}
 }
 
-func TestRetryAfterCappedAtMax(t *testing.T) {
+func TestRetryAfterBeyondMaxIsHonoured(t *testing.T) {
 	var n atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		if n.Add(1) == 1 {
-			w.Header().Set("Retry-After", strconv.Itoa(3600))
-			w.WriteHeader(http.StatusServiceUnavailable)
+			w.Header().Set("Retry-After", "120")
+			w.WriteHeader(http.StatusTooManyRequests)
 		}
 	}))
 	defer srv.Close()
@@ -107,8 +107,27 @@ func TestRetryAfterCappedAtMax(t *testing.T) {
 		t.Fatal(err)
 	}
 	resp.Body.Close()
-	if waits[0] != p.Max {
-		t.Fatalf("waits=%v, want cap %v", waits, p.Max)
+	if len(waits) != 1 || waits[0] != 120*time.Second {
+		t.Fatalf("waits=%v, want one 120s wait", waits)
+	}
+}
+
+func TestRetryAfterPastCeilingReturnsAtOnce(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n.Add(1)
+		w.Header().Set("Retry-After", strconv.Itoa(3600))
+		w.WriteHeader(http.StatusTooManyRequests)
+	}))
+	defer srv.Close()
+	var waits []time.Duration
+	resp, err := fake(&waits).Do(context.Background(), get(srv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusTooManyRequests || n.Load() != 1 || len(waits) != 0 {
+		t.Fatalf("status=%d tries=%d waits=%v, want 429 after one try", resp.StatusCode, n.Load(), waits)
 	}
 }
 

@@ -33,6 +33,10 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- A `Retry-After` longer than the 30s backoff cap is honoured up to five
+  minutes; a longer one ends the retries instead of hammering a 429.
+- A feed walk whose cursor stops moving ends with `feed cursor did not
+  advance` instead of looping on the same page.
 - A video in a post with no zoned image was dated as UTC, so it showed
   hours late in the timeline. It now uses the zone of the running
   machine (override with `--tz` or `BAIRN_TZ`), with the offset

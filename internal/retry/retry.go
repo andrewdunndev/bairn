@@ -4,7 +4,8 @@
 // A request is retried on transport errors, 408, 429 and 5xx, with
 // exponential backoff and jitter, up to Policy.Attempts tries. A
 // Retry-After header on 429 or 503 sets the wait instead of the
-// backoff. Every other status, 4xx included, is returned to the
+// backoff, up to RetryAfterCeiling; a longer one ends the retries.
+// Every other status, 4xx included, is returned to the
 // caller untouched; auth refresh is the caller's concern.
 package retry
 
@@ -21,7 +22,7 @@ import (
 type Policy struct {
 	Attempts int           // total tries including the first
 	Initial  time.Duration // first backoff, doubled each retry
-	Max      time.Duration // cap on any single wait, Retry-After included
+	Max      time.Duration // cap on any single backoff wait
 	Sleep    func(context.Context, time.Duration) error
 }
 
@@ -30,6 +31,11 @@ type Policy struct {
 func Default() Policy {
 	return Policy{Attempts: 5, Initial: 500 * time.Millisecond, Max: 30 * time.Second, Sleep: Sleep}
 }
+
+// RetryAfterCeiling is the longest Retry-After honoured. A server
+// asking for more is not retried: the response is returned at once,
+// since waiting less than it asked only extends its back-off.
+const RetryAfterCeiling = 5 * time.Minute
 
 // Sleep waits d or until ctx is done.
 func Sleep(ctx context.Context, d time.Duration) error {
@@ -68,14 +74,17 @@ func (p Policy) Do(ctx context.Context, send func() (*http.Response, error)) (*h
 		if attempt >= p.Attempts {
 			return resp, err
 		}
-		d := jitter(wait)
+		d := min(jitter(wait), p.Max)
 		if resp != nil {
 			if ra, ok := retryAfter(resp.Header.Get("Retry-After")); ok {
+				if ra > RetryAfterCeiling {
+					return resp, nil
+				}
 				d = ra
 			}
 			resp.Body.Close()
 		}
-		if err := p.Sleep(ctx, min(d, p.Max)); err != nil {
+		if err := p.Sleep(ctx, d); err != nil {
 			return nil, err
 		}
 		wait = min(wait*2, p.Max)

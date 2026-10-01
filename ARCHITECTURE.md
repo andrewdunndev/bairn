@@ -97,7 +97,8 @@ This binary targets Go 1.25+. Idioms in use:
 - `testing/synctest` for deterministic time tests
 - `internal/retry`: one HTTP policy for both clients (transport errors,
   408, 429 with `Retry-After`, and 5xx; five tries, capped
-  exponential backoff with jitter; other 4xx never retried)
+  exponential backoff with jitter; a `Retry-After` is honoured up to
+  five minutes, a longer one ends the retries; other 4xx never retried)
 - `dsoprea/go-exif/v3` for EXIF rewrite
 - `genqlient` for typed GraphQL against the captured schema
 - `IMMICH_VERSION` (Makefile, Renovate-tracked) names the Immich
