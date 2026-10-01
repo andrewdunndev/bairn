@@ -110,8 +110,9 @@ func (d Discovered) Sidecar(software string) ([]byte, error) {
 }
 
 // DiscoverImage constructs a Discovered from a feed image and its
-// parent post.
-func DiscoverImage(img famly.Image, item famly.FeedItem) Discovered {
+// parent post. zone dates an image that carries no zone of its own;
+// nil means time.Local.
+func DiscoverImage(img famly.Image, item famly.FeedItem, zone *time.Location) Discovered {
 	at := pickImageTime(img, item)
 	tags := make([]string, 0, len(img.Tags))
 	for _, t := range img.Tags {
@@ -126,7 +127,7 @@ func DiscoverImage(img famly.Image, item famly.FeedItem) Discovered {
 		url:           img.BestURL(),
 		filename:      img.ImageID + ".jpg", // initial; Save may rewrite the extension from Content-Type
 		fileCreatedAt: at,
-		tzOffset:      img.CreatedAt.OffsetAt(at),
+		tzOffset:      imageOffset(img, at, zone),
 		body:          pickBody(item),
 		senderName:    item.SenderName(),
 		tagNames:      tags,
@@ -222,6 +223,18 @@ func videoOffset(item famly.FeedItem, zone *time.Location) string {
 		zone = time.Local
 	}
 	return famly.FormatOffset(item.CreatedDate.Time.In(zone))
+}
+
+// imageOffset is the offset for an image's EXIF date: its own zone
+// when Famly gave one, else zone's offset at the image time.
+func imageOffset(img famly.Image, at time.Time, zone *time.Location) string {
+	if img.CreatedAt.Timezone != "" {
+		return img.CreatedAt.OffsetAt(at)
+	}
+	if zone == nil {
+		zone = time.Local
+	}
+	return famly.FormatOffset(at.In(zone))
 }
 
 // pickImageTime selects the most-trusted timestamp for an image:

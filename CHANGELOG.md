@@ -33,6 +33,10 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- An image with no zone of its own is dated in the local zone (as videos
+  are), not as a UTC wall clock.
+- A download error no longer carries the signed CDN query string.
+- Retry-from-disk refuses a recorded path outside the save directory.
 - The state lock lives on `<state-path>.lock`; on the state file itself it
   was lost at the first flush, so a second `bairn fetch` could run.
 - A video's `.xmp` sidecar is written before the media file, and added

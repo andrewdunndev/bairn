@@ -51,7 +51,7 @@ type Options struct {
 	MaxPages int
 
 	// Zone is the fallback zone for the date of a video in a post
-	// with no zoned image. nil means time.Local.
+	// with no zone of its own, image or video. nil means time.Local.
 	Zone *time.Location
 
 	// DryRun stops short of any actual fetch: assets are
@@ -213,7 +213,7 @@ func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedIt
 			res.Skipped++
 			continue
 		}
-		processOne(ctx, deps, opts, asset.DiscoverImage(img, item), res, logger)
+		processOne(ctx, deps, opts, asset.DiscoverImage(img, item, opts.Zone), res, logger)
 	}
 	for _, vid := range item.Videos {
 		if opts.Source != SourceAll {
@@ -366,7 +366,7 @@ func countUpload(res *Result, status string) {
 // uploadSaved uploads an asset the state store holds as saved but not
 // confirmed in Immich, reading it back from the disk sink.
 func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger *slog.Logger) {
-	status, err := asset.UploadFromDisk(ctx, deps.Immich, deps.State, id)
+	status, err := asset.UploadFromDisk(ctx, deps.Immich, deps.State, deps.Disk.Root(), id)
 	if err != nil {
 		res.Errors++
 		res.UploadFailed++

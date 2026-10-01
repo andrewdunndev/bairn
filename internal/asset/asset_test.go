@@ -55,7 +55,7 @@ func TestDiscoverImagePicksTime(t *testing.T) {
 		CreatedDate: famly.FamlyTime{Time: created},
 		Sender:      &famly.Sender{Name: "Educator A"},
 	}
-	d := DiscoverImage(img, item)
+	d := DiscoverImage(img, item, time.UTC)
 	if d.FamlyImageID() != "img-001" {
 		t.Errorf("FamlyImageID = %q", d.FamlyImageID())
 	}
@@ -141,7 +141,7 @@ func TestPipelineSavedOnly(t *testing.T) {
 		Sender:      &famly.Sender{Name: "Educator A"},
 	}
 
-	disc := DiscoverImage(img, item)
+	disc := DiscoverImage(img, item, time.UTC)
 	if err := st.Discover(context.Background(), disc.FamlyImageID(), state.Asset{
 		Source:     string(disc.Source()),
 		FeedItemID: disc.FeedItemID(),

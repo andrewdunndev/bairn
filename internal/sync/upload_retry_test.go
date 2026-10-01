@@ -17,7 +17,7 @@ import (
 
 // scriptedImmich answers /assets with the next status in script
 // (HTTP 400 for "fail", never retried by the client), repeating the
-// last entry, and records each request's body for inspection.
+// last entry, and records each request's file parts and fileCreatedAt for inspection.
 func scriptedImmich(t *testing.T, script ...string) (*httptest.Server, *atomic.Int32, *[]string) {
 	t.Helper()
 	var n atomic.Int32
@@ -32,7 +32,7 @@ func scriptedImmich(t *testing.T, script ...string) (*httptest.Server, *atomic.I
 		for k := range r.MultipartForm.File {
 			parts = append(parts, k)
 		}
-		bodies = append(bodies, strings.Join(parts, ","))
+		bodies = append(bodies, strings.Join(parts, ",")+" @"+r.FormValue("fileCreatedAt"))
 		if script[i] == "fail" {
 			http.Error(w, "no", http.StatusBadRequest)
 			return
@@ -58,7 +58,7 @@ func runWith(t *testing.T, famlySrv *httptest.Server, disk *sink.Disk, im *sink.
 func TestFailedUploadIsRetriedFromDiskOnRerun(t *testing.T) {
 	famlySrv := fakeFamlyServer(t)
 	t.Cleanup(famlySrv.Close)
-	imSrv, hits, _ := scriptedImmich(t, "fail", "created")
+	imSrv, hits, bodies := scriptedImmich(t, "fail", "created")
 	disk, _ := sink.NewDisk(t.TempDir(), "", "")
 	im := sink.NewImmich(immich.New(imSrv.URL, "k"))
 	st := openTestStore(t)
@@ -77,6 +77,18 @@ func TestFailedUploadIsRetriedFromDiskOnRerun(t *testing.T) {
 	}
 	if up, _ := st.IsUploaded(context.Background(), "img-1"); !up {
 		t.Fatal("retry should record the upload")
+	}
+
+	// The retry carries the same timeline date as the first attempt:
+	// the post's createdDate, not the retry's clock.
+	const wantDate = "@2026-05-06T14:00:00Z"
+	if len(*bodies) != 2 {
+		t.Fatalf("requests = %d, want 2", len(*bodies))
+	}
+	for i, b := range *bodies {
+		if !strings.HasSuffix(b, wantDate) {
+			t.Errorf("request %d = %q, want fileCreatedAt %s", i, b, wantDate)
+		}
 	}
 
 	r3 := runWith(t, famlySrv, disk, im, st)

@@ -51,6 +51,9 @@ func NewDisk(root, filenamePattern, dirPattern string) (*Disk, error) {
 // Name implements Sink.
 func (Disk) Name() string { return "disk" }
 
+// Root is the save directory.
+func (d *Disk) Root() string { return d.root }
+
 // Put copies (or renames, when SourcePath is on the same volume)
 // the temp file to the resolved destination path, fsyncs, sets
 // mtime from FileCreatedAt, then runs EXIF reinjection. Returns a
@@ -76,7 +79,7 @@ func (d *Disk) Put(ctx context.Context, in PutInput) (Receipt, error) {
 	dest := filepath.Join(destDir, name)
 	// Ids come from the vendor; a pattern fed a "../" must not
 	// write outside the archive root.
-	if !within(d.root, dest) || !within(d.root, destDir) {
+	if !Within(d.root, dest) || !Within(d.root, destDir) {
 		return Receipt{}, fmt.Errorf("sink: %s resolves outside the save directory", name)
 	}
 	if err := os.MkdirAll(destDir, 0o700); err != nil {
@@ -167,8 +170,8 @@ func (d *Disk) Put(ctx context.Context, in PutInput) (Receipt, error) {
 	return receipt, nil
 }
 
-// within reports whether path is root or lies under it.
-func within(root, path string) bool {
+// Within reports whether path is root or lies under it.
+func Within(root, path string) bool {
 	rel, err := filepath.Rel(root, path)
 	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }

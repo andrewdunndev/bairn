@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"gitlab.com/dunn.dev/bairn/internal/retry"
+	"gitlab.com/dunn.dev/bairn/internal/urlerr"
 )
 
 // DefaultBaseURL is the production Famly endpoint. Override per-Client
@@ -152,7 +153,7 @@ func (c *Client) do(ctx context.Context, method, path string, query url.Values, 
 		}
 		resp, err = c.retry.Do(ctx, send(tok))
 		if err != nil {
-			return fmt.Errorf("famly: %s %s: %w", method, path, err)
+			return fmt.Errorf("famly: %s %s: %w", method, path, urlerr.Redact(err))
 		}
 		if resp.StatusCode != http.StatusUnauthorized {
 			break

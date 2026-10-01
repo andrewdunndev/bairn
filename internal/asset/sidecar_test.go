@@ -35,7 +35,7 @@ func TestVideoSidecarOnly(t *testing.T) {
 		}
 	}
 
-	img := DiscoverImage(famly.Image{ImageID: "img-001"}, item)
+	img := DiscoverImage(famly.Image{ImageID: "img-001"}, item, time.UTC)
 	if sc, err := img.Sidecar("bairn"); err != nil || sc != nil {
 		t.Errorf("photo sidecar = %q, err %v; want none", sc, err)
 	}
@@ -79,7 +79,7 @@ func TestSaveWritesVideoSidecarOnly(t *testing.T) {
 		sidecar bool
 	}{
 		{DiscoverVideo(famly.Video{VideoID: "vid-001", URL: srv.URL + "/v"}, item, time.UTC), true},
-		{DiscoverImage(famly.Image{ImageID: "img-001", BigURL: srv.URL + "/i"}, item), false},
+		{DiscoverImage(famly.Image{ImageID: "img-001", BigURL: srv.URL + "/i"}, item, time.UTC), false},
 	} {
 		dl, err := c.disc.Download(context.Background(), nil)
 		if err != nil {
@@ -174,7 +174,7 @@ func TestImageOffsetEvaluatedAtPickedInstant(t *testing.T) {
 	// No image date: the post date is stamped, so its offset is used.
 	item := famly.FeedItem{CreatedDate: famly.FamlyTime{Time: time.Date(2026, 1, 15, 17, 0, 0, 0, time.UTC)}}
 	img := famly.Image{ImageID: "img-001", CreatedAt: famly.ImageTime{Timezone: "America/Detroit"}}
-	if got := DiscoverImage(img, item).tzOffset; got != "-05:00" {
+	if got := DiscoverImage(img, item, time.UTC).tzOffset; got != "-05:00" {
 		t.Errorf("tzOffset = %q, want -05:00", got)
 	}
 }
@@ -211,5 +211,43 @@ func TestVideoOffsetNilZoneIsLocal(t *testing.T) {
 	item := famly.FeedItem{CreatedDate: famly.FamlyTime{Time: time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC)}}
 	if got := DiscoverVideo(famly.Video{VideoID: "v"}, item, nil).tzOffset; got != "-07:00" {
 		t.Errorf("offset = %q, want -07:00", got)
+	}
+}
+
+func TestImageOffsetDefaultsToZone(t *testing.T) {
+	detroit, err := time.LoadLocation("America/Detroit")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	cases := []struct {
+		name string
+		at   time.Time
+		tz   string
+		zone *time.Location
+		want string
+	}{
+		{"zoneless summer", time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC), "", detroit, "-04:00"},
+		{"zoneless winter", time.Date(2026, 1, 15, 17, 0, 0, 0, time.UTC), "", detroit, "-05:00"},
+		{"own zone wins", time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC), "Europe/Paris", detroit, "+02:00"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			img := famly.Image{ImageID: "i", CreatedAt: famly.ImageTime{Date: famly.FamlyTime{Time: c.at}, Timezone: c.tz}}
+			if got := DiscoverImage(img, famly.FeedItem{}, c.zone).tzOffset; got != c.want {
+				t.Errorf("offset = %q, want %q", got, c.want)
+			}
+		})
+	}
+}
+
+func TestDownloadErrorOmitsSignedQuery(t *testing.T) {
+	img := famly.Image{ImageID: "img-001", BigURL: "http://127.0.0.1:1/i.jpg?Signature=SECRET"}
+	d := DiscoverImage(img, famly.FeedItem{}, time.UTC)
+	_, err := d.Download(context.Background(), nil)
+	if err == nil {
+		t.Fatal("want a transport error")
+	}
+	if strings.Contains(err.Error(), "SECRET") {
+		t.Errorf("error carries the signed query: %v", err)
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
+	"gitlab.com/dunn.dev/bairn/internal/urlerr"
 )
 
 // Download streams the asset bytes from the signed CDN URL to a
@@ -29,11 +30,11 @@ func (d Discovered) Download(ctx context.Context, hc *http.Client) (Downloaded, 
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.url, nil)
 	if err != nil {
-		return Downloaded{}, fmt.Errorf("asset: build download request for %s: %w", d.famlyImageID, err)
+		return Downloaded{}, fmt.Errorf("asset: build download request for %s: %w", d.famlyImageID, urlerr.Redact(err))
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
-		return Downloaded{}, fmt.Errorf("asset: download %s: %w", d.famlyImageID, err)
+		return Downloaded{}, fmt.Errorf("asset: download %s: %w", d.famlyImageID, urlerr.Redact(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -150,13 +151,18 @@ func (s Saved) Upload(ctx context.Context, immich *sink.Immich) (Uploaded, error
 // the media file at the recorded path plus, for a video, its .xmp
 // sidecar. fileCreatedAt is the value Record stored as DownloadedAt.
 // On a confirmed upload (created or duplicate) it records the receipt.
-func UploadFromDisk(ctx context.Context, immich *sink.Immich, store *state.Store, id string) (status string, err error) {
+// root is the save directory; a recorded path outside it is refused,
+// so a damaged state file cannot send an arbitrary file to Immich.
+func UploadFromDisk(ctx context.Context, immich *sink.Immich, store *state.Store, root, id string) (status string, err error) {
 	a, err := store.Get(ctx, id)
 	if err != nil {
 		return "", fmt.Errorf("asset: upload %s: %w", id, err)
 	}
 	if a.SavedPath == "" {
 		return "", fmt.Errorf("asset: upload %s: no saved path in state", id)
+	}
+	if !sink.Within(root, a.SavedPath) {
+		return "", fmt.Errorf("asset: upload %s: saved path is outside the save directory", id)
 	}
 	var sidecar []byte
 	if a.Source == string(SourceFeedVideo) {
