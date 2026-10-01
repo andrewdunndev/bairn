@@ -171,8 +171,10 @@ narrow:
   which response fields bairn's typed clients depend on. No
   more.
 - The maintainer runs `bairn drift --diff discovery/baselines/main`
-  by hand before tagging a release. Drift is **not fired on a
-  CI schedule against Famly**; see ADR 0007 for the reasoning.
+  by hand before tagging a release. CI also runs it once a week
+  on a schedule: two GETs, one second apart, against the
+  operator's own account; see ADR 0007. The weekly diff reports
+  removed keys and type changes only.
 
 Operators with private overrides keep them in
 `discovery/probe/manifest.local.toml` (gitignored) and seed

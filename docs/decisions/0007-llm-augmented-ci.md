@@ -151,31 +151,22 @@ expires; the credentials path is the right shape for CI. A forker
 who sets neither sees the drift-gate job fail at tag time; that
 is the intended signal.
 
-### Schedule: deliberately not used against Famly
+### Schedule: one weekly read of the operator's own account
 
-The catalog `claude-drift-triage` component is included in
-bairn's CI on a `drift-triage` stage with rules
-`schedule|web`. Its `drift_command` is held at `echo ''`.
+Amended 2026-10-01. A weekly scheduled pipeline on `main` runs
+`bairn drift` against the operator's own Famly account: two GETs
+(`me`, `feed-page1`), one second apart, once a week. The operator
+authorizes it and it reads nothing a parent's phone does not. The
+`claude-drift-triage` include is removed: the shape diff is
+readable without an LLM, and job logs are public.
 
-Reasoning: a recurring weekly cron firing from a CI runner is
-distinguishable from a human user fetching photos. It arrives at
-the same hour each week from the same CI infrastructure with no
-prior user action. From Famly's logs, that pattern reads as
-automated monitoring even when authorized by the operator. For a
-small SaaS that engaged with our use case rather than deflecting,
-leaning into a posture that looks like surveillance would be
-ungenerous.
-
-The component stays included so that any future change of posture
-(Famly explicitly inviting a monitoring integration; bairn
-outgrowing this household scope) is a one-line `drift_command`
-flip, not a re-architecture. Until then, no scheduled pipeline
-calls Famly.
-
-The catalog component remains useful for projects whose vendors
-have explicitly invited automated monitoring (internal APIs,
-vendor-sanctioned monitoring contracts). bairn opts out for
-relationship reasons, not technical ones.
+The weekly diff reports removed keys and type changes only: the
+response filter drops keys bairn's structs do not declare, so new
+undeclared fields never reach the log. Exit 1 means the shape
+changed, exit 2 means login or transport failed; either turns the
+pipeline red and GitLab emails the schedule owner. Any further
+scheduled or more frequent Famly traffic still needs Famly's
+explicit invitation.
 
 ## Maintainer workflow
 
@@ -193,11 +184,8 @@ Before tagging:
 
 ## Pending follow-on
 
-- **Operator playbook for CI-driven drift** for a future state
-  where Famly (or a different vendor in scope) explicitly invites
-  scheduled monitoring. Until then there is no playbook to write;
-  bairn's local-maintainer-fired drift is the right shape for the
-  current relationship.
+- **Anything beyond the weekly read** (more endpoints, higher
+  frequency) waits for Famly to invite scheduled monitoring.
 - **`claude-mr-summary`** component for generated-code diffs in MR
   descriptions. Most useful once a second catalog consumer adopts
   spec-first codegen.

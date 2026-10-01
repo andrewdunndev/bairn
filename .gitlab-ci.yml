@@ -183,23 +183,22 @@ test:
   script:
     - go test -race ./...
 
-# Tag-only pre-release drift gate. Builds bairn, hits Famly's
-# parent-side surface against the operator's own access token, and
+# Drift gate. Builds bairn, logs in with FAMLY_EMAIL and
+# FAMLY_PASSWORD (masked, protected project variables), reads the
+# manifest's two endpoints from the operator's own account, and
 # diffs response shapes against the committed baseline at
-# discovery/baselines/main/. Fails the tag pipeline (exit 1) when
-# drift is detected so a binary that no longer matches Famly's
-# response shapes does not ship.
+# discovery/baselines/main/. Exit 1 means the shape changed, exit 2
+# means login or transport failed; either fails the pipeline, so a
+# tag does not ship a binary that no longer matches Famly and the
+# schedule owner is emailed.
 #
-# Fires once per tag push, lined up with a human action (the
-# maintainer tagging a release). NOT a recurring schedule. See
-# discovery/PROTOCOL.md and docs/decisions/0007-llm-augmented-ci.md
-# for the posture.
-#
-# Operator must set FAMLY_ACCESS_TOKEN as a masked, protected
-# project CI variable. A forker who does not set the variable will
-# see this job fail at tag time; that is the intended signal.
+# Fires on every tag and on the weekly schedule on main (two GETs,
+# one second apart). needs: [] keeps it independent of the other
+# jobs a schedule run starts. See discovery/PROTOCOL.md and
+# docs/decisions/0007-llm-augmented-ci.md for the posture.
 drift-gate:
   stage: drift-gate
+  needs: []
   image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.8.0@sha256:8a28513a9ad191e0880c585baa31f31e533c5288561c369c634782e74066804a
   interruptible: false
   script:
@@ -207,3 +206,4 @@ drift-gate:
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
   rules:
     - if: $CI_COMMIT_TAG
+    - if: $CI_PIPELINE_SOURCE == "schedule"

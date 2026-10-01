@@ -60,21 +60,7 @@ func shape(v any, depth int, opts ShapeOpts) any {
 			n = 5
 		}
 		for i := 0; i < n; i++ {
-			sh := shape(t[i], depth+1, opts)
-			if shMap, ok := sh.(map[string]any); ok {
-				if merged == nil {
-					merged = copyMap(shMap)
-				} else if mergedMap, ok := merged.(map[string]any); ok {
-					for k, vv := range shMap {
-						if _, exists := mergedMap[k]; !exists {
-							mergedMap[k] = vv
-						}
-					}
-				}
-			} else {
-				merged = sh
-				break
-			}
+			merged = mergeShapes(merged, shape(t[i], depth+1, opts))
 		}
 		countMarker := "<n=" + strconv.Itoa(len(t)) + ">"
 		if opts.AnonymizeCounts {
@@ -99,12 +85,55 @@ func shape(v any, depth int, opts ShapeOpts) any {
 	}
 }
 
-func copyMap(m map[string]any) map[string]any {
-	out := make(map[string]any, len(m))
-	for k, v := range m {
-		out[k] = v
+// isWildcard reports whether a shape carries no type information:
+// an empty array element ("<empty>") or a JSON null. Either may
+// stand in for any real shape, because which one a feed shows
+// depends on the content of the week.
+func isWildcard(v any) bool {
+	s, ok := v.(string)
+	return ok && (s == "<empty>" || s == "null")
+}
+
+// mergeShapes unions two shapes. Wildcards yield to the other side,
+// maps merge key by key (recursively), arrays merge their element
+// shape and keep a's count marker; otherwise a wins.
+func mergeShapes(a, b any) any {
+	if a == nil || isWildcard(a) {
+		if b == nil {
+			return a
+		}
+		return b
 	}
-	return out
+	if b == nil || isWildcard(b) {
+		return a
+	}
+	switch ta := a.(type) {
+	case map[string]any:
+		tb, ok := b.(map[string]any)
+		if !ok {
+			return a
+		}
+		out := make(map[string]any, len(ta))
+		for k, v := range ta {
+			out[k] = v
+		}
+		for k, v := range tb {
+			if cur, exists := out[k]; exists {
+				out[k] = mergeShapes(cur, v)
+			} else {
+				out[k] = v
+			}
+		}
+		return out
+	case []any:
+		tb, ok := b.([]any)
+		if !ok || len(ta) == 0 || len(tb) == 0 {
+			return a
+		}
+		out := append([]any{mergeShapes(ta[0], tb[0])}, ta[1:]...)
+		return out
+	}
+	return a
 }
 
 // Diff returns a human-readable list of differences between two
@@ -112,12 +141,15 @@ func copyMap(m map[string]any) map[string]any {
 //
 // Output order is deterministic: removed keys first (sorted), then
 // added keys (sorted), then recursive descent into shared keys
-// (sorted). Type changes at the leaf surface as `path: a -> b`.
+// (sorted). "<empty>" and "null" shapes match anything. Type changes at the leaf surface as `path: a -> b`.
 func Diff(a, b any) []string {
 	return diffShapes(a, b, "")
 }
 
 func diffShapes(a, b any, path string) []string {
+	if isWildcard(a) || isWildcard(b) {
+		return nil
+	}
 	if reflect.TypeOf(a) != reflect.TypeOf(b) {
 		p := path
 		if p == "" {

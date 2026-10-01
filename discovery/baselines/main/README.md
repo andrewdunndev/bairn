@@ -52,11 +52,12 @@ next tag's drift-gate reports cardinality drift on every array.
   operator hits for debugging). Operators stage those under
   `discovery/baselines/<other>/`, which remains gitignored.
 
-## Why drift is not on a CI schedule
+## Weekly CI drift check
 
-bairn deliberately does not run drift on a recurring CI schedule
-against Famly. A weekly cron firing from a CI runner against a
-small SaaS would distinguishably read as automated monitoring,
-even with the operator's own access token. The maintainer fires
-drift by hand before tagging; that's the right level of attention
-for the relationship. ADR 0007 documents this choice.
+A scheduled pipeline runs `bairn drift --anonymize --diff` against
+this baseline once a week: two GETs, one second apart, on the
+operator's own account (ADR 0007). `<empty>` and `null` shapes
+match any shape, so a week whose feed happens to carry photos or
+rich text does not read as drift. The response filter drops keys
+bairn does not declare, so the diff reports removals and type
+changes only.

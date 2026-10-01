@@ -13,6 +13,13 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- CI: a weekly scheduled `drift-gate` run against the operator's own
+  Famly account (two GETs). Drift diffing now treats `<empty>` and
+  `null` shapes as wildcards and merges nested shapes across the
+  sampled feed items, so a week with photos is not reported as drift.
+
 ### Removed
 
 - CI: the `drift-gate-immich` and `smoke-immich` jobs (web/api only,
