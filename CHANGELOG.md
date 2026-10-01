@@ -13,6 +13,13 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [Unreleased]
 
+### Removed
+
+- CI: the `drift-gate-immich` and `smoke-immich` jobs (web/api only,
+  never reachable from the runner), the Immich drift manifest and
+  its empty baseline, and the `claude-drift-triage` include. `make
+  pre-tag-check` remains the Immich gate.
+
 ## [0.5.0] - 2026-05-09
 
 This release rebases bairn's CI onto the `dunn.dev/pipeline@2.0.3`

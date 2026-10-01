@@ -215,8 +215,7 @@ func runStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger, arg
 //
 // Exit codes: 0 = no drift (or no diff requested), 1 = drift found,
 // 2 = configuration or transport error. The non-zero-on-drift
-// behaviour lets the catalog's claude-drift-triage component fire on
-// real changes only.
+// behaviour fails a CI job on real changes only.
 func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
 	fs := flag.NewFlagSet("drift", flag.ContinueOnError)
 	manifestPath := fs.String("manifest", "discovery/probe/manifest.toml", "TOML manifest path")

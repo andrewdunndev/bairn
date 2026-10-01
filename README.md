@@ -257,9 +257,7 @@ v0.4.6 added the smoke and v0.5.0 folded lint into the same gate.
 `IMMICH_BAIRN_USER` / `IMMICH_BAIRN_PASSWORD` (recommended: a
 quota-limited test user separate from your archive account), or
 falls back to `IMMICH_BASE_URL` / `IMMICH_API_KEY` for ad-hoc
-runs. The same gate is wired into CI as the `smoke-immich` job;
-it's `allow_failure: true` by default so a forker without the
-vars set sees yellow but isn't blocked.
+runs. It is a local gate only: CI runners cannot reach a LAN Immich.
 
 For the no-write case (auditing a server you can't upload to),
 `bairn smoke immich --probe-only` sends a deliberately incomplete
