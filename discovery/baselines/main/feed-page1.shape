@@ -5,10 +5,32 @@
       "createdDate": "str",
       "feedItemId": "str",
       "images": [
-        "\u003cempty\u003e"
+        {
+          "createdAt": {
+            "date": "str",
+            "timezone": "str"
+          },
+          "expiration": "str",
+          "height": "int",
+          "imageId": "str",
+          "liked": "bool",
+          "likes": [
+            {
+              "loginId": "..."
+            },
+            "\u003cn=*\u003e"
+          ],
+          "tags": [
+            "\u003cempty\u003e"
+          ],
+          "url": "str",
+          "url_big": "str",
+          "width": "int"
+        },
+        "\u003cn=*\u003e"
       ],
       "originatorId": "str",
-      "richTextBody": "null",
+      "richTextBody": "str",
       "sender": {
         "id": "str",
         "loginId": "str",
