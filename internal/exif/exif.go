@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -94,7 +95,8 @@ type Fields struct {
 
 	// XMP (modern). Description is the full unsanitized body for
 	// dc:description (XML can carry newlines and Unicode safely).
-	// Keywords land as dc:subject Bag entries (one per element).
+	// Keywords land as dc:subject Bag and digiKam:TagsList Seq entries
+	// (one per element).
 	XMPDescription string
 	XMPKeywords    []string
 }
@@ -223,7 +225,9 @@ func setExifIfd(rootIb *exif.IfdBuilder, f Fields) error {
 	}
 	if !f.DateTimeOriginal.IsZero() {
 		// EXIF wants "2006:01:02 15:04:05" (colons, not dashes, in date).
-		s := f.DateTimeOriginal.UTC().Format("2006:01:02 15:04:05")
+		// The clock reading is local to OffsetTimeOriginal.
+		local, _ := wallClock(f.DateTimeOriginal, f.OffsetTimeOriginal)
+		s := local.Format("2006:01:02 15:04:05")
 		if err := ib.SetStandardWithName("DateTimeOriginal", s); err != nil {
 			return err
 		}
@@ -365,3 +369,23 @@ func isWordBoundaryByte(b byte) bool {
 	return false
 }
 
+// wallClock returns the instant t as wall-clock time in the zone
+// described by offset ("+HH:MM" or "-HH:MM"), together with the
+// normalised offset string. EXIF DateTimeOriginal and XMP
+// photoshop:DateCreated carry local time plus a separate offset
+// label, so the clock reading must be taken in that zone. An empty
+// or unparseable offset falls back to UTC and "+00:00".
+func wallClock(t time.Time, offset string) (time.Time, string) {
+	if len(offset) == 6 && (offset[0] == '+' || offset[0] == '-') && offset[3] == ':' {
+		h, errH := strconv.Atoi(offset[1:3])
+		m, errM := strconv.Atoi(offset[4:6])
+		if errH == nil && errM == nil && h < 24 && m < 60 {
+			secs := h*3600 + m*60
+			if offset[0] == '-' {
+				secs = -secs
+			}
+			return t.In(time.FixedZone(offset, secs)), offset
+		}
+	}
+	return t.UTC(), "+00:00"
+}

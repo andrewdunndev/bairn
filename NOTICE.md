@@ -27,14 +27,6 @@ provides the export.
 
 [jacobbunk]: https://github.com/jacobbunk/famly-fetch
 
-## Vendored content
-
-`api/immich/openapi.json` is vendored from
-[immich-app/immich](https://github.com/immich-app/immich), licensed
-under AGPL-3.0. The OpenAPI spec is published openly by the upstream
-project; bairn uses it solely to generate a typed client for the
-Immich endpoints bairn calls.
-
 ## How bairn relates to Famly's terms of use
 
 Famly's [Terms of Use][famly-tou] define the supported interfaces

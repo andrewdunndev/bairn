@@ -21,7 +21,7 @@ metadata reinjected, optionally also push to Immich.
    recovers on the next start because the state file shows
    `savedAt` set and `recordedAt` empty.
 3. **Generated code is read-only.** Anything under `api/*/gen.go`
-   or `api/immich/imapi/imapi.go` is produced by `make gen`. The
+   is produced by `make gen`. The
    `// Code generated ... DO NOT EDIT.` header is the contract.
 4. **Vendor knowledge stays in `api/`, never in `internal/`.**
    Famly URLs, GraphQL ops, JSON shapes, Immich endpoints stay
@@ -30,9 +30,10 @@ metadata reinjected, optionally also push to Immich.
 5. **No live vendor calls in default `make test`.** Every test
    uses `httptest.Server` against fixtures. The `bairn drift`
    subcommand is the explicit exception.
-6. **All asset metadata embeds in-file.** No sidecar JSON, XMP,
-   or text files. EXIF/XMP/IPTC for JPEG/TIFF; filename + mtime
-   for video. See ADR 0005.
+6. **Photo metadata embeds in-file.** No sidecar JSON or text
+   files. EXIF/XMP/IPTC for JPEG/TIFF. Videos cannot carry it, so
+   each gets one standalone `<file>.xmp` (also sent to Immich as
+   `sidecarData`); photos never get one. See ADR 0005.
 7. **Privacy boundary at the repository edge.** Discovery captures,
    schema dumps, and vendor-specific manifests are gitignored. The
    committed surface stays minimal.
@@ -72,7 +73,7 @@ metadata reinjected, optionally also push to Immich.
 ## Build
 
 ```
-make gen     regenerate api/famly/gen.go and api/immich/imapi/imapi.go
+make gen     regenerate api/famly/gen.go
 make test    go test -race ./...
 make build   bin/bairn for the host
 make build-linux bin/bairn-linux-amd64 for headless
@@ -92,7 +93,8 @@ This binary targets Go 1.25+. Idioms in use:
 - `cenkalti/backoff/v7` for retry primitive
 - `dsoprea/go-exif/v3` for EXIF rewrite
 - `genqlient` for typed GraphQL against the captured schema
-- `oapi-codegen` for typed Immich client
+- `IMMICH_VERSION` (Makefile, Renovate-tracked) names the Immich
+  release bairn is verified against via `make pre-tag-check`
 - Typestate via distinct Go types per asset lifecycle phase
 
 ## Where to read what

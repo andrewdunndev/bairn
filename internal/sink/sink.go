@@ -50,6 +50,11 @@ type PutInput struct {
 	// saved JPEG. Sinks that don't write EXIF (Immich) ignore.
 	EXIF exif.Fields
 
+	// Sidecar is an optional standalone XMP packet. Disk writes it
+	// as <file>.xmp beside the media; Immich sends it as
+	// sidecarData. Videos only: photos embed their XMP.
+	Sidecar []byte
+
 	// Body is the parent feed item's body text; Disk does nothing
 	// with it directly, but it's part of EXIF.UserComment too.
 	Body string

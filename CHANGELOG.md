@@ -13,6 +13,50 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- CI: a weekly scheduled `drift-gate` run against the operator's own
+  Famly account (two GETs). Drift diffing now treats `<empty>` and
+  `null` shapes as wildcards and merges nested shapes across the
+  sampled feed items, so a week with photos is not reported as drift.
+- `IMMICH_VERSION` in the Makefile names the Immich release bairn is
+  verified against via `make pre-tag-check`; Renovate tracks it with
+  automerge off.
+- XMP `digiKam:TagsList` (flat child names, same source as
+  `dc:subject`) in the photo packet; Immich reads it and ignores
+  `dc:subject`.
+- Videos now carry metadata: a standalone `<file>.xmp` (description,
+  date with its offset, tags) is written beside each video and sent to
+  Immich as `sidecarData`. Photos still embed their XMP and get no
+  sidecar.
+
+### Fixed
+
+- `bairn drift` exits 2 when an endpoint errors, answers non-2xx, or
+  serves a non-JSON page, instead of passing on the endpoints that
+  did answer. With `--anonymize` it no longer prints response sizes.
+- A merged array shape keeps its `<n=*>` marker when the first sampled
+  item had an empty array.
+- The video sidecar also carries `exif:DateTimeOriginal`, the date tag
+  Immich reads, and its offset comes from the zone of a sibling image
+  in the post instead of a fixed `+00:00`. An image's offset is now
+  evaluated at the instant that is stamped.
+- EXIF `DateTimeOriginal` and XMP `photoshop:DateCreated` now carry the
+  wall-clock time in the labelled offset. Previously the UTC clock
+  reading was written next to a non-UTC offset, so the label disagreed
+  with the time. Files already archived keep the old values.
+
+### Removed
+
+- CI: the `drift-gate-immich` and `smoke-immich` jobs (web/api only,
+  never reachable from the runner), the Immich drift manifest and
+  its empty baseline, and the `claude-drift-triage` include. `make
+  pre-tag-check` remains the Immich gate.
+- The vendored Immich `openapi.json`, the unused generated `imapi`
+  client, the oapi-codegen config, `make gen-immich` and
+  `make refresh-immich-spec`, and the oapi-codegen `go.mod` tool.
+  The hand-written `api/immich` client and its contract test stay.
+
 ## [0.5.0] - 2026-05-09
 
 This release rebases bairn's CI onto the `dunn.dev/pipeline@2.0.3`

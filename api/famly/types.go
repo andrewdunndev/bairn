@@ -179,9 +179,16 @@ type ImageTime struct {
 }
 
 // OffsetString returns the EXIF-shaped UTC offset ("+HH:MM" or
-// "-HH:MM") corresponding to ImageTime.Timezone evaluated at
-// ImageTime.Date. Falls back to "+00:00" when the zone is unknown.
+// "-HH:MM") for ImageTime.Timezone at ImageTime.Date.
 func (it ImageTime) OffsetString() string {
+	return it.OffsetAt(it.Date.Time)
+}
+
+// OffsetAt returns the offset of ImageTime.Timezone at the instant
+// at, so a caller that stamps a different instant (a post date)
+// gets the offset that was in force then. Falls back to "+00:00"
+// when the zone is unknown and to the current time when at is zero.
+func (it ImageTime) OffsetAt(at time.Time) string {
 	if it.Timezone == "" || it.Timezone == "UTC" {
 		return "+00:00"
 	}
@@ -189,7 +196,6 @@ func (it ImageTime) OffsetString() string {
 	if err != nil {
 		return "+00:00"
 	}
-	at := it.Date.Time
 	if at.IsZero() {
 		at = time.Now().UTC()
 	}

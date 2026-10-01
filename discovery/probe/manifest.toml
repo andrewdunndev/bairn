@@ -39,7 +39,7 @@
 # Used by `bairn drift --manifest discovery/probe/manifest.toml
 # --diff discovery/baselines/main` as a maintainer's pre-release
 # check that bairn's typed clients still match Famly's response
-# shapes. NOT fired on a CI schedule; see
+# shapes. Also fired weekly by a CI schedule; see
 # docs/decisions/0007-llm-augmented-ci.md for the posture.
 #
 # To regenerate the baseline locally (operator action), prefer

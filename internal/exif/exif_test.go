@@ -70,7 +70,7 @@ func TestReinjectGPS(t *testing.T) {
 		t.Fatalf("write fixture: %v", err)
 	}
 
-	lat := 42.9634  // Grand Rapids, MI
+	lat := 42.9634 // Grand Rapids, MI
 	lng := -85.6681
 	if err := Reinject(path, Fields{
 		DateTimeOriginal: time.Now(),
@@ -194,11 +194,11 @@ func tagNames(tags []dumpExifTag) []string {
 
 func TestTruncateWordBoundary(t *testing.T) {
 	cases := []struct {
-		name     string
-		s        string
-		n        int
-		wantHas  string
-		wantNot  string
+		name    string
+		s       string
+		n       int
+		wantHas string
+		wantNot string
 	}{
 		{
 			name:    "cuts at last space within window",
@@ -269,10 +269,13 @@ func TestReinjectWritesXMP(t *testing.T) {
 		"<dc:creator>",
 		"Educator A",
 		"<dc:subject>",
+		`xmlns:digiKam="http://www.digikam.org/ns/1.0/"`,
+		"<digiKam:TagsList><rdf:Seq><rdf:li>Child A</rdf:li><rdf:li>Child B</rdf:li><rdf:li>Outdoor</rdf:li></rdf:Seq></digiKam:TagsList>",
 		"<rdf:li>Child A</rdf:li>",
 		"<rdf:li>Child B</rdf:li>",
 		"<rdf:li>Outdoor</rdf:li>",
 		"<photoshop:DateCreated>2026-05-06T18:33:21+00:00",
+		"<exif:DateTimeOriginal>2026-05-06T18:33:21+00:00<",
 	}
 	for _, w := range want {
 		if !strings.Contains(string(body), w) {
@@ -317,4 +320,44 @@ func expectValue(t *testing.T, tags []dumpExifTag, name, want string) {
 		}
 	}
 	t.Errorf("tag %s missing", name)
+}
+
+// The same instant must be written as the wall-clock reading in the
+// labelled offset, in both EXIF and XMP.
+func TestReinjectWritesLocalWallClock(t *testing.T) {
+	instant := time.Date(2026, 5, 6, 18, 33, 21, 0, time.UTC)
+	cases := []struct {
+		offset, wantExif, wantXMP string
+	}{
+		{"+01:00", "2026:05:06 19:33:21", "2026-05-06T19:33:21+01:00"},
+		{"-05:00", "2026:05:06 13:33:21", "2026-05-06T13:33:21-05:00"},
+		{"+05:30", "2026:05:07 00:03:21", "2026-05-07T00:03:21+05:30"},
+		{"", "2026:05:06 18:33:21", "2026-05-06T18:33:21+00:00"},
+	}
+	for _, c := range cases {
+		t.Run("offset"+c.offset, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "test.jpg")
+			if err := os.WriteFile(path, makeJPEG(t, 16, 16), 0o600); err != nil {
+				t.Fatalf("write fixture: %v", err)
+			}
+			if err := Reinject(path, Fields{
+				DateTimeOriginal:   instant,
+				OffsetTimeOriginal: c.offset,
+				XMPDescription:     "x",
+			}); err != nil {
+				t.Fatalf("Reinject: %v", err)
+			}
+			expectValue(t, dumpExif(t, path), "DateTimeOriginal", c.wantExif)
+			body, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			if !strings.Contains(string(body), "<photoshop:DateCreated>"+c.wantXMP+"<") {
+				t.Errorf("XMP missing DateCreated %q", c.wantXMP)
+			}
+			if !strings.Contains(string(body), "<exif:DateTimeOriginal>"+c.wantXMP+"<") {
+				t.Errorf("XMP missing exif:DateTimeOriginal %q", c.wantXMP)
+			}
+		})
+	}
 }

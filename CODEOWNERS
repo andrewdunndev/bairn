@@ -4,7 +4,6 @@
 # Generated code and build configuration; changes here typically
 # accompany schema or spec updates and warrant explicit review.
 api/famly/gen.go @andrewdunndev
-api/immich/imapi/imapi.go @andrewdunndev
 .gitlab-ci.yml @andrewdunndev
 
 # Architectural decisions; changes ripple through the codebase.

@@ -17,6 +17,11 @@ workflow:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
     - if: $CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS && $CI_PIPELINE_SOURCE == "push"
       when: never
+    # A scheduled pipeline keeps running every job when one fails, so
+    # an unrelated red job cannot cancel the weekly drift gate.
+    - if: $CI_PIPELINE_SOURCE == "schedule"
+      auto_cancel:
+        on_job_failure: none
     - if: $CI_COMMIT_BRANCH
     - if: $CI_COMMIT_TAG
   auto_cancel:
@@ -31,7 +36,6 @@ stages:
   - package
   - release
   - deploy
-  - drift-triage
   - verdict
   - automerge-gate
 
@@ -54,20 +58,6 @@ include:
     inputs:
       stage: automerge-gate
       required-checks: "osv"
-
-  # Schedule/web-triggered drift triage. Sends shape diffs to Claude
-  # for classification when bairn's drift command emits non-empty
-  # output. Held as a placeholder for now: drift_command is `echo ''`
-  # because bairn does not fire scheduled drift against Famly. See
-  # docs/decisions/0007-llm-augmented-ci.md for the relationship-side
-  # reasoning. The component stays included so a future change of
-  # posture is a one-line flip.
-  - component: gitlab.com/dunn.dev/pipeline/claude-drift-triage@4
-    inputs:
-      drift_command: "echo ''"
-      issue_on_drift: true
-      issue_label: "drift,ai-triaged"
-      stage: drift-triage
 
   # Lint-stage golangci-lint via the catalog's pinned ci-go. Real
   # gate (no allow_failure). The previous bespoke
@@ -198,23 +188,22 @@ test:
   script:
     - go test -race ./...
 
-# Tag-only pre-release drift gate. Builds bairn, hits Famly's
-# parent-side surface against the operator's own access token, and
+# Drift gate. Builds bairn, logs in with FAMLY_EMAIL and
+# FAMLY_PASSWORD (masked, protected project variables), reads the
+# manifest's two endpoints from the operator's own account, and
 # diffs response shapes against the committed baseline at
-# discovery/baselines/main/. Fails the tag pipeline (exit 1) when
-# drift is detected so a binary that no longer matches Famly's
-# response shapes does not ship.
+# discovery/baselines/main/. Exit 1 means the shape changed, exit 2
+# means login or transport failed; either fails the pipeline, so a
+# tag does not ship a binary that no longer matches Famly and the
+# schedule owner is emailed.
 #
-# Fires once per tag push, lined up with a human action (the
-# maintainer tagging a release). NOT a recurring schedule. See
-# discovery/PROTOCOL.md and docs/decisions/0007-llm-augmented-ci.md
-# for the posture.
-#
-# Operator must set FAMLY_ACCESS_TOKEN as a masked, protected
-# project CI variable. A forker who does not set the variable will
-# see this job fail at tag time; that is the intended signal.
+# Fires on every tag and on the weekly schedule on main (two GETs,
+# one second apart). needs: [] keeps it independent of the other
+# jobs a schedule run starts. See discovery/PROTOCOL.md and
+# docs/decisions/0007-llm-augmented-ci.md for the posture.
 drift-gate:
   stage: drift-gate
+  needs: []
   image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.8.0@sha256:8a28513a9ad191e0880c585baa31f31e533c5288561c369c634782e74066804a
   interruptible: false
   script:
@@ -222,41 +211,4 @@ drift-gate:
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
   rules:
     - if: $CI_COMMIT_TAG
-
-# Pre-release drift gate against the operator's Immich server.
-# Only fires on web/api triggers (operator-initiated, can pre-set
-# IMMICH_BASE_URL/IMMICH_API_KEY for the run). NOT on tag pipelines:
-# the storr runner cannot reach a typical homelab Immich (LAN
-# service, no NAT hairpin), and the previous tag-rule with
-# allow_failure: true was decorating every release with a red X
-# and training operators to ignore the signal.
-#
-# Local equivalent: `make pre-tag-check` runs the live smoke
-# before `git tag`; that's the actual gate.
-drift-gate-immich:
-  stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.8.0@sha256:8a28513a9ad191e0880c585baa31f31e533c5288561c369c634782e74066804a
-  interruptible: false
-  script:
-    - go build -o bin/bairn ./cmd/bairn
-    - bin/bairn drift --anonymize --manifest discovery/probe/manifest-immich.toml --diff discovery/baselines/main-immich
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"
-
-# Write-side smoke test against the operator's Immich. Round-trip:
-# login → mint ephemeral API key → upload tiny JPEG via bairn's
-# actual Upload code path → assert created → delete asset → delete
-# API key. Catches controller-layer wire-contract enforcement that
-# no vendored OpenAPI / TypeScript schema captures.
-#
-# Same web/api-only posture as drift-gate-immich. The local
-# `make pre-tag-check` is the tag-time gate.
-smoke-immich:
-  stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.8.0@sha256:8a28513a9ad191e0880c585baa31f31e533c5288561c369c634782e74066804a
-  interruptible: false
-  script:
-    - go build -o bin/bairn ./cmd/bairn
-    - bin/bairn smoke immich
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "web" || $CI_PIPELINE_SOURCE == "api"
+    - if: $CI_PIPELINE_SOURCE == "schedule"

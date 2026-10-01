@@ -74,8 +74,9 @@ bairn does five jobs:
    JPEG carries the post body, the post timestamp, the educator's
    name, and any per-image kid-tags as both [EXIF][exif] (legacy +
    ubiquitous) and [XMP][xmp] (modern, what Apple Photos and
-   Lightroom prefer). No sidecar files; everything travels with the
-   image. See [ADR 0005][adr-0005] for the archival contract.
+   Lightroom prefer). Photos need no sidecar; everything travels with
+   the image. Videos get a `<file>.xmp` beside them (description, date,
+   tags), which Immich also receives as `sidecarData`. See [ADR 0005][adr-0005] for the archival contract.
 
 5. **Track progress in a JSON state file.** A single
    `state.json` records what's been downloaded, saved, and
@@ -216,7 +217,7 @@ Concretely:
 | EXIF `Software` | bairn version | Self-attribution. |
 | EXIF `UserComment` | full body + sender | Unicode-safe; some viewers warn on dsoprea's "Unicode" prefix. |
 | XMP `dc:description` | full body | Newlines preserved; XMP can carry them safely. |
-| XMP `dc:subject` | per-image kid tag names | When Famly tags the photo per child. |
+| XMP `dc:subject`, `digiKam:TagsList` | per-image kid tag names (flat; Immich reads TagsList) | When Famly tags the photo per child. |
 | XMP `photoshop:DateCreated` | image timestamp | ISO 8601 with offset. |
 
 GPS coordinates are off by default. They embed only when the
@@ -225,7 +226,7 @@ operator supplies coordinates explicitly.
 ## Local dev and smoke testing
 
 ```
-make gen           regenerate api/famly/gen.go and api/immich/imapi/imapi.go
+make gen           regenerate api/famly/gen.go
 make test          go test -race ./...
 make smoke         run the longer-running fixture tests
 make smoke-immich  live round-trip against the operator's Immich
@@ -257,9 +258,13 @@ v0.4.6 added the smoke and v0.5.0 folded lint into the same gate.
 `IMMICH_BAIRN_USER` / `IMMICH_BAIRN_PASSWORD` (recommended: a
 quota-limited test user separate from your archive account), or
 falls back to `IMMICH_BASE_URL` / `IMMICH_API_KEY` for ad-hoc
-runs. The same gate is wired into CI as the `smoke-immich` job;
-it's `allow_failure: true` by default so a forker without the
-vars set sees yellow but isn't blocked.
+runs. It is a local gate only: CI runners cannot reach a LAN Immich.
+
+`IMMICH_VERSION` in the Makefile is the Immich release bairn is
+verified against via `make pre-tag-check`. Renovate proposes bumps
+(automerge off); a bump MR means: upgrade the home Immich, recapture
+`api/immich/required-fields.json` with `make refresh-immich-validator`,
+then run `make pre-tag-check`.
 
 For the no-write case (auditing a server you can't upload to),
 `bairn smoke immich --probe-only` sends a deliberately incomplete
@@ -336,7 +341,7 @@ The seven ADRs as of v0.1.0:
 - [0002](./docs/decisions/0002-typestate-asset-lifecycle.md) typestate for the asset lifecycle
 - [0003](./docs/decisions/0003-auth-token-and-refresh.md) Famly auth: token-first with optional refresh
 - [0004](./docs/decisions/0004-state-as-json-file.md) state as a JSON file with file lock
-- [0005](./docs/decisions/0005-archival-posture.md) archival posture, no sidecars
+- [0005](./docs/decisions/0005-archival-posture.md) archival posture, in-file metadata (video XMP sidecar only)
 - [0006](./docs/decisions/0006-sink-abstraction.md) sink abstraction (disk + Immich + future)
 - [0007](./docs/decisions/0007-llm-augmented-ci.md) LLM-augmented CI (deferred)
 
@@ -345,7 +350,7 @@ The seven ADRs as of v0.1.0:
 - [`jacobbunk/famly-fetch`][jacobbunk] (Python). Built an integration
   against Famly's API first; bairn's REST surface follows that map.
   Different design (streamed downloads, JSON state, optional Immich
-  layer, in-file metadata only, no sidecars) and different language
+  layer, in-file photo metadata, XMP sidecar for video only) and different language
   but same conceptual lineage. Established prior art; see
   [`NOTICE.md`](./NOTICE.md) for context.
 

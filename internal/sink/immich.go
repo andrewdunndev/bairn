@@ -39,6 +39,7 @@ func (i *Immich) Put(ctx context.Context, in PutInput) (Receipt, error) {
 	res, err := i.client.Upload(ctx, immich.UploadInput{
 		Data:           data,
 		Filename:       in.Filename,
+		Sidecar:        in.Sidecar,
 		FileCreatedAt:  in.FileCreatedAt,
 		FileModifiedAt: in.FileCreatedAt,
 		// Stable client identifier; do not encode bairn version into

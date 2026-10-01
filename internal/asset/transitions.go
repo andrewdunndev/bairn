@@ -101,6 +101,11 @@ func (dl Downloaded) Save(ctx context.Context, disk *sink.Disk, software string)
 		EXIF:          dl.d.EXIF(software),
 		Body:          dl.d.body,
 	}
+	sidecar, sideErr := dl.d.Sidecar(software)
+	if sideErr != nil {
+		return Saved{}, fmt.Errorf("asset: sidecar %s: %w", dl.d.famlyImageID, sideErr)
+	}
+	in.Sidecar = sidecar
 	receipt, putErr := disk.Put(ctx, in)
 	// Disk.Put may return a non-fatal error (EXIF failed, file
 	// saved). We preserve the file path either way.
@@ -111,6 +116,7 @@ func (dl Downloaded) Save(ctx context.Context, disk *sink.Disk, software string)
 		dl:        dl,
 		finalPath: receipt.DestPath,
 		duplicate: receipt.Status == "duplicate",
+		sidecar:   sidecar,
 	}
 	if putErr != nil {
 		saved.exifError = putErr.Error()
@@ -129,6 +135,7 @@ func (s Saved) Upload(ctx context.Context, immich *sink.Immich) (Uploaded, error
 		Filename:      filepath.Base(s.finalPath),
 		SHA1:          s.dl.sha1,
 		FileCreatedAt: s.dl.d.fileCreatedAt,
+		Sidecar:       s.sidecar,
 	}
 	receipt, err := immich.Put(ctx, in)
 	if err != nil {

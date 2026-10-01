@@ -63,7 +63,7 @@
 
   <rect x="640" y="465" width="240" height="60" rx="4" fill="none" stroke="#0a0a0a" stroke-width="1"/>
   <text x="760" y="486" text-anchor="middle" font-size="11" font-weight="600" fill="#0a0a0a">api/immich</text>
-  <text x="760" y="504" text-anchor="middle" font-size="9" fill="#909090">oapi-codegen client + multipart upload</text>
+  <text x="760" y="504" text-anchor="middle" font-size="9" fill="#909090">hand-written multipart upload client</text>
 
   <rect x="960" y="465" width="200" height="60" rx="4" fill="#fafafa" stroke="#909090" stroke-width="1" stroke-dasharray="4,3"/>
   <text x="1060" y="486" text-anchor="middle" font-size="11" font-weight="600" fill="#404040">filesystem</text>

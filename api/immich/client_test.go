@@ -26,6 +26,8 @@ type fakeImmich struct {
 	lastFileCreated   string
 	lastDeviceID      string
 	lastDeviceAssetID string
+	lastSidecar       []byte
+	sidecarFilename   string
 
 	respondWith struct {
 		statusCode int
@@ -66,6 +68,10 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 				return
 			}
 			body, _ := io.ReadAll(p)
+			if p.FormName() == "sidecarData" {
+				f.lastSidecar = body
+				f.sidecarFilename = p.FileName()
+			}
 			switch p.FormName() {
 			case "fileCreatedAt":
 				f.lastFileCreated = string(body)
@@ -193,5 +199,32 @@ func TestSHA1HexMatchesCanonical(t *testing.T) {
 	want := hex.EncodeToString(sum[:])
 	if got != want {
 		t.Errorf("sha1Hex = %s, want %s", got, want)
+	}
+}
+
+func TestUploadSidecarField(t *testing.T) {
+	f := newFakeImmich(t)
+	c := New(f.srv.URL, "test-key")
+	now := time.Date(2026, 5, 6, 14, 30, 0, 0, time.UTC)
+	in := UploadInput{
+		Data: []byte("fake video bytes"), Filename: "vid-001.mp4",
+		FileCreatedAt: now, FileModifiedAt: now,
+		DeviceID: "bairn", DeviceAssetID: "vid-001",
+		Sidecar: []byte("<x:xmpmeta/>"),
+	}
+	if _, err := c.Upload(context.Background(), in); err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if string(f.lastSidecar) != "<x:xmpmeta/>" || f.sidecarFilename == "" {
+		t.Errorf("sidecarData = %q (filename %q)", f.lastSidecar, f.sidecarFilename)
+	}
+
+	f.lastSidecar = nil
+	in.Sidecar = nil
+	if _, err := c.Upload(context.Background(), in); err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if f.lastSidecar != nil {
+		t.Errorf("sidecarData sent without a sidecar: %q", f.lastSidecar)
 	}
 }

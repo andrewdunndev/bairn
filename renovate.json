@@ -1,4 +1,23 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["gitlab>dunn.dev/pipeline:renovate-config"]
+  "extends": ["gitlab>dunn.dev/pipeline:renovate-config"],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "IMMICH_VERSION in the Makefile: the Immich release bairn is verified against.",
+      "managerFilePatterns": ["/(^|/)Makefile$/"],
+      "matchStrings": [
+        "# renovate: datasource=(?<datasource>[a-z-]+?) depName=(?<depName>[^\\s]+?)\\s+IMMICH_VERSION := (?<currentValue>[^\\s]+)"
+      ],
+      "extractVersionTemplate": "^v(?<version>.+)$",
+      "versioningTemplate": "semver"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "An Immich bump is a human gate: upgrade the home Immich, recapture required-fields.json, run make pre-tag-check.",
+      "matchDepNames": ["immich-app/immich"],
+      "automerge": false
+    }
+  ]
 }

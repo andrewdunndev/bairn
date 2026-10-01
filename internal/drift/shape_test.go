@@ -155,3 +155,68 @@ func TestSignatureRoundTripsThroughJSON(t *testing.T) {
 		t.Errorf("roundtrip changed signature: %v", d)
 	}
 }
+
+func TestDiffEmptyAndNullAreWildcards(t *testing.T) {
+	base := map[string]any{
+		"images": []any{"<empty>"},
+		"body":   "null",
+	}
+	live := map[string]any{
+		"images": []any{map[string]any{"id": "str"}, "<n=*>"},
+		"body":   map[string]any{"text": "str"},
+	}
+	if d := Diff(base, live); len(d) != 0 {
+		t.Fatalf("baseline wildcards vs live: %v", d)
+	}
+	if d := Diff(live, base); len(d) != 0 {
+		t.Fatalf("live wildcards vs baseline: %v", d)
+	}
+	// A wildcard must not hide a real type change elsewhere.
+	live["id"] = "str"
+	base["id"] = "int"
+	if d := Diff(base, live); len(d) != 1 {
+		t.Fatalf("want one type change, got %v", d)
+	}
+}
+
+func TestShapeMergesNestedAcrossItems(t *testing.T) {
+	feed := []any{
+		map[string]any{"images": []any{}, "sender": map[string]any{"id": "x"}},
+		map[string]any{
+			"images": []any{map[string]any{"url": "u"}},
+			"sender": map[string]any{"name": "n"},
+		},
+	}
+	got := Shape(feed, ShapeOpts{AnonymizeCounts: true}).([]any)
+	item := got[0].(map[string]any)
+	imgs := item["images"].([]any)
+	img, ok := imgs[0].(map[string]any)
+	if !ok || img["url"] != "str" {
+		t.Fatalf("images not merged from later item: %v", imgs)
+	}
+	sender := item["sender"].(map[string]any)
+	if sender["id"] != "str" || sender["name"] != "str" {
+		t.Fatalf("sender not unioned: %v", sender)
+	}
+	if len(imgs) != 2 || imgs[1] != "<n=*>" {
+		t.Fatalf("count marker lost when first item is empty: %v", imgs)
+	}
+	// Item 1 empty images vs item 2 image map, in either order, diff clean.
+	rev := []any{feed[1], feed[0]}
+	if d := Diff(got, Shape(rev, ShapeOpts{AnonymizeCounts: true})); len(d) != 0 {
+		t.Fatalf("order-dependent shape: %v", d)
+	}
+}
+
+func TestDiffReportsRenamedKeyInsideSeededArray(t *testing.T) {
+	base := Shape([]any{
+		map[string]any{"images": []any{}},
+		map[string]any{"images": []any{map[string]any{"url_big": "u"}}},
+	}, ShapeOpts{AnonymizeCounts: true})
+	live := Shape([]any{
+		map[string]any{"images": []any{map[string]any{"urlBig": "u"}}},
+	}, ShapeOpts{AnonymizeCounts: true})
+	if d := Diff(base, live); len(d) == 0 {
+		t.Fatal("renamed image key not reported")
+	}
+}

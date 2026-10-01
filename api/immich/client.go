@@ -1,11 +1,11 @@
 // Package immich is bairn's typed client for Immich's asset upload
 // surface.
 //
-// The generated client in gen.go provides typed responses for all
-// operations declared in the vendored OpenAPI spec. This file adds
-// a thin operator-friendly wrapper for the asset-upload flow,
-// including SHA1-based dedup via the x-immich-checksum header that
-// modern Immich expects.
+// The client is hand-written for the one endpoint bairn uses, the
+// multipart asset upload, including SHA1-based dedup via the
+// x-immich-checksum header that modern Immich expects. It is
+// verified against the release pinned as IMMICH_VERSION in the
+// Makefile.
 package immich
 
 import (
@@ -26,7 +26,7 @@ import (
 	"time"
 )
 
-// Client is bairn's wrapper around the generated Immich client.
+// Client uploads assets to one Immich server.
 type Client struct {
 	baseURL    string
 	apiKey     string
@@ -90,6 +90,10 @@ type UploadInput struct {
 	// bairn passes the vendor's stable image ID so Immich can
 	// dedupe at the device layer across bairn re-runs.
 	DeviceAssetID string
+
+	// Sidecar is an optional XMP packet sent as the sidecarData
+	// multipart part (AssetMediaCreateDto.sidecarData).
+	Sidecar []byte
 
 	// Metadata is an arbitrary key/value bag persisted with the
 	// asset on the Immich side. bairn writes "famlyImageId" with
@@ -173,13 +177,13 @@ func (c *Client) Upload(ctx context.Context, in UploadInput) (*UploadResult, err
 //   - deviceId, deviceAssetId
 //   - metadata items each with `value` as an object
 //
-// The published OpenAPI spec at api/immich/openapi.json does NOT
+// The published Immich OpenAPI spec does NOT
 // list deviceId / deviceAssetId on AssetMediaCreateDto. The live
 // server enforces them anyway. v0.4.3 trusted the spec, dropped the
 // fields, and broke uploads. v0.4.5 restores them per a downstream
 // user's runtime evidence (MR !2). Future spec drift in either
-// direction is one `make refresh-immich-spec` away from being
-// re-evaluated; live-server testing remains the truth.
+// direction is re-evaluated by `make pre-tag-check` against
+// IMMICH_VERSION; live-server testing remains the truth.
 func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
@@ -244,6 +248,19 @@ func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 	}
 	if _, err := part.Write(in.Data); err != nil {
 		return nil, "", err
+	}
+
+	if len(in.Sidecar) > 0 {
+		sh := textproto.MIMEHeader{}
+		sh.Set("Content-Disposition", `form-data; name="sidecarData"; filename="sidecar.xmp"`)
+		sh.Set("Content-Type", "application/octet-stream")
+		sp, err := w.CreatePart(sh)
+		if err != nil {
+			return nil, "", err
+		}
+		if _, err := sp.Write(in.Sidecar); err != nil {
+			return nil, "", err
+		}
 	}
 
 	if err := w.Close(); err != nil {

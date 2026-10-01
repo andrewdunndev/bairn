@@ -1,4 +1,4 @@
-# ADR 0005: archival posture, no sidecars
+# ADR 0005: archival posture, in-file metadata
 
 **Status**: accepted, 2026-05-07
 
@@ -28,13 +28,17 @@ everything available.
 
 ## Decision
 
-**No sidecar files.** Per-asset metadata is embedded directly into
-the artefact:
+**No sidecar files for photos.** Per-asset metadata is embedded
+directly into the artefact; the one exception is video, which has
+no in-file path:
 
 - **JPEG/TIFF**: full EXIF/XMP/IPTC payload via dsoprea/go-exif/v3.
 - **Video (MP4/MOV)**: filename carries the timestamp; filesystem
   mtime is set from the source createdDate. No in-file metadata
-  rewrite for video in v1.
+  rewrite. Instead each video gets a standalone `<file>.xmp`
+  (description, date with its offset, tags) written beside it and
+  sent to Immich as `sidecarData`. Photos never get a sidecar: a
+  sidecar date would override the timezone embedded in the file.
 
 Fields embedded into JPEG/TIFF, all when available, no flag-gating
 for the privacy-related ones:
@@ -48,7 +52,7 @@ for the privacy-related ones:
 | Artist               | sender.name (educator who posted)             |
 | Software             | `bairn 0.x.y`                                 |
 | GPSCoordinates       | optional, off until the operator supplies coordinates |
-| XMP-dc:subject (Keywords) | per-image kid tag names where Famly tagged |
+| XMP-dc:subject (Keywords), XMP-digiKam:TagsList | per-image kid tag names where Famly tagged |
 
 GPS is the one optional field, because bairn does not know the
 photo's location; the operator supplies it explicitly if at all.
@@ -60,7 +64,8 @@ photo's location; the operator supplies it explicitly if at all.
   look for them. Rejected.
 - **XMP sidecar (`.xmp`).** Standard format, broader tooling
   support than `.json`. Still loses on move; in-file embedding is
-  strictly better for the same data. Rejected.
+  strictly better for the same data. Rejected for photos; kept for
+  video, which cannot embed it.
 - **Flag-gate child tag names.** Would require a per-deployment
   decision the operator has to remember. Rejected; the archival
   contract is clearer if all available context is embedded.
@@ -73,9 +78,10 @@ photo's location; the operator supplies it explicitly if at all.
 - Operators who want to strip metadata before sharing must do so
   explicitly with `exiftool` or similar. That's the right place
   for that decision; not bairn's.
-- Video metadata is comparatively bare. If a future user demands
-  in-file video metadata rewrite, that's a focused follow-on
-  using a Go MP4 atom library.
+- Video metadata lives in the `.xmp` sidecar, which can be lost on
+  a move without it. If a future user demands in-file video
+  metadata rewrite, that's a focused follow-on using a Go MP4 atom
+  library.
 - Privacy-aware downstream consumers (Immich's facial recognition,
   shared albums, etc.) can read the embedded metadata; that's by
   design. bairn's job ends at "the file has the data."

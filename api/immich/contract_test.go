@@ -19,7 +19,7 @@ import (
 // rejected as missing. This test asserts buildUploadBody emits a
 // multipart field for each required name.
 //
-// Refresh cadence: alongside `make refresh-immich-spec` (operator
+// Refresh cadence: when IMMICH_VERSION is bumped (operator
 // action). When upstream Immich changes its required-field set,
 // the operator captures a new manifest, and this test fails until
 // buildUploadBody is updated to match.

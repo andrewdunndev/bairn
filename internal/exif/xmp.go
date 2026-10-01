@@ -17,7 +17,7 @@ import (
 // payloads here and splice them into the file's bytes at write
 // time.
 var (
-	pendingXMPMu          sync.Mutex
+	pendingXMPMu            sync.Mutex
 	pendingXMPBySegmentList = map[*jis.SegmentList][]byte{}
 )
 
@@ -169,6 +169,16 @@ func needsXMP(f Fields) bool {
 		!f.DateTimeOriginal.IsZero()
 }
 
+// Sidecar returns a standalone XMP packet for f, for media that
+// cannot carry an embedded one (videos). It is nil when f holds
+// nothing XMP-relevant.
+func Sidecar(f Fields) ([]byte, error) {
+	if !needsXMP(f) {
+		return nil, nil
+	}
+	return buildXMPPacket(f)
+}
+
 // buildXMPPacket emits a self-described XMP packet matching
 // Adobe's expected boilerplate. We write the namespaces and
 // elements bairn cares about; readers ignore the rest of the
@@ -183,6 +193,8 @@ func buildXMPPacket(f Fields) ([]byte, error) {
 	b.WriteString(`<rdf:Description rdf:about=""`)
 	b.WriteString(` xmlns:dc="http://purl.org/dc/elements/1.1/"`)
 	b.WriteString(` xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"`)
+	b.WriteString(` xmlns:digiKam="http://www.digikam.org/ns/1.0/"`)
+	b.WriteString(` xmlns:exif="http://ns.adobe.com/exif/1.0/"`)
 	b.WriteString(`>`)
 
 	if f.XMPDescription != "" {
@@ -201,34 +213,50 @@ func buildXMPPacket(f Fields) ([]byte, error) {
 		b.WriteString(`</rdf:li></rdf:Seq></dc:creator>`)
 	}
 
-	if len(f.XMPKeywords) > 0 {
-		b.WriteString(`<dc:subject><rdf:Bag>`)
-		for _, k := range f.XMPKeywords {
-			k = strings.TrimSpace(k)
-			if k == "" {
-				continue
-			}
+	// The same flat names go to dc:subject (the standard field) and
+	// digiKam:TagsList, which Immich reads first and dc:subject not
+	// at all.
+	var tags []string
+	for _, k := range f.XMPKeywords {
+		if k = strings.TrimSpace(k); k != "" {
+			tags = append(tags, k)
+		}
+	}
+	for _, field := range []struct{ name, kind string }{
+		{"dc:subject", "Bag"},
+		{"digiKam:TagsList", "Seq"},
+	} {
+		if len(tags) == 0 {
+			break
+		}
+		b.WriteString("<" + field.name + "><rdf:" + field.kind + ">")
+		for _, k := range tags {
 			b.WriteString(`<rdf:li>`)
 			if err := xml.EscapeText(&b, []byte(k)); err != nil {
 				return nil, err
 			}
 			b.WriteString(`</rdf:li>`)
 		}
-		b.WriteString(`</rdf:Bag></dc:subject>`)
+		b.WriteString("</rdf:" + field.kind + "></" + field.name + ">")
 	}
 
 	if !f.DateTimeOriginal.IsZero() {
-		offset := f.OffsetTimeOriginal
-		if offset == "" {
-			offset = "+00:00"
-		}
-		// XMP photoshop:DateCreated wants ISO 8601.
-		stamp := f.DateTimeOriginal.UTC().Format("2006-01-02T15:04:05") + offset
+		// XMP photoshop:DateCreated wants ISO 8601: local clock
+		// time followed by the offset it is local to.
+		local, offset := wallClock(f.DateTimeOriginal, f.OffsetTimeOriginal)
+		stamp := local.Format("2006-01-02T15:04:05") + offset
 		b.WriteString(`<photoshop:DateCreated>`)
 		if err := xml.EscapeText(&b, []byte(stamp)); err != nil {
 			return nil, err
 		}
 		b.WriteString(`</photoshop:DateCreated>`)
+		// Immich's date tags include exif:DateTimeOriginal but not
+		// photoshop:DateCreated, so a video sidecar needs this one.
+		b.WriteString(`<exif:DateTimeOriginal>`)
+		if err := xml.EscapeText(&b, []byte(stamp)); err != nil {
+			return nil, err
+		}
+		b.WriteString(`</exif:DateTimeOriginal>`)
 	}
 
 	b.WriteString(`</rdf:Description></rdf:RDF></x:xmpmeta>`)
