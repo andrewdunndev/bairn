@@ -14,9 +14,14 @@ file represents one endpoint listed in
 
 ## Seeding
 
-The baseline is generated locally by an operator with their own
-Famly credentials, then committed. The maintainer regenerates it
-before each bairn release to catch breakages early:
+Every `drift-gate` run keeps its fresh shapes as a one-week job
+artifact (`discovery/baselines/current/`). To reseed without local
+credentials, run the weekly schedule, download that artifact, check
+each value is a type name or `<n=*>`, and commit it here. Prefer a
+week whose first posts include an image, a tagged image and a video,
+so those subtrees carry real shapes rather than `<empty>`.
+
+Locally, with your own Famly credentials:
 
 ```bash
 export FAMLY_EMAIL=...
