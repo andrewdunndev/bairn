@@ -95,7 +95,8 @@ type Fields struct {
 
 	// XMP (modern). Description is the full unsanitized body for
 	// dc:description (XML can carry newlines and Unicode safely).
-	// Keywords land as dc:subject Bag entries (one per element).
+	// Keywords land as dc:subject Bag and digiKam:TagsList Seq entries
+	// (one per element).
 	XMPDescription string
 	XMPKeywords    []string
 }

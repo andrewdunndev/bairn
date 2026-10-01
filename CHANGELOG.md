@@ -22,6 +22,9 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 - `IMMICH_VERSION` in the Makefile names the Immich release bairn is
   verified against via `make pre-tag-check`; Renovate tracks it with
   automerge off.
+- XMP `digiKam:TagsList` (flat child names, same source as
+  `dc:subject`) in the photo packet; Immich reads it and ignores
+  `dc:subject`.
 
 ### Fixed
 

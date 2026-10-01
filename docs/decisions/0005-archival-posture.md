@@ -48,7 +48,7 @@ for the privacy-related ones:
 | Artist               | sender.name (educator who posted)             |
 | Software             | `bairn 0.x.y`                                 |
 | GPSCoordinates       | optional, off until the operator supplies coordinates |
-| XMP-dc:subject (Keywords) | per-image kid tag names where Famly tagged |
+| XMP-dc:subject (Keywords), XMP-digiKam:TagsList | per-image kid tag names where Famly tagged |
 
 GPS is the one optional field, because bairn does not know the
 photo's location; the operator supplies it explicitly if at all.

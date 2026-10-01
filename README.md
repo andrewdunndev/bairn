@@ -216,7 +216,7 @@ Concretely:
 | EXIF `Software` | bairn version | Self-attribution. |
 | EXIF `UserComment` | full body + sender | Unicode-safe; some viewers warn on dsoprea's "Unicode" prefix. |
 | XMP `dc:description` | full body | Newlines preserved; XMP can carry them safely. |
-| XMP `dc:subject` | per-image kid tag names | When Famly tags the photo per child. |
+| XMP `dc:subject`, `digiKam:TagsList` | per-image kid tag names (flat; Immich reads TagsList) | When Famly tags the photo per child. |
 | XMP `photoshop:DateCreated` | image timestamp | ISO 8601 with offset. |
 
 GPS coordinates are off by default. They embed only when the

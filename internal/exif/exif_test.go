@@ -269,6 +269,8 @@ func TestReinjectWritesXMP(t *testing.T) {
 		"<dc:creator>",
 		"Educator A",
 		"<dc:subject>",
+		`xmlns:digiKam="http://www.digikam.org/ns/1.0/"`,
+		"<digiKam:TagsList><rdf:Seq><rdf:li>Child A</rdf:li><rdf:li>Child B</rdf:li><rdf:li>Outdoor</rdf:li></rdf:Seq></digiKam:TagsList>",
 		"<rdf:li>Child A</rdf:li>",
 		"<rdf:li>Child B</rdf:li>",
 		"<rdf:li>Outdoor</rdf:li>",

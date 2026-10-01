@@ -183,6 +183,7 @@ func buildXMPPacket(f Fields) ([]byte, error) {
 	b.WriteString(`<rdf:Description rdf:about=""`)
 	b.WriteString(` xmlns:dc="http://purl.org/dc/elements/1.1/"`)
 	b.WriteString(` xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"`)
+	b.WriteString(` xmlns:digiKam="http://www.digikam.org/ns/1.0/"`)
 	b.WriteString(`>`)
 
 	if f.XMPDescription != "" {
@@ -201,20 +202,31 @@ func buildXMPPacket(f Fields) ([]byte, error) {
 		b.WriteString(`</rdf:li></rdf:Seq></dc:creator>`)
 	}
 
-	if len(f.XMPKeywords) > 0 {
-		b.WriteString(`<dc:subject><rdf:Bag>`)
-		for _, k := range f.XMPKeywords {
-			k = strings.TrimSpace(k)
-			if k == "" {
-				continue
-			}
+	// The same flat names go to dc:subject (the standard field) and
+	// digiKam:TagsList, which Immich reads first and dc:subject not
+	// at all.
+	var tags []string
+	for _, k := range f.XMPKeywords {
+		if k = strings.TrimSpace(k); k != "" {
+			tags = append(tags, k)
+		}
+	}
+	for _, field := range []struct{ name, kind string }{
+		{"dc:subject", "Bag"},
+		{"digiKam:TagsList", "Seq"},
+	} {
+		if len(tags) == 0 {
+			break
+		}
+		b.WriteString("<" + field.name + "><rdf:" + field.kind + ">")
+		for _, k := range tags {
 			b.WriteString(`<rdf:li>`)
 			if err := xml.EscapeText(&b, []byte(k)); err != nil {
 				return nil, err
 			}
 			b.WriteString(`</rdf:li>`)
 		}
-		b.WriteString(`</rdf:Bag></dc:subject>`)
+		b.WriteString("</rdf:" + field.kind + "></" + field.name + ">")
 	}
 
 	if !f.DateTimeOriginal.IsZero() {
