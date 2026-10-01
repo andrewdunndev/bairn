@@ -35,14 +35,15 @@ and on the weekly schedule on main: two GETs, one second apart, on the
 operator's own account (ADR 0007). A scheduled pipeline runs this job
 and nothing else, so a failure email means Famly drifted or login broke.
 The fresh shapes are kept for a week as the job artifact
-`discovery/baselines/current/`.
+`discovery/baselines/current/`, visible to developers only.
 
 ## Seeding
 
 Reseed whenever the walk changes what a shape holds (the first seed
 after deeper shapes landed, or a new manifest endpoint). Run the
-schedule, download the artifact, check every value is a type name,
-`<empty>` or `<n=*>`, and copy the files here. Prefer a week whose
+schedule, download the artifact, check every key is a json tag of a bairn
+struct and every value is a type name, `<empty>`, `<n=*>`, `<object>` or
+`<array>`, and copy the files here. Prefer a week whose
 first posts include an image, a tagged image and a video, so those
 subtrees carry real shapes rather than `<empty>`.
 

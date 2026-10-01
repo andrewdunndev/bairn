@@ -74,6 +74,7 @@ drift-gate:
     - go build -o bin/bairn ./cmd/bairn
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
   artifacts:
+    access: developer
     when: always
     expire_in: 1 week
     paths:

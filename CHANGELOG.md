@@ -22,6 +22,9 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 - Drift shapes walk every feed item and every nesting level (no
   5-item sample, no depth cap), so tag fields now appear. Reseed
   `discovery/baselines/main/` from the next schedule artifact.
+- A response field that arrives as a different container than bairn's
+  struct declares is recorded as `<object>` or `<array>`, so vendor
+  keys never reach a shape. The drift artifact is developer-only.
 - Drift documentation lives in `discovery/baselines/main/README.md`.
 
 ### Removed

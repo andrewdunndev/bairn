@@ -229,3 +229,27 @@ func TestFilterTypeMismatchReturnsRaw(t *testing.T) {
 		t.Errorf("type-mismatched field should pass raw through; got %v", got["address"])
 	}
 }
+
+func TestFilterMismatchedContainerCarriesNoVendorKeys(t *testing.T) {
+	type liker struct {
+		LoginID string `json:"loginId"`
+	}
+	type post struct {
+		Likes   []liker `json:"likes"`
+		Address addr    `json:"address"`
+		Name    string  `json:"name"`
+	}
+	raw := map[string]any{
+		// slice field arriving as an object keyed by data
+		"likes": map[string]any{"login-123": map[string]any{"loginId": "x"}},
+		// struct field arriving as an array
+		"address": []any{map[string]any{"secret-key": "v"}},
+		// scalar field arriving as an object
+		"name": map[string]any{"child-456": "v"},
+	}
+	got := Filter(raw, reflect.TypeOf(post{})).(map[string]any)
+	want := map[string]any{"likes": "<object>", "address": "<array>", "name": "<object>"}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("got %v, want %v", got, want)
+	}
+}
