@@ -24,6 +24,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"gitlab.com/dunn.dev/bairn/internal/retry"
 )
 
 // Client uploads assets to one Immich server.
@@ -32,6 +34,7 @@ type Client struct {
 	apiKey     string
 	httpClient *http.Client
 	logger     *slog.Logger
+	retry      retry.Policy
 }
 
 // Option configures a Client.
@@ -39,6 +42,9 @@ type Option func(*Client)
 
 // WithHTTPClient overrides the default *http.Client.
 func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.httpClient = h } }
+
+// WithRetry overrides the retry policy. Used by tests.
+func WithRetry(p retry.Policy) Option { return func(c *Client) { c.retry = p } }
 
 // WithLogger sets the structured logger.
 func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.logger = l } }
@@ -52,6 +58,7 @@ func New(baseURL, apiKey string, opts ...Option) *Client {
 		apiKey:     apiKey,
 		httpClient: &http.Client{Timeout: 5 * time.Minute},
 		logger:     slog.Default(),
+		retry:      retry.Default(),
 	}
 	for _, o := range opts {
 		o(c)
@@ -131,16 +138,20 @@ func (c *Client) Upload(ctx context.Context, in UploadInput) (*UploadResult, err
 
 	checksum := sha1Hex(in.Data)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/assets", body)
-	if err != nil {
-		return nil, fmt.Errorf("immich: build request: %w", err)
-	}
-	req.Header.Set("Content-Type", contentType)
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("x-api-key", c.apiKey)
-	req.Header.Set("x-immich-checksum", checksum)
-
-	resp, err := c.httpClient.Do(req)
+	// The POST is safe to retry: Immich keys uploads on the SHA-1 of
+	// the bytes per owner, so a repeat of an upload that did land
+	// answers 200 "duplicate" with the existing id.
+	resp, err := c.retry.Do(ctx, func() (*http.Response, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/assets", bytes.NewReader(body))
+		if err != nil {
+			return nil, fmt.Errorf("immich: build request: %w", err)
+		}
+		req.Header.Set("Content-Type", contentType)
+		req.Header.Set("Accept", "application/json")
+		req.Header.Set("x-api-key", c.apiKey)
+		req.Header.Set("x-immich-checksum", checksum)
+		return c.httpClient.Do(req)
+	})
 	if err != nil {
 		return nil, fmt.Errorf("immich: post /assets: %w", err)
 	}
@@ -184,7 +195,7 @@ func (c *Client) Upload(ctx context.Context, in UploadInput) (*UploadResult, err
 // user's runtime evidence (MR !2). Future spec drift in either
 // direction is re-evaluated by `make pre-tag-check` against
 // IMMICH_VERSION; live-server testing remains the truth.
-func buildUploadBody(in UploadInput) (io.Reader, string, error) {
+func buildUploadBody(in UploadInput) ([]byte, string, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 
@@ -266,7 +277,7 @@ func buildUploadBody(in UploadInput) (io.Reader, string, error) {
 	if err := w.Close(); err != nil {
 		return nil, "", err
 	}
-	return &buf, w.FormDataContentType(), nil
+	return buf.Bytes(), w.FormDataContentType(), nil
 }
 
 func sha1Hex(b []byte) string {

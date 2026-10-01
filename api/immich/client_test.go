@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/dunn.dev/bairn/internal/retry"
 )
 
 // fakeImmich captures the most recent upload request for assertions.
@@ -226,5 +228,89 @@ func TestUploadSidecarField(t *testing.T) {
 	}
 	if f.lastSidecar != nil {
 		t.Errorf("sidecarData sent without a sidecar: %q", f.lastSidecar)
+	}
+}
+
+func fastRetry() Option {
+	return WithRetry(retry.Policy{Attempts: 3, Initial: time.Millisecond, Max: 5 * time.Millisecond})
+}
+
+func uploadIn() UploadInput {
+	return UploadInput{
+		Data:           []byte("same bytes every attempt"),
+		Filename:       "x.jpg",
+		FileCreatedAt:  time.Now(),
+		FileModifiedAt: time.Now(),
+	}
+}
+
+// A 5xx is retried with the identical body and checksum; the server
+// answering "duplicate" for an upload that did land is the success
+// path of a retried POST.
+func TestUploadRetriesWithIdenticalBody(t *testing.T) {
+	var bodies []string
+	var sums []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		sums = append(sums, r.Header.Get("x-immich-checksum"))
+		if len(bodies) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"asset-001","status":"duplicate"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	res, err := New(srv.URL, "k", fastRetry()).Upload(context.Background(), uploadIn())
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if !res.Duplicate || res.ID != "asset-001" {
+		t.Errorf("result = %+v", res)
+	}
+	if len(bodies) != 2 || bodies[0] != bodies[1] || len(bodies[0]) == 0 || sums[0] != sums[1] {
+		t.Errorf("attempts=%d, bodies equal=%v, sums=%v", len(bodies), len(bodies) == 2 && bodies[0] == bodies[1], sums)
+	}
+}
+
+func TestUploadHonoursRetryAfterOn429(t *testing.T) {
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		if n == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"a","status":"created"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	var waited []time.Duration
+	p := retry.Policy{Attempts: 3, Initial: time.Millisecond, Max: 30 * time.Second,
+		Sleep: func(_ context.Context, d time.Duration) error { waited = append(waited, d); return nil }}
+	if _, err := New(srv.URL, "k", WithRetry(p)).Upload(context.Background(), uploadIn()); err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if len(waited) != 1 || waited[0] != time.Second {
+		t.Errorf("waited = %v, want [1s]", waited)
+	}
+}
+
+func TestUploadClientErrorsNotRetried(t *testing.T) {
+	for _, code := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusUnprocessableEntity} {
+		var n int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n++
+			w.WriteHeader(code)
+		}))
+		_, err := New(srv.URL, "k", fastRetry()).Upload(context.Background(), uploadIn())
+		srv.Close()
+		if err == nil || n != 1 {
+			t.Errorf("%d: err=%v attempts=%d, want an error after 1 attempt", code, err, n)
+		}
 	}
 }

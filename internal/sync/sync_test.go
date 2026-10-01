@@ -110,7 +110,7 @@ func TestRunSavesAndUploadsSourceAll(t *testing.T) {
 	immichSink := sink.NewImmich(immich.New(immichSrv.URL, "test-key"))
 	st := openTestStore(t)
 
-	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL))
+	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
 
 	res, err := Run(context.Background(), Deps{
 		Famly: fc, Disk: disk, Immich: immichSink, State: st,
@@ -168,7 +168,7 @@ func TestRunSavesOnlyWithoutImmich(t *testing.T) {
 	disk, _ := sink.NewDisk(saveDir, "", "")
 	st := openTestStore(t)
 
-	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL))
+	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
 
 	res, err := Run(context.Background(), Deps{
 		Famly: fc, Disk: disk, Immich: nil, State: st,
@@ -222,7 +222,7 @@ func TestRunSourceTaggedFiltersByChild(t *testing.T) {
 	disk, _ := sink.NewDisk(saveDir, "", "")
 	st := openTestStore(t)
 
-	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL))
+	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
 
 	res, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: st}, Options{
 		MaxPages:          1,
@@ -248,7 +248,7 @@ func TestRunCleansTempFiles(t *testing.T) {
 	t.Cleanup(famlySrv.Close)
 	disk, _ := sink.NewDisk(t.TempDir(), "", "")
 	st := openTestStore(t)
-	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(famlySrv.URL))
+	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
 
 	if _, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: st}, Options{
 		MaxPages: 1,

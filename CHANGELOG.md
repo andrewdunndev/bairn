@@ -15,6 +15,14 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Added
 
+- Both the Famly and Immich clients retry transport errors, 429
+  (honouring `Retry-After`) and 5xx with capped exponential backoff and
+  jitter; other 4xx fail at once. A retried Immich upload is safe: the
+  server dedupes on the file checksum per owner and answers
+  `duplicate`.
+- A Famly 401 mid-run refreshes the token once through the token
+  source (ADR 0003) and retries; a second 401 fails.
+- The feed walk pauses one second between pages.
 - CI: a weekly scheduled `drift-gate` run against the operator's own
   Famly account (two GETs). Drift diffing now treats `<empty>` and
   `null` shapes as wildcards and merges nested shapes across the

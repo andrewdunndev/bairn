@@ -1,6 +1,7 @@
 package immich
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"mime"
@@ -88,7 +89,7 @@ func emittedUploadFields(t *testing.T) map[string]bool {
 	if err != nil {
 		t.Fatalf("parse content-type: %v", err)
 	}
-	mr := multipart.NewReader(body, params["boundary"])
+	mr := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 	out := map[string]bool{}
 	for {
 		p, err := mr.NextPart()

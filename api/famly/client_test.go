@@ -94,14 +94,10 @@ func TestUnauthorizedInvalidatesToken(t *testing.T) {
 	if !errors.Is(err, ErrUnauthorized) {
 		t.Fatalf("expected ErrUnauthorized, got %v", err)
 	}
-	// Static token by itself doesn't auto-invalidate; the caller
-	// (or higher-level retry helper) is responsible for that. But
-	// if we explicitly invalidate, the next Token call should fail
-	// with the prescriptive error.
-	tok.Invalidate()
-	_, err = tok.Token(context.Background())
+	// A static token cannot refresh: the 401 invalidates it and the
+	// error carries the prescriptive ErrTokenExpired guidance.
 	if !errors.Is(err, ErrTokenExpired) {
-		t.Fatalf("expected ErrTokenExpired after Invalidate, got %v", err)
+		t.Fatalf("expected ErrTokenExpired alongside ErrUnauthorized, got %v", err)
 	}
 }
 

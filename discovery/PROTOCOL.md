@@ -36,6 +36,8 @@ version control.
 - **Single human-rate.** Discovery walks pace requests at the rate a
   user would. Vendor APIs are not load tests; rate-limit-friendly
   behaviour also reduces the chance of trips alarming detection.
+  bairn itself pauses one second between feed pages and backs off on
+  429 and 5xx.
 - **One account, your own.** Discovery is run with credentials for
   an account the operator owns. No multi-tenant access, no
   shared-credential reuse.

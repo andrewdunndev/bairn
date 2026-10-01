@@ -90,7 +90,9 @@ This binary targets Go 1.25+. Idioms in use:
 - `context.Context` end-to-end including iterators
 - `slices`, `maps`, `cmp` stdlib packages
 - `testing/synctest` for deterministic time tests
-- `cenkalti/backoff/v7` for retry primitive
+- `internal/retry`: one HTTP policy for both clients (transport errors,
+  408, 429 with `Retry-After`, and 5xx; five tries, capped
+  exponential backoff with jitter; other 4xx never retried)
 - `dsoprea/go-exif/v3` for EXIF rewrite
 - `genqlient` for typed GraphQL against the captured schema
 - `IMMICH_VERSION` (Makefile, Renovate-tracked) names the Immich

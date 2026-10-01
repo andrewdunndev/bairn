@@ -39,7 +39,7 @@ func TestPagesIterator(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	c := New(NewStaticToken("test-token"), WithBaseURL(srv.URL))
+	c := New(NewStaticToken("test-token"), WithBaseURL(srv.URL), WithPageDelay(0))
 
 	var pages int
 	var totalItems int
@@ -71,7 +71,7 @@ func TestPagesEarlyStop(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	c := New(NewStaticToken("test-token"), WithBaseURL(srv.URL))
+	c := New(NewStaticToken("test-token"), WithBaseURL(srv.URL), WithPageDelay(0))
 	pages := 0
 	for range c.Pages(context.Background()) {
 		pages++

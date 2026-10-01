@@ -3,173 +3,185 @@ package retry
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	"github.com/cenkalti/backoff/v7"
 )
 
-func TestDoSucceedsOnFirstTry(t *testing.T) {
-	calls := 0
-	v, err := Do(context.Background(), func() (string, error) {
-		calls++
-		return "ok", nil
-	})
-	if err != nil {
-		t.Fatalf("Do: %v", err)
+// fake returns a Policy whose sleeps are recorded, not waited.
+func fake(waits *[]time.Duration) Policy {
+	p := Default()
+	p.Sleep = func(_ context.Context, d time.Duration) error {
+		*waits = append(*waits, d)
+		return nil
 	}
-	if v != "ok" || calls != 1 {
-		t.Errorf("v=%q calls=%d", v, calls)
-	}
+	return p
 }
 
-func TestDoRetriesTransient(t *testing.T) {
-	var calls atomic.Int32
-	v, err := Do(context.Background(), func() (string, error) {
-		n := calls.Add(1)
-		if n < 3 {
-			return "", errors.New("transient")
-		}
-		return "ok", nil
-	}, backoff.WithBackOff(&backoff.ZeroBackOff{}))
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	if v != "ok" || calls.Load() != 3 {
-		t.Errorf("v=%q calls=%d", v, calls.Load())
-	}
+func get(srv *httptest.Server) func() (*http.Response, error) {
+	return func() (*http.Response, error) { return http.Get(srv.URL) }
 }
 
-func TestDoStopsOnPermanent(t *testing.T) {
-	calls := 0
-	_, err := Do(context.Background(), func() (string, error) {
-		calls++
-		return "", backoff.Permanent(errors.New("nope"))
-	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if calls != 1 {
-		t.Errorf("permanent should not retry; calls=%d", calls)
-	}
-	if !strings.Contains(err.Error(), "nope") {
-		t.Errorf("error should preserve the underlying message: %v", err)
-	}
-}
-
-func TestHTTPDoRetries5xx(t *testing.T) {
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := calls.Add(1)
-		if n < 3 {
-			w.WriteHeader(http.StatusInternalServerError)
+func TestRetriesServerErrorThenSucceeds(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if n.Add(1) < 3 {
+			w.WriteHeader(http.StatusBadGateway)
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+		io.WriteString(w, "ok")
 	}))
-	t.Cleanup(srv.Close)
-
-	resp, err := HTTPDo(context.Background(), func(ctx context.Context) (*http.Response, error) {
-		req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
-		return http.DefaultClient.Do(req)
-	}, backoff.WithBackOff(&backoff.ZeroBackOff{}))
+	defer srv.Close()
+	var waits []time.Duration
+	resp, err := fake(&waits).Do(context.Background(), get(srv))
 	if err != nil {
-		t.Fatalf("HTTPDo: %v", err)
+		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 || calls.Load() != 3 {
-		t.Errorf("status=%d calls=%d", resp.StatusCode, calls.Load())
+	if resp.StatusCode != 200 || n.Load() != 3 || len(waits) != 2 {
+		t.Fatalf("status=%d calls=%d waits=%v", resp.StatusCode, n.Load(), waits)
+	}
+	if waits[1] < waits[0] {
+		t.Errorf("backoff should grow: %v", waits)
 	}
 }
 
-func TestHTTPDoStopsOn4xx(t *testing.T) {
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.WriteHeader(http.StatusBadRequest)
-	}))
-	t.Cleanup(srv.Close)
-
-	_, err := HTTPDo(context.Background(), func(ctx context.Context) (*http.Response, error) {
-		req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
-		return http.DefaultClient.Do(req)
-	})
-	if err == nil {
-		t.Fatal("expected error")
-	}
-	if !strings.Contains(err.Error(), "400") {
-		t.Errorf("error should mention HTTP 400: %v", err)
-	}
-	if calls.Load() != 1 {
-		t.Errorf("4xx should not retry; calls=%d", calls.Load())
+func TestNeverRetriesOtherClientErrors(t *testing.T) {
+	for _, code := range []int{400, 401, 403, 404, 422} {
+		var n atomic.Int32
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			n.Add(1)
+			w.WriteHeader(code)
+		}))
+		var waits []time.Duration
+		resp, err := fake(&waits).Do(context.Background(), get(srv))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		srv.Close()
+		if resp.StatusCode != code || n.Load() != 1 {
+			t.Errorf("%d: status=%d calls=%d", code, resp.StatusCode, n.Load())
+		}
 	}
 }
 
-func TestHTTPDoHonoursRetryAfter(t *testing.T) {
-	var calls atomic.Int32
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		n := calls.Add(1)
-		if n == 1 {
-			w.Header().Set("Retry-After", "1")
+func TestHonoursRetryAfterOn429(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if n.Add(1) == 1 {
+			w.Header().Set("Retry-After", "7")
 			w.WriteHeader(http.StatusTooManyRequests)
-			return
 		}
-		w.WriteHeader(http.StatusOK)
 	}))
-	t.Cleanup(srv.Close)
+	defer srv.Close()
+	var waits []time.Duration
+	resp, err := fake(&waits).Do(context.Background(), get(srv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if len(waits) != 1 || waits[0] != 7*time.Second {
+		t.Fatalf("waits=%v, want [7s]", waits)
+	}
+}
 
-	start := time.Now()
-	resp, err := HTTPDo(context.Background(), func(ctx context.Context) (*http.Response, error) {
-		req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
-		return http.DefaultClient.Do(req)
+func TestRetryAfterCappedAtMax(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		if n.Add(1) == 1 {
+			w.Header().Set("Retry-After", strconv.Itoa(3600))
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+	}))
+	defer srv.Close()
+	var waits []time.Duration
+	p := fake(&waits)
+	resp, err := p.Do(context.Background(), get(srv))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if waits[0] != p.Max {
+		t.Fatalf("waits=%v, want cap %v", waits, p.Max)
+	}
+}
+
+func TestRetriesTransportError(t *testing.T) {
+	var n int
+	var waits []time.Duration
+	resp, err := fake(&waits).Do(context.Background(), func() (*http.Response, error) {
+		n++
+		if n < 3 {
+			return nil, errors.New("connection reset")
+		}
+		return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(""))}, nil
 	})
 	if err != nil {
-		t.Fatalf("HTTPDo: %v", err)
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if n != 3 {
+		t.Fatalf("calls=%d", n)
+	}
+}
+
+func TestExhaustionReturnsLastResponse(t *testing.T) {
+	var n atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		n.Add(1)
+		w.WriteHeader(http.StatusInternalServerError)
+		io.WriteString(w, "boom")
+	}))
+	defer srv.Close()
+	var waits []time.Duration
+	p := fake(&waits)
+	resp, err := p.Do(context.Background(), get(srv))
+	if err != nil {
+		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if elapsed := time.Since(start); elapsed < time.Second {
-		t.Errorf("expected at least 1s delay from Retry-After, got %v", elapsed)
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 500 || string(b) != "boom" || int(n.Load()) != p.Attempts {
+		t.Fatalf("status=%d body=%q calls=%d", resp.StatusCode, b, n.Load())
 	}
 }
 
-func TestParseRetryAfter(t *testing.T) {
-	if got := parseRetryAfter("3"); got != 3 {
-		t.Errorf("seconds: %d", got)
-	}
-	if got := parseRetryAfter(""); got != 0 {
-		t.Errorf("empty: %d", got)
-	}
-	if got := parseRetryAfter("not-a-number"); got != 0 {
-		t.Errorf("garbage: %d", got)
-	}
-	future := time.Now().Add(10 * time.Second).UTC().Format(http.TimeFormat)
-	if got := parseRetryAfter(future); got < 8 || got > 11 {
-		t.Errorf("HTTP-date: %d (expected ~10)", got)
+func TestExhaustionReturnsTransportError(t *testing.T) {
+	var waits []time.Duration
+	p := fake(&waits)
+	want := errors.New("dial refused")
+	_, err := p.Do(context.Background(), func() (*http.Response, error) { return nil, want })
+	if !errors.Is(err, want) || len(waits) != p.Attempts-1 {
+		t.Fatalf("err=%v waits=%d", err, len(waits))
 	}
 }
 
-func TestHTTPDoCancelsOnContext(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusInternalServerError)
-	}))
-	t.Cleanup(srv.Close)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-	defer cancel()
-
-	_, err := HTTPDo(ctx, func(ctx context.Context) (*http.Response, error) {
-		req, _ := http.NewRequestWithContext(ctx, "GET", srv.URL, nil)
-		return http.DefaultClient.Do(req)
-	})
-	if err == nil {
-		t.Fatal("expected error from cancelled context")
+func TestContextCancelStopsRetrying(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	p := Default()
+	p.Sleep = func(ctx context.Context, _ time.Duration) error { cancel(); return ctx.Err() }
+	var n int
+	_, err := p.Do(ctx, func() (*http.Response, error) { n++; return nil, errors.New("down") })
+	if !errors.Is(err, context.Canceled) || n != 1 {
+		t.Fatalf("err=%v calls=%d", err, n)
 	}
-	if !errors.Is(err, context.DeadlineExceeded) && !strings.Contains(err.Error(), "deadline") {
-		t.Errorf("expected deadline-exceeded-shaped error, got %v", err)
+}
+
+func TestRetryAfterParsing(t *testing.T) {
+	if d, ok := retryAfter("3"); !ok || d != 3*time.Second {
+		t.Errorf("seconds: %v %v", d, ok)
+	}
+	date := time.Now().Add(time.Hour).UTC().Format(http.TimeFormat)
+	if d, ok := retryAfter(date); !ok || d < 59*time.Minute {
+		t.Errorf("date: %v %v", d, ok)
+	}
+	if _, ok := retryAfter("soon"); ok {
+		t.Error("garbage should not parse")
 	}
 }
