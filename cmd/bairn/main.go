@@ -283,18 +283,16 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		Shape:   drift.ShapeOpts{AnonymizeCounts: *anonymize},
 		Schemas: driftSchemas,
 	}
-	// Trap B: a --diff dir that's missing or empty silently produces
-	// "no drift found" which masquerades as a healthy gate. Count
-	// the comparisons that actually had a prior signature so we can
-	// fail loudly when the gate is a passthrough.
-	comparedCount := 0
+	// A --diff baseline that cannot be read for an endpoint must not
+	// pass for a healthy gate: record those endpoints and fail below.
+	noBaseline := map[string]error{}
 	if *diffDir != "" {
 		opts.Compare = func(id string) (any, bool) {
 			sig, err := drift.ReadSignature(*diffDir, id)
 			if err != nil {
+				noBaseline[id] = err
 				return nil, false
 			}
-			comparedCount++
 			return sig, true
 		}
 	}
@@ -340,6 +338,8 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 				for _, d := range r.Drift {
 					fmt.Printf("    %s\n", d)
 				}
+			case noBaseline[r.ID] != nil:
+				fmt.Printf("  %s: HTTP %d%s, NO BASELINE\n", r.ID, r.Status, size(r.BodySize))
 			case *diffDir != "":
 				fmt.Printf("  %s: HTTP %d%s, ok\n", r.ID, r.Status, size(r.BodySize))
 			default:
@@ -355,17 +355,11 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		return 2
 	}
 
-	// Trap B (cont.): if --diff was set and zero comparisons
-	// resolved, the gate compared nothing. Fail with exit 2 so a
-	// passthrough doesn't pass for a working gate.
-	if *diffDir != "" && comparedCount == 0 && len(results) > 0 {
-		logger.Error("drift",
-			"phase", "compare",
-			"err", "no prior signatures found",
-			"diff_dir", *diffDir,
-			"endpoints", len(results),
-			"hint", "seed the baseline first: bairn drift --anonymize --out-dir "+*diffDir+" (then commit). Until seeded, --diff is a no-op.",
-		)
+	if len(noBaseline) > 0 {
+		for id, err := range noBaseline {
+			logger.Error("drift", "phase", "compare", "id", id, "diff_dir", *diffDir, "err", err)
+		}
+		logger.Error("drift", "phase", "compare", "hint", "seed the baseline first: bairn drift --anonymize --out-dir "+*diffDir+" (then commit)")
 		return 2
 	}
 

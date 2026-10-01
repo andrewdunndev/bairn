@@ -111,17 +111,13 @@ a Famly reader:
   [`discovery/baselines/main/`](./discovery/baselines/main/) is
   the corresponding shape baseline (keys-only, no values). Both
   exist as documentation of the integration boundary.
-- **Cadence**: drift fires once per release, on the maintainer's
-  tag push, as a pre-release gate that blocks the binary from
-  shipping if Famly's response shapes have moved away from
-  bairn's typed clients. It runs with the maintainer's own
-  access token. It is **not** on a recurring CI schedule. A
-  weekly cron firing from a CI runner would distinguishably read
-  as automated monitoring against your platform; bairn deliberately
-  avoids that posture. Famly's logs should see only a small,
-  human-rate burst aligned with each bairn release (a few times a
-  year), and otherwise the traffic an actual fetch by an actual
-  parent generates.
+- **Cadence**: drift fires on the maintainer's tag push, as a
+  pre-release gate that blocks the binary from shipping if Famly's
+  response shapes have moved away from bairn's typed clients, and
+  once a week from a scheduled pipeline. Each run is two GETs, one
+  second apart, with the maintainer's own credentials, reading what
+  the parent's phone already reads. Nothing more frequent or broader
+  runs without Famly's invitation.
 
 The drift tool's output is shape diffs only. No captured
 payloads, no values, no IDs are ever surfaced or shared.

@@ -13,6 +13,21 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [Unreleased]
 
+### Changed
+
+- Scheduled pipelines run only `drift-gate`; every other job sits behind
+  an include that skips schedules.
+- `bairn drift --diff` exits 2 when a manifest endpoint has no readable
+  baseline file, instead of printing `ok`.
+- Drift shapes walk every feed item and every nesting level (no
+  5-item sample, no depth cap), so tag fields now appear. Reseed
+  `discovery/baselines/main/` from the next schedule artifact.
+- Drift documentation lives in `discovery/baselines/main/README.md`.
+
+### Removed
+
+- `discovery/probe/shape.py`, superseded by `bairn drift`.
+
 ### Fixed
 
 - A video in a post with no zoned image was dated as UTC, so it showed
@@ -50,8 +65,8 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 - The feed walk pauses one second between pages.
 - CI: a weekly scheduled `drift-gate` run against the operator's own
   Famly account (two GETs). Drift diffing now treats `<empty>` and
-  `null` shapes as wildcards and merges nested shapes across the
-  sampled feed items, so a week with photos is not reported as drift.
+  `null` shapes as wildcards and merges nested shapes across
+  feed items, so a week with photos is not reported as drift.
 - `IMMICH_VERSION` in the Makefile names the Immich release bairn is
   verified against via `make pre-tag-check`; Renovate tracks it with
   automerge off.

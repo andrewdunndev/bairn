@@ -27,7 +27,7 @@ mode), do not paste in a captured response from your real account.
 The procedure is:
 
 1. Capture a real response from your own account using
-   `discovery/probe/shape.py` (or any equivalent HAR/cURL flow).
+   `bairn drift` (or any equivalent HAR/cURL flow).
    Captured output lands under `discovery/baselines/`, which is
    gitignored.
 2. Run a sanitization pass over the captured JSON before copying any

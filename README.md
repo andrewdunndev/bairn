@@ -309,8 +309,9 @@ bairn talks to a vendor surface we don't control. The
 methodology for noticing when Famly's response shapes change. Three
 modes:
 
-- **Shape probe**: hit a known endpoint list, record JSON-key
-  signatures, diff against committed baselines.
+- **Shape probe** (`bairn drift`): hit a known endpoint list, record
+  JSON-key signatures, diff against committed baselines; see
+  [`discovery/baselines/main/README.md`](./discovery/baselines/main/README.md).
 - **Traffic capture**: drive Famly's web app via Playwright,
   capture HARs, find endpoints we don't yet know about.
 - **Schema introspection**: when a vendor exposes GraphQL with

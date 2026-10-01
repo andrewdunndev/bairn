@@ -1,4 +1,4 @@
-# Example manifest for the shape probe. Copy to manifest.toml
+# Example manifest for `bairn drift`. Copy to manifest.toml
 # (gitignored), fill in real paths and identifiers, set the auth
 # token via the env var named in auth_env.
 #

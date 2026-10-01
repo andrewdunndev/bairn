@@ -109,9 +109,8 @@ TOML manifest, hits each endpoint, computes JSON-key-only signatures,
 and optionally diffs against a prior baseline directory. Output is
 human-readable lines of the form `path/key: removed`, `path/key: added`,
 `path/key: "str" -> "int"`, and the process exits 1 when drift is found.
-The Python prototype (`discovery/probe/shape.py`) stays in the repo as
-documentation of the methodology and as a reference implementation; the
-on-disk signature format is byte-compatible.
+Operation and seeding are documented in
+`discovery/baselines/main/README.md`.
 
 ## When drift fires
 

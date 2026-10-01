@@ -61,9 +61,10 @@ Use when:
   shapes underneath you.
 - You need a regression artifact for tests.
 
-Tool: `probe/shape.py`. Manifest format documented in the script
-header. Output: `<endpoint-id>.shape` files containing recursive
-type signatures only.
+Tool: `bairn drift` (see
+[`baselines/main/README.md`](./baselines/main/README.md)). Manifest
+format: `probe/manifest.example.toml`. Output: `<endpoint-id>.shape`
+files containing recursive type signatures only.
 
 A shape signature for a `/me`-style endpoint looks like:
 

@@ -2,10 +2,6 @@
 // hits a manifest of endpoints, records JSON-key-only signatures
 // (no values), and compares them against a prior baseline so
 // vendor schema changes surface before they break a fetch.
-//
-// Output format matches the discovery/probe/shape.py prototype
-// byte-for-byte under JSON marshalling, so signatures written by
-// either tool are interchangeable.
 package drift
 
 import (
@@ -14,8 +10,6 @@ import (
 	"sort"
 	"strconv"
 )
-
-const maxDepth = 6
 
 // ShapeOpts configures Shape's behavior.
 type ShapeOpts struct {
@@ -29,25 +23,22 @@ type ShapeOpts struct {
 
 // Shape returns a deterministic JSON-key-only signature for v.
 // Maps preserve their key set; arrays become a [merged-shape, "<n=N>"]
-// pair representing a union of the first 5 elements; primitives become
+// pair representing a union of every element; primitives become
 // the sentinel strings "str", "int", "float", "bool", "null".
 //
 // v is expected to be the result of json.Unmarshal into any. Numeric
 // values arrive as float64 and are tagged "int" or "float" by their
 // integer-ness.
 func Shape(v any, opts ShapeOpts) any {
-	return shape(v, 0, opts)
+	return shape(v, opts)
 }
 
-func shape(v any, depth int, opts ShapeOpts) any {
-	if depth > maxDepth {
-		return "..."
-	}
+func shape(v any, opts ShapeOpts) any {
 	switch t := v.(type) {
 	case map[string]any:
 		out := make(map[string]any, len(t))
 		for k, vv := range t {
-			out[k] = shape(vv, depth+1, opts)
+			out[k] = shape(vv, opts)
 		}
 		return out
 	case []any:
@@ -55,12 +46,8 @@ func shape(v any, depth int, opts ShapeOpts) any {
 			return []any{"<empty>"}
 		}
 		var merged any
-		n := len(t)
-		if n > 5 {
-			n = 5
-		}
-		for i := 0; i < n; i++ {
-			merged = mergeShapes(merged, shape(t[i], depth+1, opts))
+		for _, e := range t {
+			merged = mergeShapes(merged, shape(e, opts))
 		}
 		countMarker := "<n=" + strconv.Itoa(len(t)) + ">"
 		if opts.AnonymizeCounts {

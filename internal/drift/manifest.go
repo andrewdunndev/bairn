@@ -17,8 +17,7 @@ type Endpoint struct {
 }
 
 // Manifest is the TOML-loaded probe configuration. Mirrors the
-// schema discovery/probe/manifest.example.toml documents and the
-// shape.py prototype reads.
+// schema discovery/probe/manifest.example.toml documents.
 type Manifest struct {
 	BaseURL    string     `toml:"base_url"`
 	AuthHeader string     `toml:"auth_header"`
