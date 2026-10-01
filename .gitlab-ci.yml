@@ -201,6 +201,10 @@ test:
 # one second apart). needs: [] keeps it independent of the other
 # jobs a schedule run starts. See discovery/PROTOCOL.md and
 # docs/decisions/0007-llm-augmented-ci.md for the posture.
+#
+# The fresh shapes are kept as an artifact so the baseline can be
+# reseeded without local credentials: they carry type names and <n=*>
+# only, the same content as the committed baseline.
 drift-gate:
   stage: drift-gate
   needs: []
@@ -209,6 +213,11 @@ drift-gate:
   script:
     - go build -o bin/bairn ./cmd/bairn
     - bin/bairn drift --anonymize --manifest discovery/probe/manifest.toml --diff discovery/baselines/main
+  artifacts:
+    when: always
+    expire_in: 1 week
+    paths:
+      - discovery/baselines/current/
   rules:
     - if: $CI_COMMIT_TAG
     - if: $CI_PIPELINE_SOURCE == "schedule"
