@@ -83,7 +83,10 @@ func Load() (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("config: data dir: %w", err)
 		}
-		c.SaveDir = filepath.Join(dir, "assets")
+		c.SaveDir, err = ensureDir(filepath.Join(dir, "assets"))
+		if err != nil {
+			return nil, fmt.Errorf("config: save dir: %w", err)
+		}
 	}
 	if c.StatePath == "" {
 		dir, err := stateDir()

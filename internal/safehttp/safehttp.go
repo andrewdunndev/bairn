@@ -7,6 +7,7 @@ package safehttp
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -19,7 +20,7 @@ const MaxRedirects = 10
 // http.Client.CheckRedirect.
 func CheckRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) >= MaxRedirects {
-		return errors.New("refusing redirect: more than 10 redirects")
+		return fmt.Errorf("refusing redirect: more than %d redirects", MaxRedirects)
 	}
 	if len(via) == 0 {
 		return nil

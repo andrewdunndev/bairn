@@ -43,9 +43,10 @@ func NewDisk(root, filenamePattern, dirPattern string) (*Disk, error) {
 	if dirPattern == "" {
 		dirPattern = DefaultDirPattern
 	}
-	if err := privdir.Ensure(root); err != nil {
+	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, fmt.Errorf("sink: mkdir %s: %w", root, err)
 	}
+	privdir.WarnLoose(root)
 	return &Disk{root: root, filenamePattern: filenamePattern, dirPattern: dirPattern}, nil
 }
 

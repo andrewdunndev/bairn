@@ -1,8 +1,10 @@
 package safehttp
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -68,5 +70,17 @@ func TestNewClientEndToEnd(t *testing.T) {
 	if resp, err := c.Do(r); err == nil {
 		_ = resp.Body.Close()
 		t.Fatal("cross-host redirect followed")
+	}
+}
+
+func TestRedirectCapMessageNamesCap(t *testing.T) {
+	via := make([]*http.Request, MaxRedirects)
+	r, _ := http.NewRequest("GET", "https://a.example.test/", nil)
+	for i := range via {
+		via[i] = r
+	}
+	err := CheckRedirect(r, via)
+	if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("more than %d redirects", MaxRedirects)) {
+		t.Errorf("err = %v, want message naming MaxRedirects", err)
 	}
 }

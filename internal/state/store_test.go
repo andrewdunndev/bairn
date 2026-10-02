@@ -304,7 +304,7 @@ func TestLockSurvivesFlush(t *testing.T) {
 	}
 }
 
-func TestOpenTightensExistingDir(t *testing.T) {
+func TestOpenLeavesUserDirMode(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "state")
 	if err := os.Mkdir(dir, 0o755); err != nil {
 		t.Fatal(err)
@@ -321,7 +321,7 @@ func TestOpenTightensExistingDir(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o700 {
-		t.Errorf("mode = %o, want 700", fi.Mode().Perm())
+	if fi.Mode().Perm() != 0o755 {
+		t.Errorf("mode = %o, want 755 untouched", fi.Mode().Perm())
 	}
 }

@@ -6,6 +6,8 @@ package safehttptest
 import (
 	"net/http"
 	"testing"
+
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 )
 
 // AssertPolicy fails t unless c refuses cross-host redirects, https to
@@ -34,11 +36,17 @@ func AssertPolicy(t *testing.T, c *http.Client) {
 	if err := c.CheckRedirect(mk("http://api.example.test/b"), via); err == nil {
 		t.Error("https to http downgrade allowed")
 	}
-	long := make([]*http.Request, 10)
-	for i := range long {
-		long[i] = first
+	chain := func(n int) []*http.Request {
+		v := make([]*http.Request, n)
+		for i := range v {
+			v[i] = first
+		}
+		return v
 	}
-	if err := c.CheckRedirect(mk("https://api.example.test/b"), long); err == nil {
+	if err := c.CheckRedirect(mk("https://api.example.test/b"), chain(safehttp.MaxRedirects-1)); err != nil {
+		t.Errorf("chain under the cap refused: %v", err)
+	}
+	if err := c.CheckRedirect(mk("https://api.example.test/b"), chain(safehttp.MaxRedirects)); err == nil {
 		t.Error("redirect cap not enforced")
 	}
 }

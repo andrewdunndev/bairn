@@ -139,7 +139,7 @@ func TestRenderPatternMissingKeyErrors(t *testing.T) {
 	}
 }
 
-func TestNewDiskTightensExistingRoot(t *testing.T) {
+func TestNewDiskLeavesExistingRootMode(t *testing.T) {
 	root := filepath.Join(t.TempDir(), "photos")
 	if err := os.Mkdir(root, 0o755); err != nil {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestNewDiskTightensExistingRoot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := fi.Mode().Perm(); got != 0o700 {
-		t.Errorf("root mode = %o, want 700", got)
+	if got := fi.Mode().Perm(); got != 0o755 {
+		t.Errorf("root mode = %o, want 755 untouched", got)
 	}
 }

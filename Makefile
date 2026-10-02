@@ -37,7 +37,7 @@ refresh-immich-validator: build
 	@echo "  git diff api/immich/required-fields.json"
 
 # Stamped into main.Version; "dev" when built without these targets.
-VERSION := $(shell git describe --tags --always --dirty)
+VERSION ?= $(or $(shell git describe --tags --always --dirty 2>/dev/null),dev)
 LDFLAGS := -X main.Version=$(VERSION)
 
 build:
