@@ -51,6 +51,10 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- Videos download again: Famly sends a video's link as `videoUrl`, and
+  bairn read `url`, so every video was discovered with no link and
+  never saved. Videos Famly is still transcoding are left for a later
+  run.
 - Images Famly labels "UTC" are dated in `--tz` / `BAIRN_TZ` (default:
   the local zone) like zoneless ones: Famly stores the instant, not
   where the photo was taken, so a Detroit nursery's photos no longer

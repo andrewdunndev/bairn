@@ -301,3 +301,31 @@ func TestMaxPagesZeroWalksWholeFeed(t *testing.T) {
 		}
 	}
 }
+
+// TestRunSkipsTranscodingVideos leaves a video Famly is still
+// processing for a later run instead of saving a partial file.
+func TestRunSkipsTranscodingVideos(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("cursor") != "" {
+			_, _ = w.Write([]byte(`{"feedItems": []}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"feedItems":[{"feedItemId":"post-1","createdDate":"2026-05-06T14:00:00Z","body":"x","images":[],
+			"videos":[{"videoId":"v-busy","videoUrl":"https://cdn/busy.mp4","transcoding":true},{"videoId":"v-nourl","videoUrl":""}]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	disk, err := sink.NewDisk(t.TempDir(), "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(srv.URL), famly.WithPageDelay(0))
+	res, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: openTestStore(t)},
+		Options{MaxPages: 0, Source: SourceAll, DryRun: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Discovered != 0 || res.Skipped != 2 {
+		t.Errorf("Discovered = %d, Skipped = %d; want 0 and 2", res.Discovered, res.Skipped)
+	}
+}

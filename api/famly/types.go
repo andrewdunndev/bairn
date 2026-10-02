@@ -156,16 +156,16 @@ func (i Image) BestURL() string {
 	return candidate
 }
 
-// Video is one video attached to a feed item. Shape derived from
-// the first populated capture; refine when a richer sample lands.
+// Video is one video attached to a feed item. URL is a signed CDN
+// link to the stored video; Transcoding is true while Famly is still
+// processing an upload, when the link is not yet the final file.
 type Video struct {
-	VideoID    string `json:"videoId"`
-	URL        string `json:"url"`
-	Thumbnail  string `json:"thumbnail"`
-	Duration   int    `json:"duration"`
-	Width      int    `json:"width"`
-	Height     int    `json:"height"`
-	Expiration string `json:"expiration"`
+	VideoID     string `json:"videoId"`
+	URL         string `json:"videoUrl"`
+	Duration    int    `json:"duration"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Transcoding bool   `json:"transcoding"`
 }
 
 // ImageTime is the createdAt object Famly attaches to images. The

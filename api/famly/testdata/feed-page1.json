@@ -44,8 +44,8 @@
       "videos": [
         {
           "videoId": "vid-001",
-          "url": "https://fixture/video/vid-001",
-          "thumbnail": "https://fixture/video/vid-001/thumb",
+          "videoUrl": "https://fixture/video/vid-001",
+          "thumbnailUrl": "https://fixture/video/vid-001/thumb",
           "duration": 12,
           "width": 1920,
           "height": 1080,
