@@ -16,7 +16,7 @@
           "liked": "bool",
           "likes": [
             {
-              "loginId": "..."
+              "loginId": "str"
             },
             "\u003cn=*\u003e"
           ],

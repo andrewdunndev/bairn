@@ -12,7 +12,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/internal/config"
 )
 
-func runDriftAgainst(t *testing.T, h http.HandlerFunc) int {
+func runDriftAgainst(t *testing.T, h http.HandlerFunc, extra ...string) int {
 	t.Helper()
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
@@ -25,7 +25,7 @@ func runDriftAgainst(t *testing.T, h http.HandlerFunc) int {
 	}
 	t.Setenv("BAIRN_TEST_DRIFT_TOKEN", "fake")
 	return runDrift(context.Background(), &config.Config{}, slog.New(slog.DiscardHandler),
-		[]string{"--manifest", manifest, "--out-dir", filepath.Join(dir, "out"), "--anonymize"})
+		append([]string{"--manifest", manifest, "--out-dir", filepath.Join(dir, "out"), "--anonymize"}, extra...))
 }
 
 func TestRunDriftHTMLErrorPageIsTransportFailure(t *testing.T) {
@@ -52,6 +52,29 @@ func TestRunDriftOKExitsZero(t *testing.T) {
 	code := runDriftAgainst(t, func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`{"a":1}`))
 	})
+	if code != 0 {
+		t.Fatalf("exit = %d, want 0", code)
+	}
+}
+
+func TestRunDriftMissingBaselineFails(t *testing.T) {
+	empty := t.TempDir()
+	code := runDriftAgainst(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"a":1}`))
+	}, "--diff", empty)
+	if code != 2 {
+		t.Fatalf("exit = %d, want 2", code)
+	}
+}
+
+func TestRunDriftBaselineMatchExitsZero(t *testing.T) {
+	base := t.TempDir()
+	if err := os.WriteFile(filepath.Join(base, "ping.shape"), []byte(`{"a":"int"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	code := runDriftAgainst(t, func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"a":1}`))
+	}, "--diff", base)
 	if code != 0 {
 		t.Fatalf("exit = %d, want 0", code)
 	}

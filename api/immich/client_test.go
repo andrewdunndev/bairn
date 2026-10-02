@@ -14,20 +14,21 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"gitlab.com/dunn.dev/bairn/internal/retry"
 )
 
 // fakeImmich captures the most recent upload request for assertions.
 type fakeImmich struct {
-	srv               *httptest.Server
-	lastChecksum      string
-	lastAPIKey        string
-	lastFilename      string
-	lastMetadata      map[string]string
-	lastFileCreated   string
-	lastDeviceID      string
-	lastDeviceAssetID string
-	lastSidecar       []byte
-	sidecarFilename   string
+	srv             *httptest.Server
+	lastChecksum    string
+	lastAPIKey      string
+	lastFilename    string
+	lastMetadata    map[string]string
+	lastFileCreated string
+	sawDeviceField  bool
+	lastSidecar     []byte
+	sidecarFilename string
 
 	respondWith struct {
 		statusCode int
@@ -77,10 +78,8 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 				f.lastFileCreated = string(body)
 			case "filename":
 				f.lastFilename = string(body)
-			case "deviceId":
-				f.lastDeviceID = string(body)
-			case "deviceAssetId":
-				f.lastDeviceAssetID = string(body)
+			case "deviceId", "deviceAssetId":
+				f.sawDeviceField = true
 			case "metadata":
 				// v2.7.5+: single field, JSON-encoded array of
 				// {key, value} where value is an object wrapping
@@ -118,8 +117,6 @@ func TestUploadCreated(t *testing.T) {
 		Filename:       "img-001.jpg",
 		FileCreatedAt:  now,
 		FileModifiedAt: now,
-		DeviceID:       "bairn",
-		DeviceAssetID:  "img-001",
 		Metadata:       map[string]string{"famlyImageId": "img-001"},
 	})
 	if err != nil {
@@ -139,11 +136,8 @@ func TestUploadCreated(t *testing.T) {
 	if f.lastFilename != "img-001.jpg" {
 		t.Errorf("filename = %q", f.lastFilename)
 	}
-	if f.lastDeviceID != "bairn" {
-		t.Errorf("deviceId = %q", f.lastDeviceID)
-	}
-	if f.lastDeviceAssetID != "img-001" {
-		t.Errorf("deviceAssetId = %q", f.lastDeviceAssetID)
+	if f.sawDeviceField {
+		t.Error("deviceId/deviceAssetId sent; Immich 3.x dropped them")
 	}
 	if f.lastMetadata["famlyImageId"] != "img-001" {
 		t.Errorf("metadata.famlyImageId = %q", f.lastMetadata["famlyImageId"])
@@ -190,6 +184,26 @@ func TestUploadUnauthorized(t *testing.T) {
 	}
 }
 
+func TestUploadForbiddenIsUnauthorized(t *testing.T) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/assets", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	c := New(srv.URL, "narrow-key")
+	_, err := c.Upload(context.Background(), UploadInput{
+		Data:           []byte("x"),
+		Filename:       "x.jpg",
+		FileCreatedAt:  time.Now(),
+		FileModifiedAt: time.Now(),
+	})
+	if !errors.Is(err, ErrUnauthorized) {
+		t.Fatalf("expected ErrUnauthorized, got %v", err)
+	}
+}
+
 // independent SHA1 helper to assert client.go's sha1Hex matches
 // the canonical encoding callers will compute.
 func TestSHA1HexMatchesCanonical(t *testing.T) {
@@ -209,7 +223,6 @@ func TestUploadSidecarField(t *testing.T) {
 	in := UploadInput{
 		Data: []byte("fake video bytes"), Filename: "vid-001.mp4",
 		FileCreatedAt: now, FileModifiedAt: now,
-		DeviceID: "bairn", DeviceAssetID: "vid-001",
 		Sidecar: []byte("<x:xmpmeta/>"),
 	}
 	if _, err := c.Upload(context.Background(), in); err != nil {
@@ -226,5 +239,112 @@ func TestUploadSidecarField(t *testing.T) {
 	}
 	if f.lastSidecar != nil {
 		t.Errorf("sidecarData sent without a sidecar: %q", f.lastSidecar)
+	}
+}
+
+func fastRetry() Option {
+	return WithRetry(retry.Policy{Attempts: 3, Initial: time.Millisecond, Max: 5 * time.Millisecond})
+}
+
+func uploadIn() UploadInput {
+	return UploadInput{
+		Data:           []byte("same bytes every attempt"),
+		Filename:       "x.jpg",
+		FileCreatedAt:  time.Now(),
+		FileModifiedAt: time.Now(),
+	}
+}
+
+// A 5xx is retried with the identical body and checksum; the server
+// answering "duplicate" for an upload that did land is the success
+// path of a retried POST.
+func TestUploadRetriesWithIdenticalBody(t *testing.T) {
+	var bodies []string
+	var sums []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		sums = append(sums, r.Header.Get("x-immich-checksum"))
+		if len(bodies) == 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(`{"id":"asset-001","status":"duplicate"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	res, err := New(srv.URL, "k", fastRetry()).Upload(context.Background(), uploadIn())
+	if err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if !res.Duplicate || res.ID != "asset-001" {
+		t.Errorf("result = %+v", res)
+	}
+	if len(bodies) != 2 || bodies[0] != bodies[1] || len(bodies[0]) == 0 || sums[0] != sums[1] {
+		t.Errorf("attempts=%d, bodies equal=%v, sums=%v", len(bodies), len(bodies) == 2 && bodies[0] == bodies[1], sums)
+	}
+}
+
+func TestUploadHonoursRetryAfterOn429(t *testing.T) {
+	var n int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n++
+		if n == 1 {
+			w.Header().Set("Retry-After", "1")
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		_, _ = w.Write([]byte(`{"id":"a","status":"created"}`))
+	}))
+	t.Cleanup(srv.Close)
+
+	var waited []time.Duration
+	p := retry.Policy{Attempts: 3, Initial: time.Millisecond, Max: 30 * time.Second,
+		Sleep: func(_ context.Context, d time.Duration) error { waited = append(waited, d); return nil }}
+	if _, err := New(srv.URL, "k", WithRetry(p)).Upload(context.Background(), uploadIn()); err != nil {
+		t.Fatalf("Upload: %v", err)
+	}
+	if len(waited) != 1 || waited[0] != time.Second {
+		t.Errorf("waited = %v, want [1s]", waited)
+	}
+}
+
+func TestUploadClientErrorsNotRetried(t *testing.T) {
+	for _, code := range []int{http.StatusBadRequest, http.StatusUnauthorized, http.StatusUnprocessableEntity} {
+		var n int
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			n++
+			w.WriteHeader(code)
+		}))
+		_, err := New(srv.URL, "k", fastRetry()).Upload(context.Background(), uploadIn())
+		srv.Close()
+		if err == nil || n != 1 {
+			t.Errorf("%d: err=%v attempts=%d, want an error after 1 attempt", code, err, n)
+		}
+	}
+}
+
+func TestUploadDoesNotFollowRedirectWithKey(t *testing.T) {
+	var leaked bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		leaked = r.Header.Get("x-api-key") != ""
+	}))
+	t.Cleanup(other.Close)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/assets", http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(srv.Close)
+
+	c := New(srv.URL, "secret-key", WithRetry(retry.Policy{Attempts: 1}))
+	_, err := c.Upload(context.Background(), UploadInput{
+		Data: []byte("x"), Filename: "x.jpg", FileCreatedAt: time.Now(), FileModifiedAt: time.Now(),
+	})
+	if err == nil {
+		t.Fatal("a redirect must not count as a successful upload")
+	}
+	if leaked {
+		t.Error("API key was replayed to the redirect target")
 	}
 }

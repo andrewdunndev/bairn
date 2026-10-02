@@ -45,9 +45,21 @@ type Asset struct {
 type Store struct {
 	path string
 	lock *os.File
-	mu   sync.RWMutex
+	mu   sync.Mutex
 	data map[string]*Asset
+
+	// dirty counts changes not yet written; the file is rewritten
+	// once it reaches flushEvery, and always on Flush and Close.
+	dirty      int
+	flushEvery int
 }
+
+// DefaultFlushEvery is how many changes accumulate before the state
+// file is rewritten. A crash loses at most this many changes; the
+// next run redoes them, and the disk and Immich checksum dedupe
+// absorb the repeats. Rewriting the whole file per change made a
+// full-history run quadratic.
+const DefaultFlushEvery = 50
 
 // ErrNotFound is returned by Get when no asset matches.
 var ErrNotFound = errors.New("state: asset not found")
@@ -58,13 +70,16 @@ var ErrLocked = errors.New("state: another bairn process holds the lock on this 
 
 // Open loads the state file, creating it if absent, and acquires an
 // exclusive non-blocking flock for the duration of the Store's life.
+// The lock is on a sibling <path>.lock that is never renamed: the
+// state file itself is replaced on every flush, which would leave a
+// lock on it pointing at an unlinked inode.
 func Open(ctx context.Context, path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("state: create dir for %s: %w", path, err)
 	}
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0o600)
+	f, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
-		return nil, fmt.Errorf("state: open %s: %w", path, err)
+		return nil, fmt.Errorf("state: open lock for %s: %w", path, err)
 	}
 	if err := unix.Flock(int(f.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
 		_ = f.Close()
@@ -74,19 +89,14 @@ func Open(ctx context.Context, path string) (*Store, error) {
 		return nil, fmt.Errorf("state: flock %s: %w", path, err)
 	}
 
-	s := &Store{path: path, lock: f, data: map[string]*Asset{}}
-	stat, err := f.Stat()
-	if err != nil {
+	s := &Store{path: path, lock: f, data: map[string]*Asset{}, flushEvery: DefaultFlushEvery}
+	buf, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		_ = s.Close()
-		return nil, fmt.Errorf("state: stat %s: %w", path, err)
+		return nil, fmt.Errorf("state: read %s: %w", path, err)
 	}
-	if stat.Size() > 0 {
-		if _, err := f.Seek(0, 0); err != nil {
-			_ = s.Close()
-			return nil, fmt.Errorf("state: seek %s: %w", path, err)
-		}
-		dec := json.NewDecoder(f)
-		if err := dec.Decode(&s.data); err != nil {
+	if len(buf) > 0 {
+		if err := json.Unmarshal(buf, &s.data); err != nil {
 			_ = s.Close()
 			return nil, fmt.Errorf("state: decode %s: %w", path, err)
 		}
@@ -94,26 +104,45 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	return s, nil
 }
 
-// Close flushes and releases the file lock.
+// Close flushes any unwritten changes and releases the file lock.
 func (s *Store) Close() error {
 	if s.lock == nil {
 		return nil
 	}
-	flushErr := s.flushLocked()
+	flushErr := s.Flush()
 	unlockErr := unix.Flock(int(s.lock.Fd()), unix.LOCK_UN)
 	closeErr := s.lock.Close()
 	s.lock = nil
 	return errors.Join(flushErr, unlockErr, closeErr)
 }
 
-// flushLocked writes the in-memory map atomically (tmp+fsync+rename).
+// Flush writes any unwritten changes to disk. A no-op when clean.
+func (s *Store) Flush() error {
+	s.mu.Lock()
+	if s.dirty == 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	err := s.writeLocked()
+	s.mu.Unlock()
+	return err
+}
+
+// changed records one mutation and flushes when the batch is full.
+// Caller holds s.mu.
+func (s *Store) changedLocked() error {
+	s.dirty++
+	if s.dirty >= s.flushEvery {
+		return s.writeLocked()
+	}
+	return nil
+}
+
+// writeLocked writes the in-memory map atomically (tmp+fsync+rename).
 // fsync the tmp file before rename so the data is durable before
-// the directory entry flips. Caller need not hold s.mu; we take
-// RLock here.
-func (s *Store) flushLocked() error {
-	s.mu.RLock()
+// the directory entry flips. Caller holds s.mu.
+func (s *Store) writeLocked() error {
 	buf, err := json.MarshalIndent(s.data, "", "  ")
-	s.mu.RUnlock()
 	if err != nil {
 		return fmt.Errorf("state: marshal: %w", err)
 	}
@@ -139,6 +168,7 @@ func (s *Store) flushLocked() error {
 	if err := os.Rename(tmp, s.path); err != nil {
 		return fmt.Errorf("state: rename: %w", err)
 	}
+	s.dirty = 0
 	return nil
 }
 
@@ -151,12 +181,13 @@ func (s *Store) Discover(ctx context.Context, id string, a Asset) error {
 		a.DiscoveredAt = time.Now().UTC()
 	}
 	s.mu.Lock()
-	if _, exists := s.data[id]; !exists {
-		v := a
-		s.data[id] = &v
+	defer s.mu.Unlock()
+	if _, exists := s.data[id]; exists {
+		return nil
 	}
-	s.mu.Unlock()
-	return s.flushLocked()
+	v := a
+	s.data[id] = &v
+	return s.changedLocked()
 }
 
 // MarkDownloaded sets DownloadedAt and SHA1.
@@ -203,24 +234,23 @@ func (s *Store) MarkError(ctx context.Context, id, errMsg string) error {
 	})
 }
 
-// update mutates an existing record under the write lock and flushes.
+// update mutates an existing record under the lock.
 func (s *Store) update(id string, mut func(*Asset)) error {
 	s.mu.Lock()
+	defer s.mu.Unlock()
 	a, ok := s.data[id]
 	if !ok {
-		s.mu.Unlock()
 		return ErrNotFound
 	}
 	mut(a)
-	s.mu.Unlock()
-	return s.flushLocked()
+	return s.changedLocked()
 }
 
 // Get returns a snapshot of the asset record. The returned Asset
 // is a value copy; mutations on it do not affect the store.
 func (s *Store) Get(ctx context.Context, id string) (Asset, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	a, ok := s.data[id]
 	if !ok {
 		return Asset{}, ErrNotFound
@@ -231,8 +261,8 @@ func (s *Store) Get(ctx context.Context, id string) (Asset, error) {
 // IsSaved is the canonical "skip already-done" check for the fetch
 // loop. Returns true iff the asset has SavedAt set.
 func (s *Store) IsSaved(ctx context.Context, id string) (bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	a, ok := s.data[id]
 	if !ok {
 		return false, nil
@@ -242,8 +272,8 @@ func (s *Store) IsSaved(ctx context.Context, id string) (bool, error) {
 
 // IsUploaded reports whether the asset has reached the Immich sink.
 func (s *Store) IsUploaded(ctx context.Context, id string) (bool, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	a, ok := s.data[id]
 	if !ok {
 		return false, nil
@@ -266,8 +296,8 @@ type Summary struct {
 
 // Stats returns a Summary. Cheap; an in-memory pass over the map.
 func (s *Store) Stats(ctx context.Context) (Summary, error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	var sm Summary
 	for _, a := range s.data {
 		sm.Total++

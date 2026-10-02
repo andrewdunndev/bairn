@@ -15,6 +15,7 @@ import (
 
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
+	"gitlab.com/dunn.dev/bairn/internal/urlerr"
 )
 
 // Download streams the asset bytes from the signed CDN URL to a
@@ -29,11 +30,11 @@ func (d Discovered) Download(ctx context.Context, hc *http.Client) (Downloaded, 
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, d.url, nil)
 	if err != nil {
-		return Downloaded{}, fmt.Errorf("asset: build download request for %s: %w", d.famlyImageID, err)
+		return Downloaded{}, fmt.Errorf("asset: build download request for %s: %w", d.famlyImageID, urlerr.Redact(err))
 	}
 	resp, err := hc.Do(req)
 	if err != nil {
-		return Downloaded{}, fmt.Errorf("asset: download %s: %w", d.famlyImageID, err)
+		return Downloaded{}, fmt.Errorf("asset: download %s: %w", d.famlyImageID, urlerr.Redact(err))
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -142,6 +143,51 @@ func (s Saved) Upload(ctx context.Context, immich *sink.Immich) (Uploaded, error
 		return Uploaded{}, fmt.Errorf("asset: upload %s: %w", s.dl.d.famlyImageID, err)
 	}
 	return Uploaded{saved: s, immichID: receipt.DestPath, status: receipt.Status}, nil
+}
+
+// UploadFromDisk is the recovery path for an asset the state store
+// holds as saved but not uploaded (a failed upload, an Immich outage,
+// or a --no-immich run). It rebuilds the upload from the disk sink:
+// the media file at the recorded path plus, for a video, its .xmp
+// sidecar. fileCreatedAt is the value Record stored as DownloadedAt.
+// On a confirmed upload (created or duplicate) it records the receipt.
+// root is the save directory; a recorded path outside it is refused,
+// so a damaged state file cannot send an arbitrary file to Immich.
+func UploadFromDisk(ctx context.Context, immich *sink.Immich, store *state.Store, root, id string) (status string, err error) {
+	a, err := store.Get(ctx, id)
+	if err != nil {
+		return "", fmt.Errorf("asset: upload %s: %w", id, err)
+	}
+	if a.SavedPath == "" {
+		return "", fmt.Errorf("asset: upload %s: no saved path in state", id)
+	}
+	if !sink.Within(root, a.SavedPath) {
+		return "", fmt.Errorf("asset: upload %s: saved path is outside the save directory", id)
+	}
+	var sidecar []byte
+	if a.Source == string(SourceFeedVideo) {
+		sidecar, err = os.ReadFile(a.SavedPath + ".xmp")
+		if err != nil {
+			return "", fmt.Errorf("asset: upload %s: read sidecar: %w", id, err)
+		}
+	}
+	receipt, err := immich.Put(ctx, sink.PutInput{
+		FamlyImageID:  id,
+		Source:        a.Source,
+		FeedItemID:    a.FeedItemID,
+		SourcePath:    a.SavedPath,
+		Filename:      filepath.Base(a.SavedPath),
+		SHA1:          a.SHA1,
+		FileCreatedAt: a.DownloadedAt,
+		Sidecar:       sidecar,
+	})
+	if err != nil {
+		return "", fmt.Errorf("asset: upload %s: %w", id, err)
+	}
+	if err := store.MarkUploaded(ctx, id, receipt.DestPath, receipt.Status, time.Now()); err != nil {
+		return "", fmt.Errorf("asset: record (uploaded) %s: %w", id, err)
+	}
+	return receipt.Status, nil
 }
 
 // Record persists the saved-only state to the state DB. The

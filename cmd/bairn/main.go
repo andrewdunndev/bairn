@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
+	_ "time/tzdata"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
@@ -86,6 +88,7 @@ func newLogger(format string) *slog.Logger {
 func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
 	fs := flag.NewFlagSet("fetch", flag.ExitOnError)
 	maxPages := fs.Int("max-pages", 3, "stop after this many feed pages (0 = unlimited)")
+	tz := fs.String("tz", cfg.Zone, "IANA zone for videos in posts with no zoned image (default: the machine's local zone, logged at start)")
 	dryRun := fs.Bool("dry-run", false, "enumerate without saving or uploading")
 	source := fs.String("source", "all", "feed filter: all (every image and video), tagged (only images tagged with one of our children), or liked (only images liked by a household login)")
 	saveDir := fs.String("save-dir", cfg.SaveDir, "root directory for saved photos and videos")
@@ -96,6 +99,15 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+
+	zone, err := resolveZone(*tz)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "fetch:", err)
+		return 2
+	}
+
+	logger.Info("zone for zoneless posts", "zone", zone.String(),
+		"offsetNow", time.Now().In(zone).Format("-07:00"))
 
 	src := sync.Source(*source)
 	if err := src.Validate(); err != nil {
@@ -171,6 +183,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		MaxPages:           *maxPages,
 		DryRun:             *dryRun,
 		Source:             src,
+		Zone:               zone,
 		HouseholdLogins:    logins,
 		HouseholdChildren:  children,
 		Software:           "bairn " + Version,
@@ -183,6 +196,10 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(res)
+	if res.UploadFailed > 0 {
+		fmt.Fprintf(os.Stderr, "fetch: %d asset(s) saved to disk but not uploaded to Immich; rerun to retry\n", res.UploadFailed)
+		return 1
+	}
 	return 0
 }
 
@@ -269,18 +286,16 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		Shape:   drift.ShapeOpts{AnonymizeCounts: *anonymize},
 		Schemas: driftSchemas,
 	}
-	// Trap B: a --diff dir that's missing or empty silently produces
-	// "no drift found" which masquerades as a healthy gate. Count
-	// the comparisons that actually had a prior signature so we can
-	// fail loudly when the gate is a passthrough.
-	comparedCount := 0
+	// A --diff baseline that cannot be read for an endpoint must not
+	// pass for a healthy gate: record those endpoints and fail below.
+	noBaseline := map[string]error{}
 	if *diffDir != "" {
 		opts.Compare = func(id string) (any, bool) {
 			sig, err := drift.ReadSignature(*diffDir, id)
 			if err != nil {
+				noBaseline[id] = err
 				return nil, false
 			}
-			comparedCount++
 			return sig, true
 		}
 	}
@@ -326,6 +341,8 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 				for _, d := range r.Drift {
 					fmt.Printf("    %s\n", d)
 				}
+			case noBaseline[r.ID] != nil:
+				fmt.Printf("  %s: HTTP %d%s, NO BASELINE\n", r.ID, r.Status, size(r.BodySize))
 			case *diffDir != "":
 				fmt.Printf("  %s: HTTP %d%s, ok\n", r.ID, r.Status, size(r.BodySize))
 			default:
@@ -341,17 +358,11 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		return 2
 	}
 
-	// Trap B (cont.): if --diff was set and zero comparisons
-	// resolved, the gate compared nothing. Fail with exit 2 so a
-	// passthrough doesn't pass for a working gate.
-	if *diffDir != "" && comparedCount == 0 && len(results) > 0 {
-		logger.Error("drift",
-			"phase", "compare",
-			"err", "no prior signatures found",
-			"diff_dir", *diffDir,
-			"endpoints", len(results),
-			"hint", "seed the baseline first: bairn drift --anonymize --out-dir "+*diffDir+" (then commit). Until seeded, --diff is a no-op.",
-		)
+	if len(noBaseline) > 0 {
+		for id, err := range noBaseline {
+			logger.Error("drift", "phase", "compare", "id", id, "diff_dir", *diffDir, "err", err)
+		}
+		logger.Error("drift", "phase", "compare", "hint", "seed the baseline first: bairn drift --anonymize --out-dir "+*diffDir+" (then commit)")
 		return 2
 	}
 
@@ -379,4 +390,17 @@ func famlyOpts(cfg *config.Config) []famly.Option {
 		opts = append(opts, famly.WithBaseURL(cfg.FamlyBaseURL))
 	}
 	return opts
+}
+
+// resolveZone maps --tz / BAIRN_TZ to a location; empty is the
+// machine's local zone.
+func resolveZone(name string) (*time.Location, error) {
+	if name == "" {
+		return time.Local, nil
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, fmt.Errorf("--tz %q: %w", name, err)
+	}
+	return loc, nil
 }

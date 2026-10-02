@@ -24,6 +24,9 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"gitlab.com/dunn.dev/bairn/internal/retry"
+	"gitlab.com/dunn.dev/bairn/internal/urlerr"
 )
 
 // DefaultBaseURL is the production Famly endpoint. Override per-Client
@@ -53,6 +56,10 @@ type Client struct {
 	logger     *slog.Logger
 
 	tokenSrc TokenSource
+	retry    retry.Policy
+
+	// pageDelay is the pause between feed pages.
+	pageDelay time.Duration
 }
 
 // Option configures a Client.
@@ -70,14 +77,36 @@ func WithHTTPClient(h *http.Client) Option { return func(c *Client) { c.httpClie
 // WithLogger sets the structured logger. Defaults to slog.Default().
 func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.logger = l } }
 
+// WithRetry overrides the retry policy. Used by tests.
+func WithRetry(p retry.Policy) Option { return func(c *Client) { c.retry = p } }
+
+// WithPageDelay overrides the pause between feed pages. Used by tests.
+func WithPageDelay(d time.Duration) Option { return func(c *Client) { c.pageDelay = d } }
+
+// DefaultPageDelay is the pause between feed pages: one request per
+// second, the human rate discovery/PROTOCOL.md commits to.
+const DefaultPageDelay = time.Second
+
 // New constructs a Client with a TokenSource and optional overrides.
 func New(src TokenSource, opts ...Option) *Client {
 	c := &Client{
-		baseURL:    DefaultBaseURL,
-		userAgent:  DefaultUserAgent,
-		httpClient: &http.Client{Timeout: 30 * time.Second},
-		logger:     slog.Default(),
-		tokenSrc:   src,
+		baseURL:   DefaultBaseURL,
+		userAgent: DefaultUserAgent,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+			// The token rides a custom header that net/http would replay
+			// to another host on a redirect.
+			CheckRedirect: func(req *http.Request, via []*http.Request) error {
+				if req.URL.Host != via[0].URL.Host {
+					return errors.New("famly: refusing cross-host redirect")
+				}
+				return nil
+			},
+		},
+		logger:    slog.Default(),
+		tokenSrc:  src,
+		retry:     retry.Default(),
+		pageDelay: DefaultPageDelay,
 	}
 	for _, o := range opts {
 		o(c)
@@ -86,45 +115,67 @@ func New(src TokenSource, opts ...Option) *Client {
 }
 
 // do issues a request, attaches auth + UA, decodes JSON into out.
-// Returns ErrUnauthorized on 401 so callers can drive refresh.
+//
+// Transport errors, 429 and 5xx are retried with backoff (see
+// internal/retry). A 401 invalidates the token and retries once with
+// whatever the TokenSource yields next (ADR 0003); a second 401, or
+// a source that cannot refresh, returns ErrUnauthorized.
 func (c *Client) do(ctx context.Context, method, path string, query url.Values, body any, out any) error {
 	full := c.baseURL + path
 	if len(query) > 0 {
 		full += "?" + query.Encode()
 	}
 
-	var reqBody io.Reader
+	var payload []byte
 	if body != nil {
-		buf, err := json.Marshal(body)
-		if err != nil {
+		var err error
+		if payload, err = json.Marshal(body); err != nil {
 			return fmt.Errorf("famly: marshal request: %w", err)
 		}
-		reqBody = bytes.NewReader(buf)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, full, reqBody)
-	if err != nil {
-		return fmt.Errorf("famly: build request: %w", err)
+	send := func(tok string) func() (*http.Response, error) {
+		return func() (*http.Response, error) {
+			var reqBody io.Reader
+			if payload != nil {
+				reqBody = bytes.NewReader(payload)
+			}
+			req, err := http.NewRequestWithContext(ctx, method, full, reqBody)
+			if err != nil {
+				return nil, fmt.Errorf("famly: build request: %w", err)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set("Accept", "application/json")
+			req.Header.Set("User-Agent", c.userAgent)
+			req.Header.Set(authHeader, tok)
+			return c.httpClient.Do(req)
+		}
 	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
-	req.Header.Set("User-Agent", c.userAgent)
 
-	tok, err := c.tokenSrc.Token(ctx)
-	if err != nil {
-		return fmt.Errorf("famly: get token: %w", err)
-	}
-	req.Header.Set(authHeader, tok)
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("famly: %s %s: %w", method, path, err)
+	var resp *http.Response
+	for refreshed := false; ; refreshed = true {
+		tok, err := c.tokenSrc.Token(ctx)
+		if err != nil {
+			if errors.Is(err, ErrTokenExpired) {
+				return fmt.Errorf("%w: %w", ErrUnauthorized, err)
+			}
+			return fmt.Errorf("famly: get token: %w", err)
+		}
+		resp, err = c.retry.Do(ctx, send(tok))
+		if err != nil {
+			return fmt.Errorf("famly: %s %s: %w", method, path, urlerr.Redact(err))
+		}
+		if resp.StatusCode != http.StatusUnauthorized {
+			break
+		}
+		resp.Body.Close()
+		if refreshed {
+			return ErrUnauthorized
+		}
+		c.tokenSrc.Invalidate()
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == http.StatusUnauthorized {
-		return ErrUnauthorized
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
 		return fmt.Errorf("famly: %s %s: HTTP %d: %s", method, path, resp.StatusCode, strings.TrimSpace(string(buf)))

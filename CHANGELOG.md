@@ -13,12 +13,85 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [Unreleased]
 
+### Changed
+
+- A 401 or 403 from Immich, or five failed uploads in a row, stops
+  uploads for the rest of the run instead of retrying every asset; the
+  rest are saved to disk, counted in `uploadFailed`, and a rerun
+  uploads them. A 403 now reports as unauthorized.
+- `bairn fetch` logs the zone it will use for zoneless posts.
+- Scheduled pipelines run only `drift-gate`; every other job sits behind
+  an include that skips schedules.
+- `bairn drift --diff` exits 2 when a manifest endpoint has no readable
+  baseline file, instead of printing `ok`.
+- Drift shapes walk every feed item and every nesting level (no
+  5-item sample, no depth cap), so tag fields now appear. Reseed
+  `discovery/baselines/main/` from the next schedule artifact.
+- A response field that arrives as a different container than bairn's
+  struct declares is recorded as `<object>` or `<array>`, so vendor
+  keys never reach a shape. The drift artifact is developer-only.
+- Drift documentation lives in `discovery/baselines/main/README.md`.
+
+### Removed
+
+- `discovery/probe/shape.py`, superseded by `bairn drift`.
+
+### Fixed
+
+- Neither client follows a redirect that would replay its credential
+  header to another host (Immich follows none, Famly stays on its host).
+- An image with no zone of its own is dated in the local zone (as videos
+  are), not as a UTC wall clock.
+- A download error no longer carries the signed CDN query string.
+- Retry-from-disk refuses a recorded path outside the save directory.
+- The state lock lives on `<state-path>.lock`; on the state file itself it
+  was lost at the first flush, so a second `bairn fetch` could run.
+- A video's `.xmp` sidecar is written before the media file, and added
+  beside media already on disk, so a retry-from-disk never lacks it.
+- The save path is refused when a vendor id would resolve outside the
+  save directory.
+- State, config and archive directories are created 0700.
+- A `Retry-After` longer than the 30s backoff cap is honoured up to five
+  minutes; a longer one ends the retries instead of hammering a 429.
+- A feed walk whose cursor stops moving ends with `feed cursor did not
+  advance` instead of looping on the same page.
+- A video in a post with no zoned image was dated as UTC, so it showed
+  hours late in the timeline. It now uses the zone of the running
+  machine (override with `--tz` or `BAIRN_TZ`), with the offset
+  computed at the post's date.
+- The Immich upload no longer sends `deviceId` / `deviceAssetId`;
+  Immich 3.x dropped them. The Immich floor is now v3.0.2, and
+  `IMMICH_VERSION` is pinned to 3.0.2, the version the home server
+  runs.
+- A failed Immich upload is retried on the next run. Assets saved to
+  disk but not confirmed in Immich (a failed upload, an Immich outage,
+  or an earlier `--no-immich` run) are uploaded from the disk sink,
+  with the video `.xmp` sidecar, instead of being skipped. `duplicate`
+  counts as confirmed. The fetch summary gains `uploadDuplicates` and
+  `uploadFailed`, and `bairn fetch` exits 1 while any upload failed.
+  Entries in existing state files without `uploadedAt` count as not
+  uploaded.
+- The state file is flushed every 50 changes and on exit instead of
+  being rewritten and fsynced on every change, which was quadratic
+  over a full history.
+
 ### Added
 
+- `--tz` / `BAIRN_TZ` set the fallback zone for video dates. `--max-pages
+  0` (unlimited) is documented and tested as the way to walk a full
+  history.
+- Both the Famly and Immich clients retry transport errors, 429
+  (honouring `Retry-After`) and 5xx with capped exponential backoff and
+  jitter; other 4xx fail at once. A retried Immich upload is safe: the
+  server dedupes on the file checksum per owner and answers
+  `duplicate`.
+- A Famly 401 mid-run refreshes the token once through the token
+  source (ADR 0003) and retries; a second 401 fails.
+- The feed walk pauses one second between pages.
 - CI: a weekly scheduled `drift-gate` run against the operator's own
   Famly account (two GETs). Drift diffing now treats `<empty>` and
-  `null` shapes as wildcards and merges nested shapes across the
-  sampled feed items, so a week with photos is not reported as drift.
+  `null` shapes as wildcards and merges nested shapes across
+  feed items, so a week with photos is not reported as drift.
 - `IMMICH_VERSION` in the Makefile names the Immich release bairn is
   verified against via `make pre-tag-check`; Renovate tracks it with
   automerge off.

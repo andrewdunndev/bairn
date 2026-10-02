@@ -1,6 +1,7 @@
 package immich
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
 	"mime"
@@ -76,8 +77,6 @@ func emittedUploadFields(t *testing.T) map[string]bool {
 		Filename:       "contract-test.jpg",
 		FileCreatedAt:  time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC),
 		FileModifiedAt: time.Date(2026, 5, 9, 0, 0, 0, 0, time.UTC),
-		DeviceID:       "bairn",
-		DeviceAssetID:  "test",
 		Metadata:       map[string]string{"famlyImageId": "test"},
 	})
 	if err != nil {
@@ -88,7 +87,7 @@ func emittedUploadFields(t *testing.T) map[string]bool {
 	if err != nil {
 		t.Fatalf("parse content-type: %v", err)
 	}
-	mr := multipart.NewReader(body, params["boundary"])
+	mr := multipart.NewReader(bytes.NewReader(body), params["boundary"])
 	out := map[string]bool{}
 	for {
 		p, err := mr.NextPart()

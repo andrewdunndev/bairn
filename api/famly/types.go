@@ -199,7 +199,13 @@ func (it ImageTime) OffsetAt(at time.Time) string {
 	if at.IsZero() {
 		at = time.Now().UTC()
 	}
-	_, offsetSeconds := at.In(loc).Zone()
+	return FormatOffset(at.In(loc))
+}
+
+// FormatOffset renders the UTC offset of t's location at t as
+// "+HH:MM" or "-HH:MM".
+func FormatOffset(t time.Time) string {
+	_, offsetSeconds := t.Zone()
 	sign := "+"
 	if offsetSeconds < 0 {
 		sign = "-"

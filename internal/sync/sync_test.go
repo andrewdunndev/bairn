@@ -11,6 +11,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 	"testing"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
@@ -110,7 +112,7 @@ func TestRunSavesAndUploadsSourceAll(t *testing.T) {
 	immichSink := sink.NewImmich(immich.New(immichSrv.URL, "test-key"))
 	st := openTestStore(t)
 
-	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL))
+	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
 
 	res, err := Run(context.Background(), Deps{
 		Famly: fc, Disk: disk, Immich: immichSink, State: st,
@@ -168,7 +170,7 @@ func TestRunSavesOnlyWithoutImmich(t *testing.T) {
 	disk, _ := sink.NewDisk(saveDir, "", "")
 	st := openTestStore(t)
 
-	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL))
+	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
 
 	res, err := Run(context.Background(), Deps{
 		Famly: fc, Disk: disk, Immich: nil, State: st,
@@ -222,7 +224,7 @@ func TestRunSourceTaggedFiltersByChild(t *testing.T) {
 	disk, _ := sink.NewDisk(saveDir, "", "")
 	st := openTestStore(t)
 
-	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL))
+	fc := famly.New(famly.NewStaticToken("test-token"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
 
 	res, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: st}, Options{
 		MaxPages:          1,
@@ -248,7 +250,7 @@ func TestRunCleansTempFiles(t *testing.T) {
 	t.Cleanup(famlySrv.Close)
 	disk, _ := sink.NewDisk(t.TempDir(), "", "")
 	st := openTestStore(t)
-	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(famlySrv.URL))
+	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
 
 	if _, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: st}, Options{
 		MaxPages: 1,
@@ -261,5 +263,41 @@ func TestRunCleansTempFiles(t *testing.T) {
 	matches, _ := filepath.Glob(filepath.Join(os.TempDir(), "bairn-dl-*"))
 	if len(matches) > 0 {
 		t.Errorf("temp files leaked: %v", matches)
+	}
+}
+
+// TestMaxPagesZeroWalksWholeFeed pins that --max-pages 0 walks past
+// the default cap of 3 until Famly returns an empty page.
+func TestMaxPagesZeroWalksWholeFeed(t *testing.T) {
+	const posts = 5
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next := 1
+		if c := r.URL.Query().Get("cursor"); c != "" {
+			n, _ := strconv.Atoi(strings.TrimPrefix(c, "post-"))
+			next = n + 1
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if next > posts {
+			_, _ = w.Write([]byte(`{"feedItems": []}`))
+			return
+		}
+		fmt.Fprintf(w, `{"feedItems":[{"feedItemId":"post-%d","createdDate":"2026-05-06T14:00:00Z","body":"x","images":[],"videos":[]}]}`, next)
+	}))
+	t.Cleanup(srv.Close)
+
+	for _, c := range []struct{ max, want int }{{3, 3}, {0, posts + 1}} {
+		disk, err := sink.NewDisk(t.TempDir(), "", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(srv.URL), famly.WithPageDelay(0))
+		res, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: openTestStore(t)},
+			Options{MaxPages: c.max, Source: SourceAll, DryRun: true})
+		if err != nil {
+			t.Fatalf("max %d: %v", c.max, err)
+		}
+		if res.PagesWalked != c.want {
+			t.Errorf("MaxPages %d: PagesWalked = %d, want %d", c.max, res.PagesWalked, c.want)
+		}
 	}
 }

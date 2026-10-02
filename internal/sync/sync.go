@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
+	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/asset"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
@@ -50,6 +51,10 @@ type Options struct {
 	// MaxPages caps the feed walk. 0 means unlimited.
 	MaxPages int
 
+	// Zone is the fallback zone for the date of a video in a post
+	// with no zone of its own, image or video. nil means time.Local.
+	Zone *time.Location
+
 	// DryRun stops short of any actual fetch: assets are
 	// enumerated and skip-checked but no file lands on disk.
 	DryRun bool
@@ -84,6 +89,41 @@ type Deps struct {
 	State  *state.Store
 	Logger *slog.Logger
 	HTTP   *http.Client
+
+	gate *uploadGate // set by Run
+}
+
+// maxUploadFailures is how many uploads in a row may fail before the
+// run stops trying Immich. The disk archive is the backup and a rerun
+// uploads from it, so a dead or refusing server should cost seconds,
+// not a retry cycle per remaining asset.
+const maxUploadFailures = 5
+
+// uploadGate stops Immich uploads for the rest of a run after an
+// authorization failure or maxUploadFailures failures in a row.
+type uploadGate struct {
+	fails   int
+	stopped bool
+}
+
+func (g *uploadGate) isStopped() bool { return g != nil && g.stopped }
+
+func (g *uploadGate) succeeded() {
+	if g != nil {
+		g.fails = 0
+	}
+}
+
+func (g *uploadGate) failed(err error, logger *slog.Logger) {
+	if g == nil || g.stopped {
+		return
+	}
+	g.fails++
+	if errors.Is(err, immich.ErrUnauthorized) || g.fails >= maxUploadFailures {
+		g.stopped = true
+		logger.Error("immich uploads stopped for this run; the rest stay on disk and a rerun uploads them",
+			"consecutiveFailures", g.fails, "err", err)
+	}
 }
 
 // Result is the JSON-shaped fetch summary.
@@ -96,8 +136,14 @@ type Result struct {
 	Saved       int       `json:"saved"`
 	Uploaded    int       `json:"uploaded"`
 	Duplicates  int       `json:"duplicates"`
-	ExifErrors  int       `json:"exifErrors"`
-	Errors      int       `json:"errors"`
+	// UploadDuplicates counts Immich uploads the server answered with
+	// "duplicate"; they are confirmed, like a fresh upload.
+	UploadDuplicates int `json:"uploadDuplicates"`
+	// UploadFailed counts assets on disk but not confirmed in Immich.
+	// A rerun retries them; the CLI exits non-zero while any remain.
+	UploadFailed int `json:"uploadFailed"`
+	ExifErrors   int `json:"exifErrors"`
+	Errors       int `json:"errors"`
 	// SystemPostsFiltered counts source-matching images that were
 	// skipped because their feed item was system-generated and the
 	// run did not pass --include-system-posts. Surfaces the
@@ -126,6 +172,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 	}
 
 	res := Result{StartedAt: time.Now().UTC()}
+	deps.gate = &uploadGate{}
 
 	for page, err := range deps.Famly.Pages(ctx) {
 		if err != nil {
@@ -203,14 +250,14 @@ func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedIt
 			res.Skipped++
 			continue
 		}
-		processOne(ctx, deps, opts, asset.DiscoverImage(img, item), res, logger)
+		processOne(ctx, deps, opts, asset.DiscoverImage(img, item, opts.Zone), res, logger)
 	}
 	for _, vid := range item.Videos {
 		if opts.Source != SourceAll {
 			res.Skipped++
 			continue
 		}
-		processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item), res, logger)
+		processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item, opts.Zone), res, logger)
 	}
 }
 
@@ -251,18 +298,21 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		logger.Warn("state.IsSaved", "id", id, "err", err)
 	}
 	if already {
-		res.Skipped++
-		// Idempotent re-upload to Immich if it's configured and
-		// state says we haven't uploaded yet. Common case: a
-		// previous run saved files but Immich was offline.
+		// On disk but maybe not in Immich: a failed upload, an
+		// Immich outage, or a save-only run. Upload from the disk sink.
 		if deps.Immich != nil {
 			if uploaded, _ := deps.State.IsUploaded(ctx, id); !uploaded {
-				logger.Debug("retrying upload for already-saved asset", "id", id)
-				// We don't have a Saved value here without re-walking
-				// the typestate; deferred to a future "bairn upload-pending"
-				// subcommand.
+				if opts.DryRun {
+					logger.Info("dry-run: would upload saved asset", "id", id)
+				} else if deps.gate.isStopped() {
+					res.UploadFailed++
+				} else {
+					uploadSaved(ctx, deps, id, res, logger)
+				}
+				return
 			}
 		}
+		res.Skipped++
 		return
 	}
 
@@ -318,11 +368,22 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		return
 	}
 
+	if deps.gate.isStopped() {
+		res.UploadFailed++
+		if _, recErr := saved.Record(ctx, deps.State); recErr != nil {
+			res.Errors++
+			logger.Error("record (saved-only)", "id", id, "err", recErr)
+		}
+		return
+	}
+
 	up, err := saved.Upload(ctx, deps.Immich)
 	if err != nil {
 		res.Errors++
+		res.UploadFailed++
 		logger.Error("upload", "id", id, "err", err)
-		// Record what we have (saved without uploaded).
+		deps.gate.failed(err, logger)
+		// Saved without uploaded: a rerun uploads it from disk.
 		if _, recErr := saved.Record(ctx, deps.State); recErr != nil {
 			logger.Error("record (saved-after-upload-failure)", "id", id, "err", recErr)
 		}
@@ -336,12 +397,35 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		return
 	}
 
-	if up.ImmichStatus() == "duplicate" {
-		// Server-side dedup: not counted as a fresh upload.
-	} else {
-		res.Uploaded++
-	}
+	deps.gate.succeeded()
+	countUpload(res, up.ImmichStatus())
 	logger.Info("complete",
 		"id", id, "path", saved.FinalPath(),
 		"immich_id", up.ImmichAssetID(), "immich_status", up.ImmichStatus())
+}
+
+// countUpload tallies a confirmed Immich upload.
+func countUpload(res *Result, status string) {
+	if status == "duplicate" {
+		res.UploadDuplicates++
+	} else {
+		res.Uploaded++
+	}
+}
+
+// uploadSaved uploads an asset the state store holds as saved but not
+// confirmed in Immich, reading it back from the disk sink.
+func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger *slog.Logger) {
+	status, err := asset.UploadFromDisk(ctx, deps.Immich, deps.State, deps.Disk.Root(), id)
+	if err != nil {
+		res.Errors++
+		res.UploadFailed++
+		logger.Error("upload (retry from disk)", "id", id, "err", err)
+		deps.gate.failed(err, logger)
+		_ = deps.State.MarkError(ctx, id, err.Error())
+		return
+	}
+	deps.gate.succeeded()
+	countUpload(res, status)
+	logger.Info("uploaded from disk", "id", id, "immich_status", status)
 }

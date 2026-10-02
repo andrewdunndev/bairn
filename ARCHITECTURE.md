@@ -20,6 +20,9 @@ metadata reinjected, optionally also push to Immich.
    happened). A run interrupted between `Saved` and `Recorded`
    recovers on the next start because the state file shows
    `savedAt` set and `recordedAt` empty.
+   The same rule drives Immich: `savedAt` set and `uploadedAt` empty
+   means on disk but unconfirmed, and the next run uploads it from the
+   disk sink (`asset.UploadFromDisk`) rather than re-downloading.
 3. **Generated code is read-only.** Anything under `api/*/gen.go`
    is produced by `make gen`. The
    `// Code generated ... DO NOT EDIT.` header is the contract.
@@ -34,6 +37,8 @@ metadata reinjected, optionally also push to Immich.
    files. EXIF/XMP/IPTC for JPEG/TIFF. Videos cannot carry it, so
    each gets one standalone `<file>.xmp` (also sent to Immich as
    `sidecarData`); photos never get one. See ADR 0005.
+   A video's date takes a sibling image's zone, else `--tz`, else the
+   running machine's local zone, at the post's date.
 7. **Privacy boundary at the repository edge.** Discovery captures,
    schema dumps, and vendor-specific manifests are gitignored. The
    committed surface stays minimal.
@@ -66,7 +71,7 @@ metadata reinjected, optionally also push to Immich.
   fields.
 - **Directory pattern**: `%Y-%m-%d/` per-day buckets by default.
 - **State file**: `$XDG_STATE_HOME/bairn/state.json` by default,
-  with `flock` for single-writer enforcement. Override via
+  with `flock` on `state.json.lock` for single-writer enforcement. Override via
   `--state-path` or `BAIRN_STATE_PATH`. A common alternate is
   `<save-dir>/.bairn-state.json`.
 
@@ -90,7 +95,10 @@ This binary targets Go 1.25+. Idioms in use:
 - `context.Context` end-to-end including iterators
 - `slices`, `maps`, `cmp` stdlib packages
 - `testing/synctest` for deterministic time tests
-- `cenkalti/backoff/v7` for retry primitive
+- `internal/retry`: one HTTP policy for both clients (transport errors,
+  408, 429 with `Retry-After`, and 5xx; five tries, capped
+  exponential backoff with jitter; a `Retry-After` is honoured up to
+  five minutes, a longer one ends the retries; other 4xx never retried)
 - `dsoprea/go-exif/v3` for EXIF rewrite
 - `genqlient` for typed GraphQL against the captured schema
 - `IMMICH_VERSION` (Makefile, Renovate-tracked) names the Immich

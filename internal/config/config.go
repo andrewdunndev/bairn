@@ -43,6 +43,11 @@ type Config struct {
 	// Default: $XDG_STATE_HOME/bairn/state.json
 	StatePath string
 
+	// Zone is the IANA name of the fallback zone for videos in posts
+	// with no zoned image (BAIRN_TZ). Empty means the machine's
+	// local zone.
+	Zone string
+
 	// LogFormat is "json" (cron-friendly) or "text" (interactive).
 	LogFormat string
 }
@@ -61,6 +66,7 @@ func Load() (*Config, error) {
 		ImmichAPIKey:     os.Getenv("IMMICH_API_KEY"),
 		SaveDir:          os.Getenv("BAIRN_SAVE_DIR"),
 		StatePath:        os.Getenv("BAIRN_STATE_PATH"),
+		Zone:             os.Getenv("BAIRN_TZ"),
 		LogFormat:        os.Getenv("BAIRN_LOG_FORMAT"),
 	}
 	if c.FamlyDeviceID == "" {
@@ -143,7 +149,7 @@ func dataDir() (string, error) {
 }
 
 func ensureDir(p string) (string, error) {
-	if err := os.MkdirAll(p, 0o755); err != nil {
+	if err := os.MkdirAll(p, 0o700); err != nil {
 		return "", err
 	}
 	return p, nil

@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strconv"
 	"time"
+
+	"gitlab.com/dunn.dev/bairn/internal/retry"
 )
 
 // FeedPageSize is the page size we ask Famly for. The vendor's
@@ -44,8 +46,16 @@ func (c *Client) Pages(ctx context.Context) iter.Seq2[FeedPage, error] {
 				return
 			}
 			last := page.FeedItems[len(page.FeedItems)-1]
+			if last.FeedItemID == cursor || (!olderThan.IsZero() && last.CreatedDate.After(olderThan)) {
+				yield(FeedPage{}, errors.New("famly: feed cursor did not advance"))
+				return
+			}
 			cursor = last.FeedItemID
 			olderThan = last.CreatedDate.Time
+			if err := retry.Sleep(ctx, c.pageDelay); err != nil {
+				yield(FeedPage{}, err)
+				return
+			}
 		}
 	}
 }
@@ -65,9 +75,6 @@ func (c *Client) feedPage(ctx context.Context, cursor string, olderThan time.Tim
 	}
 	var out FeedPage
 	if err := c.do(ctx, http.MethodGet, "/api/feed/feed/feed", q, nil, &out); err != nil {
-		if errors.Is(err, ErrUnauthorized) {
-			c.tokenSrc.Invalidate()
-		}
 		return FeedPage{}, err
 	}
 	return out, nil

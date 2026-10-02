@@ -53,26 +53,33 @@ func TestShapeObjectUnion(t *testing.T) {
 	}
 }
 
-func TestShapeRecursionLimit(t *testing.T) {
-	// Build a 9-deep nested map. maxDepth is 6, so recursion should
-	// emit "..." somewhere in the chain.
+func TestShapeHasNoDepthLimit(t *testing.T) {
 	v := any("leaf")
-	for i := 0; i < 9; i++ {
+	for i := 0; i < 40; i++ {
 		v = map[string]any{"x": v}
 	}
-	got := Shape(v, ShapeOpts{})
-	// Walk down maxDepth+1 times; the value at that depth should be
-	// the "..." sentinel.
-	cursor := got
-	for i := 0; i < maxDepth+1; i++ {
+	cursor := Shape(v, ShapeOpts{})
+	for i := 0; i < 40; i++ {
 		m, ok := cursor.(map[string]any)
 		if !ok {
 			t.Fatalf("at depth %d expected map, got %T", i, cursor)
 		}
 		cursor = m["x"]
 	}
-	if cursor != "..." {
-		t.Errorf("expected '...' beyond maxDepth, got %v", cursor)
+	if cursor != "str" {
+		t.Errorf("leaf = %v, want str", cursor)
+	}
+}
+
+func TestShapeMergesEveryItem(t *testing.T) {
+	var items []any
+	for i := 0; i < 9; i++ {
+		items = append(items, map[string]any{"a": float64(1)})
+	}
+	items = append(items, map[string]any{"a": float64(1), "late": "x"})
+	got := Shape(items, ShapeOpts{}).([]any)
+	if _, ok := got[0].(map[string]any)["late"]; !ok {
+		t.Errorf("key present only in the 10th item is missing: %v", got[0])
 	}
 }
 

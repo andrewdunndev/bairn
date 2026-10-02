@@ -3,6 +3,8 @@ package state
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -194,5 +196,110 @@ func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {
 		t.Fatalf("unexpected: %v", err)
+	}
+}
+
+func TestFlushIsBatched(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	s.flushEvery = 3
+	ctx := context.Background()
+	size := func() int64 {
+		fi, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) {
+			return 0
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fi.Size()
+	}
+
+	must(t, s.Discover(ctx, "a", Asset{Source: "feed-image"}))
+	must(t, s.Discover(ctx, "b", Asset{Source: "feed-image"}))
+	if size() != 0 {
+		t.Fatal("file written before the batch filled")
+	}
+	must(t, s.Discover(ctx, "c", Asset{Source: "feed-image"}))
+	if size() == 0 {
+		t.Fatal("file not written when the batch filled")
+	}
+	before := size()
+	must(t, s.MarkError(ctx, "a", "boom"))
+	if size() != before {
+		t.Fatal("file rewritten before the next batch filled")
+	}
+	must(t, s.Flush())
+	if size() == before {
+		t.Fatal("Flush did not write pending change")
+	}
+}
+
+func TestCloseFlushesPendingChanges(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	must(t, s.Discover(context.Background(), "a", Asset{Source: "feed-image"}))
+	must(t, s.Close())
+	s2, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s2.Close() })
+	if _, err := s2.Get(context.Background(), "a"); err != nil {
+		t.Fatalf("pending change lost on Close: %v", err)
+	}
+}
+
+// State written before upload tracking carried no uploadedAt; those
+// entries decode as not uploaded and so get uploaded on the next run.
+func TestLegacyEntryDecodesAsNotUploaded(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	legacy := `{"x":{"source":"feed-image","discoveredAt":"2026-01-01T00:00:00Z","savedAt":"2026-01-01T00:00:00Z","savedPath":"x.jpg"}}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	if saved, _ := s.IsSaved(context.Background(), "x"); !saved {
+		t.Fatal("legacy entry should be saved")
+	}
+	if up, _ := s.IsUploaded(context.Background(), "x"); up {
+		t.Fatal("legacy entry should not count as uploaded")
+	}
+}
+
+// The state file is replaced by rename on every flush; the lock must
+// outlive that.
+func TestLockSurvivesFlush(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	first, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = first.Close() })
+	for i := 0; i < DefaultFlushEvery; i++ {
+		if err := first.Discover(context.Background(), fmt.Sprintf("a%d", i), Asset{Source: "s"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("state not flushed: %v", err)
+	}
+	second, err := Open(context.Background(), path)
+	if err == nil {
+		_ = second.Close()
+	}
+	if !errors.Is(err, ErrLocked) {
+		t.Fatalf("second Open after a flush: err = %v, want ErrLocked", err)
 	}
 }

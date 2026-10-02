@@ -199,8 +199,6 @@ func runSmokeImmichRoundTrip(ctx context.Context, client *http.Client, host, api
 		Filename:       testID + ".jpg",
 		FileCreatedAt:  now,
 		FileModifiedAt: now,
-		DeviceID:       "bairn-smoke",
-		DeviceAssetID:  testID,
 		Metadata:       map[string]string{"bairnSmoke": "true"},
 	})
 	if err != nil {

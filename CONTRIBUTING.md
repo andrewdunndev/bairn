@@ -57,8 +57,9 @@ tree is the toolkit for noticing.
 `discovery/PROTOCOL.md` documents the methodology; `discovery/probe/`
 is the generic-by-construction implementation. Run modes:
 
-1. **Shape probe** (`shape.py`): hits a known endpoint list, emits
-   JSON-key signatures, diffs against committed baselines.
+1. **Shape probe** (`bairn drift`): hits a known endpoint list, emits
+   JSON-key signatures, diffs against committed baselines; see
+   [`discovery/baselines/main/README.md`](./discovery/baselines/main/README.md).
 2. **Traffic capture** (`capture.md`): drive the official client via
    Playwright, capture HARs, diff against the manifest.
 3. **Schema introspection** (`introspect.py`): if the vendor has

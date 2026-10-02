@@ -1,0 +1,40 @@
+# Rule overrides for jobs a push, MR or tag pipeline runs. .gitlab-ci.yml
+# includes this file with the same not-a-schedule rule as the catalog
+# components these jobs extend.
+
+# Job-set parity for the workflow guard above: go-lint (lint) and
+# go-audit (audit) ship with NO rules of their own, so they fall back
+# to the classic implicit `only: [branches, tags]` default -- which
+# does NOT include merge_request_event. That made them push-pipeline
+# only; with push suppressed on a branch with an open MR, they'd never
+# run at all. Minimal consumer-side override: restate only `rules`,
+# every other key (image, script, allow_failure, ...) still comes from
+# the catalog component.
+lint:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG'
+
+audit:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG'
+
+# test uses the catalog's pinned ci-go image. Pinning to v2.0.0
+# matches the catalog tag bairn pins; keeps tooling deliberate.
+#
+# rules: same job-set-parity fix as lint/audit above -- this local job
+# had no rules block, which meant the implicit only:[branches,tags]
+# default kept it off merge_request_event pipelines.
+test:
+  stage: test
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.8.0@sha256:8a28513a9ad191e0880c585baa31f31e533c5288561c369c634782e74066804a
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_PIPELINE_SOURCE == "push"'
+    - if: '$CI_COMMIT_TAG'
+  script:
+    - go test -race ./...
+

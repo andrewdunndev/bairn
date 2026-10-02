@@ -21,7 +21,7 @@
   <line x1="200" y1="200" x2="200" y2="220" stroke="#909090" stroke-width="1.5" marker-end="url(#d-arrow)"/>
 
   <rect x="60" y="220" width="280" height="50" rx="3" fill="none" stroke="#e0e0e0" stroke-width="1"/>
-  <text x="200" y="240" text-anchor="middle" font-size="10" font-weight="600" fill="#0a0a0a">probe/shape.py</text>
+  <text x="200" y="240" text-anchor="middle" font-size="10" font-weight="600" fill="#0a0a0a">bairn drift</text>
   <text x="200" y="256" text-anchor="middle" font-size="9" fill="#404040">hit each endpoint; record JSON keys + types</text>
 
   <line x1="200" y1="270" x2="200" y2="290" stroke="#909090" stroke-width="1.5" marker-end="url(#d-arrow)"/>

@@ -35,14 +35,15 @@ func filter(raw any, t reflect.Type) any {
 		if !ok {
 			// Custom-unmarshalled or scalar wire value
 			// (e.g. FamlyTime decodes a JSON string into a Go
-			// struct via UnmarshalJSON). Preserve raw shape.
-			return raw
+			// struct via UnmarshalJSON). Scalars keep their shape;
+			// an array here is reduced to a kind marker.
+			return kindOnly(raw)
 		}
 		return filterStruct(m, t)
 	case reflect.Slice, reflect.Array:
 		arr, ok := raw.([]any)
 		if !ok {
-			return raw
+			return kindOnly(raw)
 		}
 		elem := t.Elem()
 		out := make([]any, len(arr))
@@ -51,8 +52,22 @@ func filter(raw any, t reflect.Type) any {
 		}
 		return out
 	default:
-		return raw
+		return kindOnly(raw)
 	}
+}
+
+// kindOnly keeps scalars and replaces a container the schema did not
+// expect with a marker. Passing it through would carry vendor keys
+// (ids keyed into a map, for instance) into a published signature;
+// the marker still surfaces as a type change in the diff.
+func kindOnly(raw any) any {
+	switch raw.(type) {
+	case map[string]any:
+		return "<object>"
+	case []any:
+		return "<array>"
+	}
+	return raw
 }
 
 func filterStruct(raw map[string]any, t reflect.Type) any {
