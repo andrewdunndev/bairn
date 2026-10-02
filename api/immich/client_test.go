@@ -29,6 +29,7 @@ type fakeImmich struct {
 	sawDeviceField  bool
 	lastSidecar     []byte
 	sidecarFilename string
+	assetFilename   string
 
 	respondWith struct {
 		statusCode int
@@ -59,6 +60,8 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 		}
 		mr := multipart.NewReader(r.Body, params["boundary"])
 		f.lastMetadata = map[string]string{}
+		f.lastFilename = ""
+		unsupported := ""
 		for {
 			p, err := mr.NextPart()
 			if err == io.EOF {
@@ -69,9 +72,21 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 				return
 			}
 			body, _ := io.ReadAll(p)
-			if p.FormName() == "sidecarData" {
+			// Immich checks each file part's type by body.filename when
+			// set, else by the part's own filename.
+			name := f.lastFilename
+			if name == "" {
+				name = p.FileName()
+			}
+			switch p.FormName() {
+			case "assetData":
+				f.assetFilename = p.FileName()
+			case "sidecarData":
 				f.lastSidecar = body
 				f.sidecarFilename = p.FileName()
+				if !strings.HasSuffix(name, ".xmp") {
+					unsupported = name
+				}
 			}
 			switch p.FormName() {
 			case "fileCreatedAt":
@@ -97,6 +112,11 @@ func newFakeImmich(t *testing.T) *fakeImmich {
 			}
 		}
 
+		if unsupported != "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"message":"Unsupported file type ` + unsupported + `"}`))
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(f.respondWith.statusCode)
 		_, _ = w.Write([]byte(f.respondWith.body))
@@ -133,8 +153,8 @@ func TestUploadCreated(t *testing.T) {
 	if f.lastChecksum != want {
 		t.Errorf("checksum = %q, want %q", f.lastChecksum, want)
 	}
-	if f.lastFilename != "img-001.jpg" {
-		t.Errorf("filename = %q", f.lastFilename)
+	if f.assetFilename != "img-001.jpg" || f.lastFilename != "" {
+		t.Errorf("assetData filename = %q, filename field = %q", f.assetFilename, f.lastFilename)
 	}
 	if f.sawDeviceField {
 		t.Error("deviceId/deviceAssetId sent; Immich 3.x dropped them")

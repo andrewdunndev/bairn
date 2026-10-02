@@ -185,12 +185,10 @@ func buildUploadBody(in UploadInput) ([]byte, string, error) {
 		return nil, "", err
 	}
 
-	// Optional filename.
-	if in.Filename != "" {
-		if err := w.WriteField("filename", in.Filename); err != nil {
-			return nil, "", err
-		}
-	}
+	// No separate "filename" field: Immich validates every file part
+	// against body.filename when it is set, so a video's ".mp4" name
+	// would reject its "sidecar.xmp" part. The assetData part's own
+	// filename carries the original name instead.
 
 	// Metadata: a single field whose value is a JSON-encoded array
 	// of {key, value} objects. Each `value` is an object (string
