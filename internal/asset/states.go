@@ -222,7 +222,7 @@ func videoOffset(item famly.FeedItem, zone *time.Location) string {
 	if zone == nil {
 		zone = time.Local
 	}
-	return famly.FormatOffset(item.CreatedDate.Time.In(zone))
+	return famly.FormatOffset(item.CreatedDate.In(zone))
 }
 
 // imageOffset is the offset for an image's EXIF date: its own zone

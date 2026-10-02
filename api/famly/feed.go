@@ -46,7 +46,7 @@ func (c *Client) Pages(ctx context.Context) iter.Seq2[FeedPage, error] {
 				return
 			}
 			last := page.FeedItems[len(page.FeedItems)-1]
-			if last.FeedItemID == cursor || (!olderThan.IsZero() && last.CreatedDate.Time.After(olderThan)) {
+			if last.FeedItemID == cursor || (!olderThan.IsZero() && last.CreatedDate.After(olderThan)) {
 				yield(FeedPage{}, errors.New("famly: feed cursor did not advance"))
 				return
 			}
