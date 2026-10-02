@@ -51,6 +51,11 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- Videos upload to Immich: bairn sent a `filename` form field, and
+  Immich validates every file part against it, so a video's `.mp4`
+  name rejected its `sidecar.xmp` part ("Unsupported file type"). The
+  name now rides only on the asset part. The README's
+  `IMMICH_BASE_URL` example now ends in `/api`, which the client needs.
 - Videos download again: Famly sends a video's link as `videoUrl`, and
   bairn read `url`, so every video was discovered with no link and
   never saved. Videos Famly is still transcoding are left for a later

@@ -177,7 +177,7 @@ Optional Immich sink (uploads alongside disk save):
 
 | Var | Purpose | Default |
 |---|---|---|
-| `IMMICH_BASE_URL` | Immich server URL, e.g. `https://photos.example.com` | unset |
+| `IMMICH_BASE_URL` | Immich API URL, ending in `/api`, e.g. `https://photos.example.com/api` | unset |
 | `IMMICH_API_KEY` | Immich API key (User Settings → API Keys) | unset |
 
 **Immich version requirement: v3.0.2 or later.** bairn targets the
