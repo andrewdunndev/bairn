@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"gitlab.com/dunn.dev/bairn/internal/privdir"
 )
 
 // Asset is the durable per-image record. JSON-encoded; new fields
@@ -74,7 +76,7 @@ var ErrLocked = errors.New("state: another bairn process holds the lock on this 
 // state file itself is replaced on every flush, which would leave a
 // lock on it pointing at an unlinked inode.
 func Open(ctx context.Context, path string) (*Store, error) {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	if err := privdir.Ensure(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("state: create dir for %s: %w", path, err)
 	}
 	f, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE, 0o600)

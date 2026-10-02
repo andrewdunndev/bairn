@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gitlab.com/dunn.dev/bairn/internal/exif"
+	"gitlab.com/dunn.dev/bairn/internal/privdir"
 )
 
 // DefaultFilenamePattern is jacobbunk-style. Source values like
@@ -42,7 +43,7 @@ func NewDisk(root, filenamePattern, dirPattern string) (*Disk, error) {
 	if dirPattern == "" {
 		dirPattern = DefaultDirPattern
 	}
-	if err := os.MkdirAll(root, 0o700); err != nil {
+	if err := privdir.Ensure(root); err != nil {
 		return nil, fmt.Errorf("sink: mkdir %s: %w", root, err)
 	}
 	return &Disk{root: root, filenamePattern: filenamePattern, dirPattern: dirPattern}, nil

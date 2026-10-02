@@ -15,6 +15,8 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Changed
 
+- The save root and the state directory are set to mode 0700 even when
+  they already existed at a looser mode. Parent directories are untouched.
 - `main.Version` defaults to `dev`; `make build` targets stamp it from
   `git describe`. The EXIF Software tag reads `bairn 0.6.0` for a `v0.6.0`
   tag and `bairn dev` for an unstamped build.
