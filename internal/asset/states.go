@@ -215,7 +215,7 @@ func (r Recorded) RecordedAt() time.Time    { return r.recordedAt }
 // means time.Local.
 func videoOffset(item famly.FeedItem, zone *time.Location) string {
 	for _, img := range item.Images {
-		if img.CreatedAt.Timezone != "" {
+		if img.CreatedAt.Zoned() {
 			return img.CreatedAt.OffsetAt(item.CreatedDate.Time)
 		}
 	}
@@ -226,9 +226,10 @@ func videoOffset(item famly.FeedItem, zone *time.Location) string {
 }
 
 // imageOffset is the offset for an image's EXIF date: its own zone
-// when Famly gave one, else zone's offset at the image time.
+// when Famly named one, else zone's offset at the image time
+// (Famly's "UTC" label counts as no zone; see ImageTime.Zoned).
 func imageOffset(img famly.Image, at time.Time, zone *time.Location) string {
-	if img.CreatedAt.Timezone != "" {
+	if img.CreatedAt.Zoned() {
 		return img.CreatedAt.OffsetAt(at)
 	}
 	if zone == nil {

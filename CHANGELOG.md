@@ -51,6 +51,10 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Fixed
 
+- Images Famly labels "UTC" are dated in `--tz` / `BAIRN_TZ` (default:
+  the local zone) like zoneless ones: Famly stores the instant, not
+  where the photo was taken, so a Detroit nursery's photos no longer
+  land 4-5 hours late, or on the next day, in Immich's timeline.
 - Neither client follows a redirect that would replay its credential
   header to another host (Immich follows none, Famly stays on its host).
 - An image with no zone of its own is dated in the local zone (as videos

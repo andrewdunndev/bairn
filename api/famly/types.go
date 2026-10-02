@@ -184,6 +184,13 @@ func (it ImageTime) OffsetString() string {
 	return it.OffsetAt(it.Date.Time)
 }
 
+// Zoned reports whether Famly named a real zone for the image. Famly
+// labels images "UTC" when it stored only the instant, not where the
+// photo was taken, so "UTC" counts as no zone.
+func (it ImageTime) Zoned() bool {
+	return it.Timezone != "" && it.Timezone != "UTC"
+}
+
 // OffsetAt returns the offset of ImageTime.Timezone at the instant
 // at, so a caller that stamps a different instant (a post date)
 // gets the offset that was in force then. Falls back to "+00:00"

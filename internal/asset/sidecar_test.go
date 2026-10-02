@@ -204,6 +204,20 @@ func TestVideoOffsetDefaultsToZone(t *testing.T) {
 	}
 }
 
+func TestVideoOffsetSkipsUTCLabelledSibling(t *testing.T) {
+	detroit, err := time.LoadLocation("America/Detroit")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	item := famly.FeedItem{
+		CreatedDate: famly.FamlyTime{Time: time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC)},
+		Images:      []famly.Image{{ImageID: "i", CreatedAt: famly.ImageTime{Timezone: "UTC"}}},
+	}
+	if got := DiscoverVideo(famly.Video{VideoID: "v"}, item, detroit).tzOffset; got != "-04:00" {
+		t.Errorf("offset = %q, want -04:00", got)
+	}
+}
+
 func TestVideoOffsetNilZoneIsLocal(t *testing.T) {
 	old := time.Local
 	t.Cleanup(func() { time.Local = old })
@@ -228,6 +242,7 @@ func TestImageOffsetDefaultsToZone(t *testing.T) {
 	}{
 		{"zoneless summer", time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC), "", detroit, "-04:00"},
 		{"zoneless winter", time.Date(2026, 1, 15, 17, 0, 0, 0, time.UTC), "", detroit, "-05:00"},
+		{"famly utc label is no zone", time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC), "UTC", detroit, "-04:00"},
 		{"own zone wins", time.Date(2026, 7, 4, 16, 0, 0, 0, time.UTC), "Europe/Paris", detroit, "+02:00"},
 	}
 	for _, c := range cases {
