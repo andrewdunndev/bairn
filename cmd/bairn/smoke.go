@@ -14,6 +14,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/contract"
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 )
 
 // runSmoke implements the smoke subcommand: a tag-time gate that
@@ -101,7 +102,7 @@ func runSmokeImmich(ctx context.Context, cfg *config.Config, logger *slog.Logger
 
 	logger.Info("smoke", "target", "immich", "host", sc.host, "mode", smokeMode(*probeOnly))
 
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	httpClient := smokeHTTPClient()
 
 	// Authenticate. If user+password, do the login + mint flow so
 	// the rest of the gate runs through the production x-api-key
@@ -222,3 +223,7 @@ func runSmokeImmichRoundTrip(ctx context.Context, client *http.Client, host, api
 	logger.Info("smoke", "result", "ok", "phase", "complete")
 	return 0
 }
+
+// smokeHTTPClient carries the Immich password, session token and minted
+// API key, so it refuses cross-host and downgrade redirects.
+func smokeHTTPClient() *http.Client { return safehttp.NewClient(30 * time.Second) }

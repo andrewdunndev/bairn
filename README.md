@@ -344,11 +344,12 @@ moves it is the operator's call.
 
 ## Status
 
-bairn is at v0.1.0. The disk-first save path is validated against
-the maintainer's Famly account, with full EXIF and XMP embedded and
-reruns idempotent. Broader validation across other Famly accounts
-is pending. The Immich upload path is fixture-tested, not yet
-live-tested.
+The disk-first save path is validated against the maintainer's Famly
+account, with full EXIF and XMP embedded and reruns idempotent; other
+accounts are not yet covered. The Immich path is live-tested against
+Immich 3.0.2 (the floor) through `make pre-tag-check` before each tag.
+A weekly drift check compares Famly's response shapes against
+committed baselines.
 
 ## Architecture
 

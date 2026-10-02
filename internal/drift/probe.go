@@ -12,6 +12,8 @@ import (
 	"reflect"
 	"strings"
 	"time"
+
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 )
 
 // ProbeResult captures one endpoint's result from a probe run.
@@ -53,7 +55,7 @@ func Probe(ctx context.Context, m *Manifest, opts ProbeOptions) ([]ProbeResult, 
 	}
 	client := opts.HTTPClient
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = defaultClient()
 	}
 	token := opts.Token
 	if token == "" && m.AuthEnv != "" {
@@ -152,3 +154,6 @@ func hit(ctx context.Context, client *http.Client, m *Manifest, ep Endpoint, tok
 	}
 	return res
 }
+
+// defaultClient carries the access token, so it gets the redirect policy.
+func defaultClient() *http.Client { return safehttp.NewClient(30 * time.Second) }

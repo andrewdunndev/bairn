@@ -30,6 +30,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 )
 
 // ImmichLogin authenticates with email + password and returns the
@@ -38,7 +40,7 @@ import (
 // IMMICH_BAIRN_PASSWORD) instead of a long-lived API key.
 func ImmichLogin(ctx context.Context, client *http.Client, baseURL, email, password string) (string, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = defaultClient()
 	}
 	body, _ := json.Marshal(map[string]string{"email": email, "password": password})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/auth/login", bytes.NewReader(body))
@@ -81,7 +83,7 @@ type ImmichAPIKey struct {
 // production.
 func MintImmichAPIKey(ctx context.Context, client *http.Client, baseURL, token, name string, permissions []string) (*ImmichAPIKey, error) {
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = defaultClient()
 	}
 	body, _ := json.Marshal(map[string]any{"name": name, "permissions": permissions})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/api-keys", bytes.NewReader(body))
@@ -116,7 +118,7 @@ func MintImmichAPIKey(ctx context.Context, client *http.Client, baseURL, token, 
 // cleanup error, but should log loudly so leaked keys are noticed.
 func DeleteImmichAPIKey(ctx context.Context, client *http.Client, baseURL, token, keyID string) error {
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = defaultClient()
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, baseURL+"/api/api-keys/"+keyID, nil)
 	if err != nil {
@@ -141,7 +143,7 @@ func DeleteImmichAPIKey(ctx context.Context, client *http.Client, baseURL, token
 // leave no trace.
 func DeleteImmichAsset(ctx context.Context, client *http.Client, baseURL, apiKey, assetID string) error {
 	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+		client = defaultClient()
 	}
 	body, _ := json.Marshal(map[string]any{
 		"ids":   []string{assetID},
@@ -186,7 +188,7 @@ type ImmichManifest struct {
 // non-destructive against the operator's library.
 func ProbeImmichUploadRequiredFields(ctx context.Context, httpClient *http.Client, baseURL, apiKey string) (*ImmichManifest, error) {
 	if httpClient == nil {
-		httpClient = &http.Client{Timeout: 30 * time.Second}
+		httpClient = defaultClient()
 	}
 
 	body, contentType, err := buildMinimalUploadProbe()
@@ -378,3 +380,7 @@ func fetchImmichVersion(ctx context.Context, client *http.Client, baseURL, apiKe
 	}
 	return fmt.Sprintf("v%d.%d.%d", v.Major, v.Minor, v.Patch), nil
 }
+
+// defaultClient is the fallback for calls that carry a password, session
+// token or API key; it refuses cross-host and downgrade redirects.
+func defaultClient() *http.Client { return safehttp.NewClient(30 * time.Second) }

@@ -36,20 +36,24 @@ refresh-immich-validator: build
 	@echo "Captured required-field set. Review with:"
 	@echo "  git diff api/immich/required-fields.json"
 
+# Stamped into main.Version; "dev" when built without these targets.
+VERSION ?= $(or $(shell git describe --tags --always --dirty 2>/dev/null),dev)
+LDFLAGS := -X main.Version=$(VERSION)
+
 build:
 	mkdir -p bin
-	go build -o $(BINARY) ./cmd/bairn
+	go build -ldflags "$(LDFLAGS)" -o $(BINARY) ./cmd/bairn
 
 build-linux:
 	mkdir -p bin
 	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 \
-		go build -trimpath -ldflags "-s -w" \
+		go build -trimpath -ldflags "-s -w $(LDFLAGS)" \
 		-o $(BINARY)-linux-amd64 ./cmd/bairn
 
 build-darwin:
 	mkdir -p bin
 	GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 \
-		go build -trimpath -ldflags "-s -w" \
+		go build -trimpath -ldflags "-s -w $(LDFLAGS)" \
 		-o $(BINARY)-darwin-arm64 ./cmd/bairn
 
 build-all: build-linux build-darwin

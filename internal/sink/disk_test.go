@@ -138,3 +138,23 @@ func TestRenderPatternMissingKeyErrors(t *testing.T) {
 		t.Fatal("expected error for unknown template key")
 	}
 }
+
+func TestNewDiskLeavesExistingRootMode(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "photos")
+	if err := os.Mkdir(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewDisk(root, "", ""); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := fi.Mode().Perm(); got != 0o755 {
+		t.Errorf("root mode = %o, want 755 untouched", got)
+	}
+}

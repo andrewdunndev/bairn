@@ -18,6 +18,7 @@ import (
 	"sync"
 	"time"
 
+	"gitlab.com/dunn.dev/bairn/internal/privdir"
 	"golang.org/x/sys/unix"
 )
 
@@ -77,6 +78,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return nil, fmt.Errorf("state: create dir for %s: %w", path, err)
 	}
+	privdir.WarnLoose(filepath.Dir(path))
 	f, err := os.OpenFile(path+".lock", os.O_RDWR|os.O_CREATE, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("state: open lock for %s: %w", path, err)

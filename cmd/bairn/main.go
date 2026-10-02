@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 	_ "time/tzdata"
@@ -22,7 +23,14 @@ import (
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
-var Version = "0.5.0"
+var Version = "dev"
+
+// software is the EXIF Software tag: "bairn dev", "bairn 0.6.0" or
+// "bairn 0.5.0-3-gabc1234-dirty". A leading "v" from a tag or
+// `git describe` is dropped so the tag reads the same either way.
+func software(version string) string {
+	return "bairn " + strings.TrimPrefix(version, "v")
+}
 
 const usage = `usage: bairn <subcommand> [flags]
 
@@ -186,7 +194,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		Zone:               zone,
 		HouseholdLogins:    logins,
 		HouseholdChildren:  children,
-		Software:           "bairn " + Version,
+		Software:           software(Version),
 		IncludeSystemPosts: *includeSystem,
 	})
 	if err != nil {

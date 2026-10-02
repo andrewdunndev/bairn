@@ -303,3 +303,25 @@ func TestLockSurvivesFlush(t *testing.T) {
 		t.Fatalf("second Open after a flush: err = %v, want ErrLocked", err)
 	}
 }
+
+func TestOpenLeavesUserDirMode(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "state")
+	if err := os.Mkdir(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(context.Background(), filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = s.Close() }()
+	fi, err := os.Stat(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o755 {
+		t.Errorf("mode = %o, want 755 untouched", fi.Mode().Perm())
+	}
+}

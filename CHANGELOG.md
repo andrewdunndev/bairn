@@ -15,6 +15,19 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Changed
 
+- The default save root and state directory (under the XDG data and state
+  dirs) are set to mode 0700 even when they already existed at a looser
+  mode. A directory you choose with `--save-dir`, `BAIRN_SAVE_DIR` or
+  `BAIRN_STATE_PATH` is created at 0700 if missing but never chmodded;
+  bairn logs a warning when it is accessible to group or other.
+- `main.Version` defaults to `dev`; `make build` targets stamp it from
+  `git describe`. The EXIF Software tag reads `bairn 0.6.0` for a `v0.6.0`
+  tag and `bairn dev` for an unstamped build, including a build from a
+  source tarball with no `.git`. `make build VERSION=v0.6.0` overrides it.
+- Every client that carries a credential (Famly login, Famly API, drift
+  probe, Immich, the contract and smoke gates) refuses a redirect to another host or from https to
+  http, and stops after 10 redirects. Immich previously refused all
+  redirects; same-host ones now follow.
 - A 401 or 403 from Immich, or five failed uploads in a row, stops
   uploads for the rest of the run instead of retrying every asset; the
   rest are saved to disk, counted in `uploadFailed`, and a rerun
