@@ -15,6 +15,9 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Changed
 
+- `main.Version` defaults to `dev`; `make build` targets stamp it from
+  `git describe`. The EXIF Software tag reads `bairn 0.6.0` for a `v0.6.0`
+  tag and `bairn dev` for an unstamped build.
 - Every client that carries a credential (Famly login, Famly API, drift
   probe, Immich) refuses a redirect to another host or from https to
   http, and stops after 10 redirects. Immich previously refused all
