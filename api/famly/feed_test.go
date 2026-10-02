@@ -2,6 +2,7 @@ package famly
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -108,5 +109,17 @@ func TestPagesStopsWhenCursorDoesNotAdvance(t *testing.T) {
 	}
 	if calls != 2 {
 		t.Errorf("calls = %d, want 2", calls)
+	}
+}
+
+// TestVideoDecodesFamlyKeys pins the wire names Famly uses for a
+// video's link and processing state.
+func TestVideoDecodesFamlyKeys(t *testing.T) {
+	var v Video
+	if err := json.Unmarshal([]byte(`{"videoId":"v1","videoUrl":"https://cdn/v1.mp4","thumbnailUrl":"https://cdn/t.jpg","transcoding":true,"width":406,"height":720,"duration":22}`), &v); err != nil {
+		t.Fatal(err)
+	}
+	if v.URL != "https://cdn/v1.mp4" || !v.Transcoding || v.Width != 406 || v.Duration != 22 {
+		t.Errorf("decoded %+v", v)
 	}
 }

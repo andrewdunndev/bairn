@@ -156,16 +156,16 @@ func (i Image) BestURL() string {
 	return candidate
 }
 
-// Video is one video attached to a feed item. Shape derived from
-// the first populated capture; refine when a richer sample lands.
+// Video is one video attached to a feed item. URL is a signed CDN
+// link to the stored video; Transcoding is true while Famly is still
+// processing an upload, when the link is not yet the final file.
 type Video struct {
-	VideoID    string `json:"videoId"`
-	URL        string `json:"url"`
-	Thumbnail  string `json:"thumbnail"`
-	Duration   int    `json:"duration"`
-	Width      int    `json:"width"`
-	Height     int    `json:"height"`
-	Expiration string `json:"expiration"`
+	VideoID     string `json:"videoId"`
+	URL         string `json:"videoUrl"`
+	Duration    int    `json:"duration"`
+	Width       int    `json:"width"`
+	Height      int    `json:"height"`
+	Transcoding bool   `json:"transcoding"`
 }
 
 // ImageTime is the createdAt object Famly attaches to images. The
@@ -182,6 +182,13 @@ type ImageTime struct {
 // "-HH:MM") for ImageTime.Timezone at ImageTime.Date.
 func (it ImageTime) OffsetString() string {
 	return it.OffsetAt(it.Date.Time)
+}
+
+// Zoned reports whether Famly named a real zone for the image. Famly
+// labels images "UTC" when it stored only the instant, not where the
+// photo was taken, so "UTC" counts as no zone.
+func (it ImageTime) Zoned() bool {
+	return it.Timezone != "" && it.Timezone != "UTC"
 }
 
 // OffsetAt returns the offset of ImageTime.Timezone at the instant

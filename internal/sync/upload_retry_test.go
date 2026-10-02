@@ -165,7 +165,7 @@ func TestVideoRetryResendsSidecarFromDisk(t *testing.T) {
 		}
 		fmt.Fprintf(w, `{"feedItems":[{"feedItemId":"p","originatorId":"Post:e",
 "createdDate":"2026-05-06T14:00:00Z","body":"clip","images":[],
-"videos":[{"videoId":"vid-1","url":"%s/v/1"}]}]}`, famlySrv.URL)
+"videos":[{"videoId":"vid-1","videoUrl":"%s/v/1"}]}]}`, famlySrv.URL)
 	})
 	mux.HandleFunc("/v/1", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "video/mp4")

@@ -253,7 +253,9 @@ func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedIt
 		processOne(ctx, deps, opts, asset.DiscoverImage(img, item, opts.Zone), res, logger)
 	}
 	for _, vid := range item.Videos {
-		if opts.Source != SourceAll {
+		// A video still transcoding is left for a later run, which
+		// picks it up once Famly serves the final file.
+		if opts.Source != SourceAll || vid.Transcoding || vid.URL == "" {
 			res.Skipped++
 			continue
 		}
