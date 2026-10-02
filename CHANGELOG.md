@@ -15,6 +15,10 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ### Changed
 
+- Every client that carries a credential (Famly login, Famly API, drift
+  probe, Immich) refuses a redirect to another host or from https to
+  http, and stops after 10 redirects. Immich previously refused all
+  redirects; same-host ones now follow.
 - A 401 or 403 from Immich, or five failed uploads in a row, stops
   uploads for the rest of the run instead of retrying every asset; the
   rest are saved to disk, counted in `uploadFailed`, and a rerun

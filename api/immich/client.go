@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"gitlab.com/dunn.dev/bairn/internal/retry"
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 )
 
 // Client uploads assets to one Immich server.
@@ -54,16 +55,11 @@ func WithLogger(l *slog.Logger) Option { return func(c *Client) { c.logger = l }
 // API key (managed under user settings; sent as x-api-key).
 func New(baseURL, apiKey string, opts ...Option) *Client {
 	c := &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		apiKey:  apiKey,
-		httpClient: &http.Client{
-			Timeout: 5 * time.Minute,
-			// The key rides a custom header that net/http would replay
-			// to another host on a 307/308; a redirect is an error.
-			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
-		},
-		logger: slog.Default(),
-		retry:  retry.Default(),
+		baseURL:    strings.TrimRight(baseURL, "/"),
+		apiKey:     apiKey,
+		httpClient: safehttp.NewClient(5 * time.Minute),
+		logger:     slog.Default(),
+		retry:      retry.Default(),
 	}
 	for _, o := range opts {
 		o(c)

@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/Khan/genqlient/graphql"
+
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 )
 
 // Login exchanges email + password for a fresh session token.
@@ -23,7 +25,7 @@ func Login(ctx context.Context, baseURL, email, password, deviceID string) (stri
 	if baseURL == "" {
 		baseURL = DefaultBaseURL
 	}
-	httpClient := &http.Client{Timeout: 30 * time.Second}
+	httpClient := loginHTTPClient()
 	gqlClient := graphql.NewClient(baseURL+"/graphql", httpClient)
 
 	resp, err := Authenticate(ctx, gqlClient, email, password, deviceID, false)
@@ -55,3 +57,6 @@ func NewRefreshingTokenFromCredentials(baseURL, email, password, deviceID string
 		return Login(ctx, baseURL, e, p, d)
 	})
 }
+
+// loginHTTPClient carries the password, so it gets the redirect policy.
+func loginHTTPClient() *http.Client { return safehttp.NewClient(30 * time.Second) }
