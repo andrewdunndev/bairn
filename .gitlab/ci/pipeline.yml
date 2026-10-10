@@ -30,7 +30,7 @@ audit:
 # default kept it off merge_request_event pipelines.
 test:
   stage: test
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.8.0@sha256:8a28513a9ad191e0880c585baa31f31e533c5288561c369c634782e74066804a
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.10.0@sha256:d1d6723aa0c42746952aa932eca96d0734a34015e4b068ec3239f0ffe8781448
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push"'
