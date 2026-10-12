@@ -13,7 +13,6 @@ import SectionLabel from '@dunn.dev/reference/chrome/SectionLabel.astro';
       <a class="cta-primary" href="https://gitlab.com/dunn.dev/bairn">Read on GitLab →</a>
       <a class="cta-secondary" href="https://gitlab.com/dunn.dev/bairn/-/releases">Releases</a>
     </Fragment>
-    <img slot="aside" src="/album-glyph.svg" alt="" aria-hidden="true" style="width:11rem;opacity:0.45" />
   </Hero>
 
   <section class="section">
@@ -48,7 +47,38 @@ import SectionLabel from '@dunn.dev/reference/chrome/SectionLabel.astro';
       child's first three years of childcare goes with it.
     </p>
     <figure class="diagram">
-      <img src="/vendor-survives.svg" alt="Flow diagram: Famly's nursery feed flows into bairn, which writes to your disk. Outages, account closures, and API changes originate at Famly but terminate at a barrier between bairn and the disk — the on-disk archive is unaffected." />
+      <svg viewBox="0 0 720 280" role="img" aria-label="Three stages in a horizontal flow: Famly's nursery feed on the left, the bairn binary in the middle, and the on-disk archive on the right. Three disruption events (outages, account closures, API changes) originate at Famly and terminate at a barrier between bairn and the disk, never reaching the archive.">
+  <rect fill="none" stroke="var(--text-muted)" stroke-width="1" x="60" y="80" width="140" height="80" rx="4"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="14" font-weight="700" letter-spacing="0.06em" fill="var(--text-muted)" x="132" y="108" text-anchor="middle">FAMLY</text>
+  <text font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="var(--text-2)" x="132" y="128" text-anchor="middle">nursery feed</text>
+  <text font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="var(--text-2)" x="132" y="144" text-anchor="middle">photos, captions</text>
+  <line fill="none" stroke="var(--accent)" stroke-width="1.5" x1="200" y1="120" x2="288" y2="120"/>
+  <polygon fill="var(--accent)" points="288,120 280,116 280,124"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="11" letter-spacing="0.04em" fill="var(--text-muted)" x="244" y="112" text-anchor="middle">PULL</text>
+  <rect fill="none" stroke="var(--accent)" stroke-width="2" x="288" y="80" width="140" height="80" rx="4"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="14" font-weight="700" letter-spacing="0.06em" fill="var(--accent)" x="360" y="108" text-anchor="middle">BAIRN</text>
+  <text font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="var(--text-2)" x="360" y="128" text-anchor="middle">one binary</text>
+  <text font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="var(--text-2)" x="360" y="144" text-anchor="middle">your machine</text>
+  <line fill="none" stroke="var(--accent)" stroke-width="1.5" x1="428" y1="120" x2="516" y2="120"/>
+  <polygon fill="var(--accent)" points="516,120 508,116 508,124"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="11" letter-spacing="0.04em" fill="var(--text-muted)" x="472" y="112" text-anchor="middle">WRITE</text>
+  <rect fill="none" stroke="var(--text-muted)" stroke-width="1" x="516" y="80" width="140" height="80" rx="4"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="14" font-weight="700" letter-spacing="0.06em" fill="var(--text-muted)" x="588" y="108" text-anchor="middle">YOUR DISK</text>
+  <text font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="var(--text-2)" x="588" y="128" text-anchor="middle">dated folders</text>
+  <text font-family="'IBM Plex Sans', system-ui, sans-serif" font-size="12" fill="var(--text-2)" x="588" y="144" text-anchor="middle">EXIF · XMP embedded</text>
+  <line fill="none" stroke="var(--danger)" stroke-width="2" x1="472" y1="174" x2="472" y2="268"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="10" font-weight="600" letter-spacing="0.08em" fill="var(--danger)" x="484" y="252" text-anchor="start">VENDOR</text>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="10" font-weight="600" letter-spacing="0.08em" fill="var(--danger)" x="484" y="266" text-anchor="start">SURVIVES</text>
+  <path fill="none" stroke="var(--danger)" stroke-width="1.25" stroke-dasharray="4 3" d="M132,160 L330,190 H464"/>
+  <polygon fill="var(--danger)" points="472,190 464,186 464,194"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="11" letter-spacing="0.04em" fill="var(--text-muted)" x="338" y="184" text-anchor="start">OUTAGES</text>
+  <path fill="none" stroke="var(--danger)" stroke-width="1.25" stroke-dasharray="4 3" d="M132,160 L290,214 H464"/>
+  <polygon fill="var(--danger)" points="472,214 464,210 464,218"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="11" letter-spacing="0.04em" fill="var(--text-muted)" x="298" y="208" text-anchor="start">ACCOUNT CLOSURES</text>
+  <path fill="none" stroke="var(--danger)" stroke-width="1.25" stroke-dasharray="4 3" d="M132,160 L250,238 H464"/>
+  <polygon fill="var(--danger)" points="472,238 464,234 464,242"/>
+  <text font-family="'IBM Plex Mono', Menlo, monospace" font-size="11" letter-spacing="0.04em" fill="var(--text-muted)" x="258" y="232" text-anchor="start">API CHANGES</text>
+      </svg>
       <p class="diagram-caption">disruption stops at the disk boundary</p>
     </figure>
     <p class="section-prose">
