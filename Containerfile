@@ -21,7 +21,7 @@
 #     -v ~/Pictures/bairn:/data \
 #     registry.gitlab.com/dunn.dev/bairn/cli:latest fetch --max-pages 1
 
-FROM registry.gitlab.com/dunn.dev/pipeline/ci-runtime-go:4.10.0@sha256:e74db1b288d1c8f002e3d48481233535d219efd56cd47846a95e3a1f15c48606
+FROM registry.gitlab.com/dunn.dev/pipeline/ci-runtime-go:4.12.0@sha256:b4ba9539e96ca60a259c0b388646072d009eba369ceedf0c9f37b6ce2b6765fe
 
 ARG VERSION=dev
 ARG TARGETARCH=amd64
