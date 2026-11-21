@@ -173,8 +173,10 @@ written atomically, and the token is never logged. A run starts from
 the stored token and logs in with your password only when Famly
 rejects it, so Famly's "new log-in activity" e-mail is not sent every
 run. A token pasted in `FAMLY_ACCESS_TOKEN` wins over the stored one
-and is never written to the file. `--dry-run` and `bairn drift` reuse
-the file but never write it. Delete the file to force a fresh login;
+for `fetch`, even when credentials are also set; if Famly rejects it,
+bairn logs in with the credentials. `bairn drift` with credentials
+always logs in fresh and ignores both. `--dry-run` and `bairn drift`
+never write the file. Delete the file to force a fresh login;
 back it up like a credential, not like the archive.
 
 **CI and containers.** A throwaway container has no session file, so

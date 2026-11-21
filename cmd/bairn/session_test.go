@@ -67,7 +67,7 @@ var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 func TestSessionFirstRunLogsInAndPersistsThenReuses(t *testing.T) {
 	var logins atomic.Int32
 	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL)
-	tok, err := sessionTokenSource(cfg, false, quiet).Token(context.Background())
+	tok, err := sessionTokenSource(cfg, false, true, quiet).Token(context.Background())
 	if err != nil || tok != minted || logins.Load() != 1 {
 		t.Fatalf("first run: tok=%q err=%v logins=%d", tok, err, logins.Load())
 	}
@@ -80,7 +80,7 @@ func TestSessionFirstRunLogsInAndPersistsThenReuses(t *testing.T) {
 		t.Errorf("mode %v", fi.Mode().Perm())
 	}
 	// A second run reuses the cached token: no password login.
-	tok, err = sessionTokenSource(cfg, false, quiet).Token(context.Background())
+	tok, err = sessionTokenSource(cfg, false, true, quiet).Token(context.Background())
 	if err != nil || tok != minted || logins.Load() != 1 {
 		t.Fatalf("second run: tok=%q err=%v logins=%d, want reuse", tok, err, logins.Load())
 	}
@@ -92,7 +92,7 @@ func TestSessionStaleTokenReloginPersistsNew(t *testing.T) {
 	if err := session.Open(cfg.SessionPath, false).Save(session.Session{AccessToken: "stale"}); err != nil {
 		t.Fatal(err)
 	}
-	src := sessionTokenSource(cfg, false, quiet)
+	src := sessionTokenSource(cfg, false, true, quiet)
 	if tok, _ := src.Token(context.Background()); tok != "stale" {
 		t.Fatalf("not seeded from file: %q", tok)
 	}
@@ -113,7 +113,7 @@ func TestSessionEnvTokenWinsAndIsNeverWritten(t *testing.T) {
 	if err := session.Open(cfg.SessionPath, false).Save(session.Session{AccessToken: "file-token"}); err != nil {
 		t.Fatal(err)
 	}
-	if tok, _ := sessionTokenSource(cfg, false, quiet).Token(context.Background()); tok != "env-token" {
+	if tok, _ := sessionTokenSource(cfg, false, true, quiet).Token(context.Background()); tok != "env-token" {
 		t.Fatalf("token = %q, want the env token", tok)
 	}
 	b, _ := os.ReadFile(cfg.SessionPath)
@@ -125,7 +125,7 @@ func TestSessionEnvTokenWinsAndIsNeverWritten(t *testing.T) {
 func TestSessionReadOnlyReusesButNeverWrites(t *testing.T) {
 	var logins atomic.Int32
 	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL)
-	if tok, err := sessionTokenSource(cfg, true, quiet).Token(context.Background()); err != nil || tok != minted {
+	if tok, err := sessionTokenSource(cfg, true, true, quiet).Token(context.Background()); err != nil || tok != minted {
 		t.Fatalf("%q %v", tok, err)
 	}
 	if _, err := os.Stat(cfg.SessionPath); err == nil {
@@ -139,7 +139,7 @@ func TestSessionUnwritablePathDoesNotFailRun(t *testing.T) {
 	blocker := filepath.Join(t.TempDir(), "file")
 	_ = os.WriteFile(blocker, nil, 0o600)
 	cfg.SessionPath = filepath.Join(blocker, "sub", session.FileName) // parent is a file
-	if tok, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil || tok != minted {
+	if tok, err := sessionTokenSource(cfg, false, true, quiet).Token(context.Background()); err != nil || tok != minted {
 		t.Fatalf("%q %v", tok, err)
 	}
 }
@@ -148,7 +148,7 @@ func TestDeviceIDGeneratedOnceStoredAndSent(t *testing.T) {
 	var logins atomic.Int32
 	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL)
 	cfg.FamlyDeviceID = ""
-	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+	if _, err := sessionTokenSource(cfg, false, true, quiet).Token(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	first, _ := sentDevice.Load().(string)
@@ -158,7 +158,7 @@ func TestDeviceIDGeneratedOnceStoredAndSent(t *testing.T) {
 	}
 	// A later run with an expired token sends the same id.
 	_ = session.Open(cfg.SessionPath, false).Save(session.Session{DeviceID: first})
-	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+	if _, err := sessionTokenSource(cfg, false, true, quiet).Token(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if again, _ := sentDevice.Load().(string); again != first {
@@ -170,7 +170,7 @@ func TestDeviceIDPrecedenceEnvOverFile(t *testing.T) {
 	var logins atomic.Int32
 	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL) // env = pinnedID
 	_ = session.Open(cfg.SessionPath, false).Save(session.Session{DeviceID: fileID})
-	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+	if _, err := sessionTokenSource(cfg, false, true, quiet).Token(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := sentDevice.Load().(string); got != pinnedID {
@@ -182,7 +182,7 @@ func TestDeviceIDPrecedenceEnvOverFile(t *testing.T) {
 	// With no env, the file id is sent.
 	cfg.FamlyDeviceID = ""
 	_ = session.Open(cfg.SessionPath, false).Save(session.Session{DeviceID: fileID})
-	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+	if _, err := sessionTokenSource(cfg, false, true, quiet).Token(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := sentDevice.Load().(string); got != fileID {
@@ -195,10 +195,31 @@ func TestDeviceIDFromAuthenticateReplyIsStored(t *testing.T) {
 	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL)
 	cfg.FamlyDeviceID = ""
 	replyDevice.Store(fileID)
-	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+	if _, err := sessionTokenSource(cfg, false, true, quiet).Token(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := session.Open(cfg.SessionPath, true).Load(); st.DeviceID != fileID {
 		t.Errorf("stored %q, want the id Famly returned", st.DeviceID)
+	}
+}
+
+// The drift gate hands the token to Probe as a string, so it must not
+// start from a stale env or cached token: seed=false logs in fresh.
+func TestSessionUnseededIgnoresStaleEnvAndFileToken(t *testing.T) {
+	var logins atomic.Int32
+	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL)
+	cfg.FamlyAccessToken = "stale-env"
+	if err := session.Open(cfg.SessionPath, false).Save(session.Session{AccessToken: "stale-file"}); err != nil {
+		t.Fatal(err)
+	}
+	tok, err := sessionTokenSource(cfg, true, false, quiet).Token(context.Background())
+	if err != nil || tok != minted || logins.Load() != 1 {
+		t.Fatalf("unseeded: tok=%q err=%v logins=%d, want a fresh login", tok, err, logins.Load())
+	}
+	// Seeded (fetch): env wins over credentials, no login until a 401.
+	logins.Store(0)
+	tok, _ = sessionTokenSource(cfg, true, true, quiet).Token(context.Background())
+	if tok != "stale-env" || logins.Load() != 0 {
+		t.Fatalf("seeded: tok=%q logins=%d, want the env token without login", tok, logins.Load())
 	}
 }

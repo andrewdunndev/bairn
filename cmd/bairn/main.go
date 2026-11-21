@@ -169,7 +169,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		}
 	}
 
-	tokenSrc := buildTokenSource(cfg, *dryRun, logger)
+	tokenSrc := buildTokenSource(cfg, *dryRun, true, logger)
 	fc := famly.New(tokenSrc, famlyOpts(cfg)...)
 	st, err := state.Open(ctx, cfg.StatePath)
 	if err != nil {
@@ -320,14 +320,15 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	)
 
 	// Token resolution by manifest. Famly's auth_env is FAMLY_ACCESS_TOKEN;
-	// when that's set, prefer credentials (FAMLY_EMAIL+FAMLY_PASSWORD)
-	// over the short-lived static token for a self-healing tag pipeline.
+	// with credentials (FAMLY_EMAIL+FAMLY_PASSWORD) the gate ignores any
+	// static or cached token and logs in fresh, since Probe takes a plain
+	// string and could not heal a stale one.
 	// Other vendors (Immich's IMMICH_API_KEY, etc.) flow through Probe's
 	// env-fallback unchanged: leaving Token empty makes Probe read
 	// os.Getenv(m.AuthEnv).
 	var token string
 	if m.AuthEnv == "FAMLY_ACCESS_TOKEN" {
-		tokenSrc := buildTokenSource(cfg, true, logger)
+		tokenSrc := buildTokenSource(cfg, true, false, logger)
 		token, err = tokenSrc.Token(ctx)
 		if err != nil {
 			logger.Error("drift", "phase", "token", "err", err)
@@ -438,9 +439,9 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 // cron (reusing the stored session so it logs in only when the token
 // expires); otherwise it falls back to the static token. readOnly keeps
 // the session file from being written.
-func buildTokenSource(cfg *config.Config, readOnly bool, logger *slog.Logger) famly.TokenSource {
+func buildTokenSource(cfg *config.Config, readOnly, seed bool, logger *slog.Logger) famly.TokenSource {
 	if cfg.FamlyEmail != "" && cfg.FamlyPassword != "" {
-		return sessionTokenSource(cfg, readOnly, logger)
+		return sessionTokenSource(cfg, readOnly, seed, logger)
 	}
 	return famly.NewStaticToken(cfg.FamlyAccessToken)
 }

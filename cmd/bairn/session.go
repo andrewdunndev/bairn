@@ -15,7 +15,10 @@ import (
 // to the session file. The env token is never written. readOnly (dry
 // runs, drift) reuses the file but never writes it; any failure to read
 // or write it is logged and the run carries on with a password login.
-func sessionTokenSource(cfg *config.Config, readOnly bool, logger *slog.Logger) *famly.RefreshingToken {
+// seed false skips the seeding: the first Token call logs in fresh, for
+// callers (the drift gate) that use the token as a plain string and
+// would never see a 401 to heal a stale one.
+func sessionTokenSource(cfg *config.Config, readOnly, seed bool, logger *slog.Logger) *famly.RefreshingToken {
 	store := session.Open(cfg.SessionPath, readOnly)
 	cur, err := store.Load()
 	if err != nil {
@@ -39,9 +42,11 @@ func sessionTokenSource(cfg *config.Config, readOnly bool, logger *slog.Logger) 
 			}
 			return cred.AccessToken, nil
 		})
-	if cfg.FamlyAccessToken != "" {
+	switch {
+	case !seed:
+	case cfg.FamlyAccessToken != "":
 		rt.Seed(cfg.FamlyAccessToken)
-	} else {
+	default:
 		rt.Seed(cur.AccessToken)
 	}
 	return rt
