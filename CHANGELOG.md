@@ -40,6 +40,9 @@ additions.
 - `bairn fetch` exits 1 when any item failed to download or save
   (for example a full disk), so a scheduler no longer records a
   partial run as a success. Exit codes are documented in the README.
+- `bairn fetch` also exits 1 when the state file could not be written
+  while recording progress (`stateErrors` in the summary). EXIF
+  reinjection failures remain warnings and exit 0.
 - Media downloads no longer use a client without timeouts. A stalled
   CDN connection now fails after connect, TLS, response-header and
   idle-read deadlines (a slow video that keeps sending is unaffected,

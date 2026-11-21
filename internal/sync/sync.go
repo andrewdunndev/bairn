@@ -156,8 +156,15 @@ type Result struct {
 	// UploadFailed counts assets on disk but not confirmed in Immich.
 	// A rerun retries them; the CLI exits non-zero while any remain.
 	UploadFailed int `json:"uploadFailed"`
-	ExifErrors   int `json:"exifErrors"`
-	Errors       int `json:"errors"`
+	// ExifErrors counts items saved without their EXIF reinjected. It is
+	// warn-only: the item is on disk and uploaded, so it does not fail
+	// the run.
+	ExifErrors int `json:"exifErrors"`
+	// StateErrors counts failures to record progress in the state file
+	// (for example ENOSPC). The CLI exits non-zero while any occurred,
+	// since a rerun may repeat work or lose album filing.
+	StateErrors int `json:"stateErrors,omitempty"`
+	Errors      int `json:"errors"`
 	// SystemPostsFiltered counts source-matching images that were
 	// skipped because their feed item was system-generated and the
 	// run did not pass --include-system-posts. Surfaces the
@@ -193,6 +200,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			for _, id := range deps.owners[immichID] {
 				if err := deps.State.MarkAlbumsRefused(ctx, id, reason); err != nil {
 					logger.Error("albums: record refusal", "id", id, "err", err)
+					res.StateErrors++
 					continue
 				}
 				res.AlbumsRefused++
@@ -204,6 +212,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			for _, id := range deps.owners[immichID] {
 				if err := deps.State.MarkAlbumsFiled(ctx, id, time.Now()); err != nil {
 					logger.Error("albums: record filed", "id", id, "err", err)
+					res.StateErrors++
 				}
 			}
 			delete(deps.owners, immichID)
@@ -506,6 +515,7 @@ func fileInAlbums(ctx context.Context, deps Deps, id, immichID string, postedAt 
 	if !postedAt.IsZero() {
 		if err := deps.State.MarkPosted(ctx, id, postedAt); err != nil {
 			logger.Error("albums: record post date", "id", id, "err", err)
+			res.StateErrors++
 		}
 		deps.owners[immichID] = append(deps.owners[immichID], id)
 	}

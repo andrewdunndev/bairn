@@ -147,6 +147,14 @@ func (s *Store) changedLocked() error {
 	return nil
 }
 
+// SetFlushEvery sets how many changes accumulate before a write; n < 1
+// writes on every change.
+func (s *Store) SetFlushEvery(n int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.flushEvery = max(n, 1)
+}
+
 // writeLocked writes the in-memory map atomically (tmp+fsync+rename).
 // fsync the tmp file before rename so the data is durable before
 // the directory entry flips. Caller holds s.mu.

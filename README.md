@@ -214,8 +214,10 @@ included) through `make pre-tag-check`.
 
 Exit codes for `bairn fetch`: 0 means the run finished with nothing
 left over. 1 means the run ended but something failed (an item that
-could not be downloaded or saved, an upload that failed, or an album
-operation that failed), or a runtime error stopped it; rerun to retry.
+could not be downloaded or saved, an upload that failed, an album
+operation that failed, or a write to the state file that failed), or a
+runtime error stopped it; rerun to retry. An EXIF reinjection failure
+is only a warning (the item is saved and uploaded) and still exits 0.
 2 means a usage or configuration error. A scheduler's last-success
 marker should advance only on 0.
 

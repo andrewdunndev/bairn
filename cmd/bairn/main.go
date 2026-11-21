@@ -247,6 +247,10 @@ func fetchExitCode(res sync.Result, w io.Writer) int {
 		fmt.Fprintf(w, "fetch: %d item(s) failed to download or save; rerun to retry\n", res.Errors)
 		code = 1
 	}
+	if res.StateErrors > 0 {
+		fmt.Fprintf(w, "fetch: %d state-file write(s) failed; check free space and permissions on the state path, then rerun\n", res.StateErrors)
+		code = 1
+	}
 	if res.UploadFailed > 0 {
 		fmt.Fprintf(w, "fetch: %d asset(s) saved to disk but not uploaded to Immich; rerun to retry\n", res.UploadFailed)
 		code = 1

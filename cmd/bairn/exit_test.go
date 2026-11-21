@@ -17,6 +17,8 @@ func TestFetchExitCode(t *testing.T) {
 		{"refused is not a failure", sync.Result{AlbumsRefused: 2}, 0},
 		{"item error", sync.Result{Errors: 1}, 1},
 		{"upload failed", sync.Result{UploadFailed: 1}, 1},
+		{"exif error is warn-only", sync.Result{ExifErrors: 1}, 0},
+		{"state error", sync.Result{StateErrors: 1}, 1},
 		{"album error", sync.Result{AlbumErrors: 1}, 1},
 	}
 	for _, c := range cases {
