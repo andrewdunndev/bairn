@@ -49,6 +49,10 @@ type idleTransport struct {
 	idle time.Duration
 }
 
+// The idle timer starts before the round trip, so the idle value also
+// caps dial, TLS and response headers (never longer than their own
+// limits sum to); between reads, time spent on a slow local write counts
+// as idle.
 func (t *idleTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	ctx, cancel := context.WithCancelCause(req.Context())
 	timer := time.AfterFunc(t.idle, func() { cancel(ErrIdle) })
