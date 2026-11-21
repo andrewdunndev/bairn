@@ -14,6 +14,69 @@ additions.
 
 ## [Unreleased]
 
+### Added
+
+- In-run download retry. A connection reset, truncated body, timeout
+  or 5xx on a media download is retried up to four times with jittered
+  exponential backoff (2s, capped at 30s). Before each retry the feed
+  item is read again for a newly signed URL; if that fails the same
+  URL is used. Partial temp files are removed between attempts. A
+  4xx, a disk error or a cancelled run is not retried.
+- `bairn fetch --retry-failed` revisits only state entries with a
+  `lastError` and no `savedAt`. The walk jumps to the newest failed
+  item with the feed's `olderThan` parameter and stops after the
+  oldest, instead of walking the whole feed. The state file now
+  records `feedItemAt` for each discovered item; entries without it
+  are located from their discovery time. The summary gains a `retry`
+  block (`failed`, `retried`, `fixed`, `stillFailing`, `notFound`).
+  Not combinable with `--source`, `--include-system-posts` or
+  `--allow-missing-state`; works with `--dry-run`.
+- Progress log lines every N feed pages (`--progress-every`,
+  `BAIRN_PROGRESS_EVERY`, default 10, 0 = off) with pages walked, the
+  date of the last post read and the running counts.
+- A `buckets` block in the run summary that places every discovered
+  item in exactly one outcome (`savedNew`, `alreadyDone`,
+  `uploadedNew`, `uploadedDuplicate`, `skippedSystem`,
+  `filteredBySource`, `notReady`, `wouldProcess`, `failed`). The sum is
+  checked against `discovered`; a mismatch is logged as an error and
+  shown as `unreconciled`.
+- Every Immich upload, new or duplicate, is tagged `bairn`
+  (`--tag` / `BAIRN_TAG` to rename, `--no-tag` / `BAIRN_NO_TAG` to turn
+  off). The tag is created once per run with `PUT /tags` and assets
+  are added in batches with `PUT /tags/{id}/assets`; bairn never
+  removes a tag. Uploads already in the state file are tagged once
+  (`taggedAt`); an asset Immich refuses is recorded (`tagRefused`) and
+  not retried. `bairn status` reports `tagsApplied`, `tagsOwed` and
+  `tagsRefused`. `bairn smoke immich` gains a tag leg on the narrow
+  key and deletes its tag with the login session.
+
+### Changed
+
+- The Immich API key scope is now exactly `asset.upload`, `album.read`,
+  `album.create`, `albumAsset.create`, `tag.create` and `tag.asset`
+  (checked against Immich 3.4.2). A key without the two tag scopes
+  still uploads; with tagging on, fetch exits 1 until the key is
+  widened or `--no-tag` is set.
+- `discovered` now counts every media item read from the feed,
+  including those filtered by `--source`, skipped as system posts or
+  not ready, where it used to count only items that reached the
+  pipeline. `skipped` is unchanged.
+- Saving an asset clears its `lastError`, so `bairn status`
+  `withErrors` no longer counts items that failed once and then
+  succeeded.
+
+### Fixed
+
+- The run summary no longer leaves `saved` and `uploaded` looking like
+  they should match: `saved` counts files newly written, `uploaded`
+  only Immich "created" answers. Items Immich answered "duplicate" and
+  saved items whose upload failed made the two differ (22,734 against
+  22,722 in the first full backfill) while the state was complete. The
+  buckets account for each.
+- The "matched 0 of N" warning for a filtered `--source` now fires only
+  when nothing passed the filter, not when every match was already
+  saved.
+
 ## [0.6.2] - 2026-11-21
 
 ### Added

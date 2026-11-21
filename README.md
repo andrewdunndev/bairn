@@ -86,7 +86,8 @@ bairn does five jobs:
    from the disk sink, including its video `.xmp` sidecar, so a failed
    or skipped upload is fixed by rerunning `bairn fetch`. The run
    summary counts `saved`, `uploaded`, `uploadDuplicates` and
-   `uploadFailed`. A 401 or 403 from
+   `uploadFailed`, and a `buckets` block that places every discovered
+   item in exactly one outcome (see "Run summary" below). A 401 or 403 from
    Immich, or five failed uploads in a row, stops uploads for the rest
    of the run: the remaining assets are still saved to disk and counted
    in `uploadFailed`, and a rerun uploads them. State
@@ -199,6 +200,7 @@ Save and state:
 | `BAIRN_STATE_PATH` | JSON state file | `$XDG_STATE_HOME/bairn/state.json` |
 | `BAIRN_TZ` | IANA zone (`America/Detroit`) for the date of videos in posts with no zoned image; same as `--tz` | machine's local zone |
 | `BAIRN_LOG_FORMAT` | `json` (cron) or `text` (interactive) | `json` |
+| `BAIRN_PROGRESS_EVERY` | Log a progress line every N feed pages; `0` turns them off; same as `--progress-every` | `10` |
 
 Optional Immich sink (uploads alongside disk save):
 
@@ -210,6 +212,8 @@ Optional Immich sink (uploads alongside disk save):
 | `BAIRN_ALBUM_MONTH` | Month album name pattern (`%Y %m %B %b`); setting it enables that album | unset (`EDC %B %Y` with `BAIRN_ALBUMS`) |
 | `BAIRN_ALBUM_YEAR` | Year album name pattern; setting it enables that album | unset (`EDC %Y` with `BAIRN_ALBUMS`) |
 | `BAIRN_ALBUM_SHARE` | Comma-separated Immich user UUIDs a new album is shared with as editors | unset |
+| `BAIRN_TAG` | Immich tag put on every upload; no `/` | `bairn` |
+| `BAIRN_NO_TAG` | `1` turns tagging off | off |
 
 **Immich version: v3.0.2 or later.** bairn targets the Immich 3.x
 `/assets` upload contract, which no longer takes `deviceId` /
@@ -221,7 +225,7 @@ included) through `make pre-tag-check`.
 Exit codes for `bairn fetch`: 0 means the run finished with nothing
 left over. 1 means the run ended but something failed (an item that
 could not be downloaded or saved, an upload that failed, an album
-operation that failed, or a write to the state file that failed), or a
+operation or tag operation that failed, or a write to the state file that failed), or a
 runtime error stopped it; rerun to retry. An EXIF reinjection failure
 is only a warning (the item is saved and uploaded) and still exits 0.
 2 means a usage or configuration error. A scheduler's last-success
@@ -254,6 +258,13 @@ CLI flag overrides for `bairn fetch`:
 --album-share IDS        comma-separated Immich user IDs (UUIDs) a newly
                          created album is shared with as editors
                          (BAIRN_ALBUM_SHARE)
+--tag NAME               Immich tag put on every upload (BAIRN_TAG; default
+                         "bairn"; no "/")
+--no-tag                 do not tag uploads (BAIRN_NO_TAG=1)
+--progress-every N       log a progress line every N feed pages (default 10,
+                         BAIRN_PROGRESS_EVERY; 0 = off)
+--retry-failed           revisit only state entries that failed to download
+                         or save, without walking the whole feed (see below)
 --allow-missing-state    upload even though the state file is missing and the
                          save dir already holds media (refused by default)
 ```
@@ -264,9 +275,10 @@ found by exact name among the albums the API key's owner owns and is
 created only if absent, so reruns add to the same album. bairn only
 adds assets to albums; it never removes an asset, deletes an album or
 trashes anything. The Immich API key needs exactly these permissions
-and no more: `asset.upload`, and for albums `album.read`,
-`album.create` and `albumAsset.create` (checked against Immich
-v3.4.2). Share with user IDs rather than emails so the key needs no
+and no more: `asset.upload`, for albums `album.read`, `album.create`
+and `albumAsset.create`, and for tags `tag.create` and `tag.asset`
+(checked against Immich v3.4.2; see "Tags" below for which call needs
+which). Share with user IDs rather than emails so the key needs no
 `user.read`.
 
 The state file is the tombstone. An asset it records as uploaded is
@@ -278,6 +290,89 @@ post date, are filed once from the creation time already in the
 state file. `bairn status` shows `albumsFiled`, `albumsUnfiled` and
 `albumsRefused`. `bairn smoke immich` deletes only its own test
 asset, albums and key, through a login session on the smoke account.
+
+### Tags
+
+Every upload, new or answered "duplicate", is put under one Immich tag
+(`bairn` by default; `--tag` or `BAIRN_TAG` renames it, `--no-tag` or
+`BAIRN_NO_TAG=1` turns it off). The tag is found or created once per
+run in the key owner's account and assets are added in batches, so a
+rerun adds nothing. Uploads recorded before tagging existed are tagged
+once from the state file (`taggedAt`); `bairn status` shows
+`tagsApplied`, `tagsOwed` and `tagsRefused`. An asset Immich refuses
+(deleted or trashed since upload) is recorded as refused and not
+retried; it does not fail the run. A failed tag call does: the asset
+stays uploaded, exit is 1, and a rerun tags it. bairn never removes a
+tag from an asset or deletes a tag. Changing `--tag` later tags new
+uploads only; entries already marked tagged are not revisited.
+
+The calls and the permission the Immich 3.4.2 spec requires for each
+(`x-immich-permission`):
+
+| Call | Permission |
+|---|---|
+| `PUT /tags` (upsert: create if missing, return the tag) | `tag.create` |
+| `PUT /tags/{id}/assets` (add the tag to assets) | `tag.asset` |
+
+`PUT /tags` finds and creates in one idempotent call, so the key needs
+no `tag.read`. `tag.asset` also guards the untag call
+(`DELETE /tags/{id}/assets`), which bairn never makes; `tag.delete`,
+`tag.update` and `tag.read` are not needed and should not be granted.
+
+### Retrying failed items
+
+`bairn fetch --retry-failed` revisits only state entries that have a
+`lastError` and no `savedAt`, instead of walking the feed. Famly has no
+per-item lookup, so the walk uses the feed's own `olderThan` parameter:
+it jumps to the newest failed item's post date (recorded as
+`feedItemAt` when the item is discovered) and stops after a page that
+ends before the oldest. Entries from before 0.7.0 have no `feedItemAt`;
+the walk starts at their discovery time (a post cannot be newer than
+the run that first saw it) and, with no known oldest date, stops only
+once every entry is found, so `--max-pages 0` is its default (`--max-pages N`
+still caps it). If the server ignored `olderThan`, the walk simply
+starts at the newest post and still stops at the same place. Entries
+found are filled in with their post date for next time.
+
+The flag cannot be combined with `--source`, `--include-system-posts`
+or `--allow-missing-state`, works with `--dry-run`, and skips the album
+and tag back-fill. The run summary gains a `retry` block: `failed`
+(entries revisited), `retried` (found in the feed and run again),
+`fixed` (now saved), `stillFailing` (everything not fixed) and
+`notFound` (the post is gone, the video is still transcoding, or
+`--max-pages` ended the walk first). A new failure exits 1; an entry
+that is simply not found does not.
+
+### Run summary
+
+The summary printed at the end is JSON. `discovered` counts every media
+item read from the feed. `buckets` places each in exactly one outcome,
+so the buckets add up to `discovered`; a mismatch is logged as an error
+and shown as `unreconciled`:
+
+| Bucket | Meaning |
+|---|---|
+| `savedNew` | fetched and saved this run, Immich off |
+| `alreadyDone` | saved (and uploaded) by an earlier run |
+| `uploadedNew` | confirmed in Immich as newly created |
+| `uploadedDuplicate` | Immich answered "duplicate" |
+| `skippedSystem` | on a system post, without `--include-system-posts` |
+| `filteredBySource` | excluded by `--source` |
+| `notReady` | a video still transcoding |
+| `wouldProcess` | a `--dry-run` item a real run would act on |
+| `failed` | could not be fetched, saved, uploaded or recorded; rerun retries |
+
+The older counters stay and count different things, which is why they
+never added up: `saved` is files newly written to disk this run (not
+disk-level duplicates, which are `duplicates`), `uploaded` is only
+Immich "created" answers, and `uploadDuplicates` the "duplicate" ones.
+A run where `saved` exceeds `uploaded` by a few is therefore normal
+(uploads answered "duplicate", or saved items whose upload failed);
+`buckets` is the reconciled view. Downloads that fail with a transient
+error (connection reset, truncated body, timeout, 5xx) are retried in
+the run, up to four tries with backoff, each with a fresh signed URL.
+`--progress-every N` logs a `progress` line every N pages with the date
+of the last post read and the running counts.
 
 ## Filename layout
 
@@ -357,12 +452,16 @@ falls back to `IMMICH_BASE_URL` / `IMMICH_API_KEY` for ad-hoc
 runs. It is a local gate only: CI runners cannot reach a LAN Immich.
 
 On the login path the smoke also runs the album leg: it mints a key
-with only `asset.upload`, `album.read`, `album.create` and
-`albumAsset.create`, uploads a tiny asset and files it into uniquely
-named `bairn-smoke-*` month and year albums twice through the same
-filer fetch uses, asserts one album per name, the asset in each and
-(with `SMOKE_SHARE_USER_EMAIL` set) that user as editor, then deletes
-the albums, asset and key with the login session, even on failure.
+with only `asset.upload`, `album.read`, `album.create`,
+`albumAsset.create`, `tag.create` and `tag.asset`, uploads a tiny asset
+and files it into uniquely named `bairn-smoke-*` month and year albums
+twice through the same filer fetch uses, asserts one album per name,
+the asset in each and (with `SMOKE_SHARE_USER_EMAIL` set) that user as
+editor. The tag leg then tags the asset through the same tagger,
+asserts the tag was created once and carried by the asset, that a
+rerun adds nothing and that a missing asset comes back as a refusal.
+The login session then deletes the albums, tag, asset and key, even on
+failure.
 
 `IMMICH_VERSION` in the Makefile is the Immich release bairn is
 verified against via `make pre-tag-check`. Renovate proposes bumps

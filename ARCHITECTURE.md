@@ -52,20 +52,21 @@ metadata reinjected, optionally also push to Immich.
    parent later deleted it in Immich, so the state file must be
    backed up with the archive and a missing one is refused. The
    Immich API key scope is exactly `asset.upload`, `album.read`,
-   `album.create` and `albumAsset.create`, and is a ceiling, not a
-   starting point. `bairn smoke immich` is the one deleter: it
-   removes only its own test asset, albums and key, through a login
+   `album.create`, `albumAsset.create`, `tag.create` and `tag.asset`,
+   and is a ceiling, not a starting point. Albums and tags are
+   additive only: bairn never removes an asset from an album or a tag.
+   `bairn smoke immich` is the one deleter: it removes only its own test asset, albums, tag and key, through a login
    session on the smoke account.
 
 ## Commands
 
 | Subcommand | Purpose |
 |---|---|
-| `bairn fetch` | Pull recent feed pages, save assets to disk with EXIF reinjected, optionally upload to Immich. Cron-friendly. |
+| `bairn fetch` | Pull recent feed pages, save assets to disk with EXIF reinjected, optionally upload to Immich. Cron-friendly. `--retry-failed` revisits only the entries that failed. |
 | `bairn login` | Check Famly credentials interactively (no-echo prompt). |
 | `bairn status` | Print totals for the whole JSON state file: counts per phase, album filing, and the latest save and upload. |
 | `bairn drift` | Run shape probes against the live vendor surface; diff against committed baselines; exit non-zero on drift. |
-| `bairn smoke` | Live contract probe of a sink; `smoke immich` uploads, files into albums and cleans up on a smoke account. |
+| `bairn smoke` | Live contract probe of a sink; `smoke immich` uploads, files into albums, tags and cleans up on a smoke account. |
 | `bairn version` | Print the version (`--version` and `-V` too). |
 
 ## Auth model
@@ -113,6 +114,10 @@ This binary targets Go 1.26+. Idioms in use:
 - `context.Context` end-to-end including iterators
 - `slices`, `maps`, `cmp` stdlib packages
 - `testing/synctest` for deterministic time tests
+- `internal/retry`: also `Policy.Run`, which retries a media download
+  (a body that dies mid-stream cannot be replayed by `Do`): four
+  tries, jittered backoff from 2s capped at 30s, a fresh signed URL
+  from a re-read of the feed item before each retry
 - `internal/retry`: one HTTP policy for both clients (transport errors,
   408, 429 with `Retry-After`, and 5xx; five tries, capped
   exponential backoff with jitter; a `Retry-After` is honoured up to
