@@ -44,6 +44,8 @@ additions.
   probing with a stale `FAMLY_ACCESS_TOKEN` or cached session token.
 - The session file gains no token while `FAMLY_ACCESS_TOKEN` is set,
   even after a re-login.
+- Partial downloads (`.bairn-dl-*.part`) left by a killed run are
+  removed at the next start once a day old.
 - `bairn fetch` also exits 1 when the state file could not be written
   while recording progress (`stateErrors` in the summary). EXIF
   reinjection failures remain warnings and exit 0.

@@ -17,6 +17,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/albums"
+	"gitlab.com/dunn.dev/bairn/internal/asset"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/drift"
 	"gitlab.com/dunn.dev/bairn/internal/safehttp"
@@ -152,6 +153,11 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	if err := checkStateGuard(cfg.StatePath, *saveDir, *allowMissingState); err != nil {
 		fmt.Fprintln(os.Stderr, "fetch:", err)
 		return 2
+	}
+	if !*dryRun {
+		if n := asset.SweepStaleTemps(*saveDir, 24*time.Hour); n > 0 {
+			logger.Info("removed stale partial downloads", "count", n)
+		}
 	}
 
 	var immichSink *sink.Immich
