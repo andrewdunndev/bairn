@@ -69,10 +69,11 @@ additions.
 
 - The run summary no longer leaves `saved` and `uploaded` looking like
   they should match: `saved` counts files newly written, `uploaded`
-  only Immich "created" answers. Items Immich answered "duplicate" and
-  saved items whose upload failed made the two differ (22,734 against
-  22,722 in the first full backfill) while the state was complete. The
-  buckets account for each.
+  only Immich "created" answers. The two legitimately differ when
+  Immich answers "duplicate" or a saved file's upload fails, so a gap
+  between them is not by itself a sign of missing data. The new
+  per-item buckets (each discovered item in exactly one) account for
+  every case, and the summary cross-checks them against these counters.
 - The "matched 0 of N" warning for a filtered `--source` now fires only
   when nothing passed the filter, not when every match was already
   saved.

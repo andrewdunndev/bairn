@@ -143,3 +143,31 @@ func TestReconcileLogsAnErrorWhenTheBucketsDoNotAddUp(t *testing.T) {
 		t.Error("a matching result was refused")
 	}
 }
+
+func TestReconcileCatchesACounterThatMovedOnOneSideOnly(t *testing.T) {
+	for name, mk := range map[string]func() Result{
+		"uploaded bumped alone":   func() Result { r := Result{Uploaded: 1}; return r },
+		"duplicate bumped alone":  func() Result { r := Result{UploadDuplicates: 1}; return r },
+		"bucket without counter":  func() Result { r := Result{}; r.item(bUploadedNew); return r },
+		"upload failed no bucket": func() Result { r := Result{UploadFailed: 1}; return r },
+	} {
+		var logs bytes.Buffer
+		res := mk()
+		if res.Reconcile(slog.New(slog.NewJSONHandler(&logs, nil))) {
+			t.Errorf("%s: Reconcile accepted a one-sided counter", name)
+		}
+		if !strings.Contains(logs.String(), "does not reconcile") {
+			t.Errorf("%s: no error logged", name)
+		}
+	}
+}
+
+func TestUnknownBucketPanics(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Error("an unknown bucket was accepted silently")
+		}
+	}()
+	var b Buckets
+	b.add(bucket(99))
+}

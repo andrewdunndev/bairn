@@ -281,6 +281,9 @@ func (b *Buckets) add(k bucket) {
 		b.WouldProcess++
 	case bFailed:
 		b.Failed++
+	default:
+		// An accounting bug, never data: fail loudly in tests.
+		panic(fmt.Sprintf("sync: unknown bucket %d", int(k)))
 	}
 }
 
@@ -297,16 +300,37 @@ func (r *Result) item(k bucket) {
 }
 
 // Reconcile checks that every discovered item landed in exactly one
-// bucket. A mismatch is a bug in the accounting, not in the data: it is
-// logged as an error and recorded in Unreconciled.
+// bucket, and that the buckets agree with the older counters that are
+// bumped on separate paths (so a path that moves one side only shows
+// up). A mismatch is a bug in the accounting, not in the data: it is
+// logged as an error; a bucket-total mismatch is also recorded in
+// Unreconciled.
 func (r *Result) Reconcile(logger *slog.Logger) bool {
+	ok := true
 	if n := r.Buckets.Total(); n != r.Discovered {
 		r.Unreconciled = r.Discovered - n
 		logger.Error("run summary does not reconcile: buckets do not add up to discovered",
 			"discovered", r.Discovered, "bucketTotal", n, "buckets", r.Buckets)
-		return false
+		ok = false
 	}
-	return true
+	for _, c := range []struct {
+		name      string
+		got, want int
+	}{
+		{"uploadedNew vs uploaded", r.Buckets.UploadedNew, r.Uploaded},
+		{"uploadedDuplicate vs uploadDuplicates", r.Buckets.UploadedDuplicate, r.UploadDuplicates},
+	} {
+		if c.got != c.want {
+			logger.Error("run summary does not reconcile: counters disagree", "check", c.name, "bucket", c.got, "counter", c.want)
+			ok = false
+		}
+	}
+	if r.UploadFailed > r.Buckets.Failed {
+		logger.Error("run summary does not reconcile: more upload failures than failed items",
+			"uploadFailed", r.UploadFailed, "failed", r.Buckets.Failed)
+		ok = false
+	}
+	return ok
 }
 
 // Run performs the fetch loop. Returns the run result and an error
