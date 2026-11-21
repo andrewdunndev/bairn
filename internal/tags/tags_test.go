@@ -145,3 +145,59 @@ func TestFailedFlushStopsEarlyFlushesUntilTheFinalOne(t *testing.T) {
 		t.Errorf("final flush tagged %d, want all 350 still queued", len(got))
 	}
 }
+
+func TestFlushAfterAFailureSendsChunksOfAtMostFlushAt(t *testing.T) {
+	api := &fakeAPI{failTag: 1}
+	tg := New(api, "bairn", nil)
+	ctx := context.Background()
+	for i := range 250 {
+		_ = tg.Add(ctx, fmt.Sprintf("a-%d", i))
+	}
+	if err := tg.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if len(api.batches) != 3 {
+		t.Fatalf("calls = %d, want 3 (100+100+50)", len(api.batches))
+	}
+	for _, b := range api.batches {
+		if len(b) > flushAt {
+			t.Errorf("a call carried %d ids, max %d", len(b), flushAt)
+		}
+	}
+}
+
+func TestFlushStopsAtTheFirstFailedChunkAndKeepsTheRest(t *testing.T) {
+	api := &fakeAPI{}
+	tg := New(api, "bairn", nil)
+	ctx := context.Background()
+	tg.failed = true // suppress early flush
+	for i := range 250 {
+		_ = tg.Add(ctx, fmt.Sprintf("a-%d", i))
+	}
+	api.failTag = 0
+	// First chunk succeeds, then the API fails.
+	failing := &chunkFail{fakeAPI: api, okCalls: 1}
+	tg.api = failing
+	if err := tg.Flush(ctx); err == nil {
+		t.Fatal("want the second chunk's error")
+	}
+	if len(tg.pending) != 150 {
+		t.Errorf("pending = %d, want 150 kept", len(tg.pending))
+	}
+	if got := tg.TakeTagged(); len(got) != 100 {
+		t.Errorf("tagged = %d, want 100", len(got))
+	}
+}
+
+type chunkFail struct {
+	*fakeAPI
+	okCalls int
+}
+
+func (c *chunkFail) TagAssets(ctx context.Context, id string, ids []string) (map[string]string, error) {
+	if c.okCalls == 0 {
+		return nil, errors.New("boom")
+	}
+	c.okCalls--
+	return c.fakeAPI.TagAssets(ctx, id, ids)
+}

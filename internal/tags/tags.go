@@ -116,21 +116,27 @@ func (t *Tagger) Flush(ctx context.Context) error {
 		t.tagID = id
 		t.logger.Info("tag ready", "tag", t.name)
 	}
-	assets := t.pending
-	refused, err := t.api.TagAssets(ctx, t.tagID, assets)
-	if err != nil {
-		t.failed = true
-		return fmt.Errorf("tag %q: %w", t.name, err)
-	}
-	t.failed = false
-	t.pending = nil
-	for _, a := range assets {
-		if reason, ok := refused[a]; ok {
-			t.refused[a] = reason
-			continue
+	// Send at most flushAt ids per call, so a long backlog (the one-time
+	// back-file, or a run after a failed flush) never becomes one huge
+	// request. The first failed chunk stops the flush; the rest stays queued.
+	for len(t.pending) > 0 {
+		n := min(len(t.pending), flushAt)
+		assets := t.pending[:n]
+		refused, err := t.api.TagAssets(ctx, t.tagID, assets)
+		if err != nil {
+			t.failed = true
+			return fmt.Errorf("tag %q: %w", t.name, err)
 		}
-		t.tagged = append(t.tagged, a)
+		t.failed = false
+		t.pending = t.pending[n:]
+		for _, a := range assets {
+			if reason, ok := refused[a]; ok {
+				t.refused[a] = reason
+				continue
+			}
+			t.tagged = append(t.tagged, a)
+		}
+		t.logger.Info("tag applied", "tag", t.name, "assets", len(assets), "refused", len(refused))
 	}
-	t.logger.Info("tag applied", "tag", t.name, "assets", len(assets), "refused", len(refused))
 	return nil
 }
