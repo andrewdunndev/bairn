@@ -177,7 +177,10 @@ for `fetch`, even when credentials are also set; if Famly rejects it,
 bairn logs in with the credentials for that run only and writes no
 token to the file while the variable is set. `bairn drift` with credentials
 always logs in fresh and ignores both. `--dry-run` and `bairn drift`
-never write the file. Delete the file to force a fresh login;
+never write the file. Because they cannot store a device id, a
+first-ever `--dry-run` or `drift` on a fresh install (no session file, no
+`FAMLY_DEVICE_ID`) that needs a login looks like a new device to Famly;
+make the first run on a fresh install a real `fetch`. Delete the file to force a fresh login;
 back it up like a credential, not like the archive.
 
 **CI and containers.** A throwaway container has no session file, so
