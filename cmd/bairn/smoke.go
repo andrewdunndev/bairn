@@ -66,6 +66,7 @@ func resolveSmokeImmichConfig(cfg *config.Config, hostFlag, userFlag, passwordFl
 		password: firstSet(passwordFlag, os.Getenv("IMMICH_BAIRN_PASSWORD")),
 		apiKey:   firstSet(apiKeyFlag, cfg.ImmichAPIKey),
 	}
+	c.host = strings.TrimSuffix(strings.TrimRight(c.host, "/"), "/api")
 	return c
 }
 

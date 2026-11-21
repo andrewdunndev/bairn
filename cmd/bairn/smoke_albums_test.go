@@ -20,17 +20,29 @@ const (
 type smokeFake struct {
 	perms      []string
 	albums     map[string]*smokeAlbum
+	members    map[string][]string // album id -> asset ids; 3.4.2 GET /albums/{id} carries none
 	nextID     int
 	uploads    int
 	keyDeleted bool
 	assetGone  bool
 	badAuth    []string
 	failAdds   bool
+	dropAdds   bool // add answers success but files nothing
+}
+
+func ownerEntry(userID, role string) (e struct {
+	Role string `json:"role"`
+	User struct {
+		ID string `json:"id"`
+	} `json:"user"`
+}) {
+	e.Role, e.User.ID = role, userID
+	return
 }
 
 func newSmokeFake(t *testing.T) (*httptest.Server, *smokeFake) {
 	t.Helper()
-	f := &smokeFake{albums: map[string]*smokeAlbum{}}
+	f := &smokeFake{albums: map[string]*smokeAlbum{}, members: map[string][]string{}}
 	mux := http.NewServeMux()
 	// need records which credential a route saw; keyRoutes must carry
 	// the API key, session routes the bearer token.
@@ -95,16 +107,10 @@ func newSmokeFake(t *testing.T) (*httptest.Server, *smokeFake) {
 		}
 		_ = json.NewDecoder(r.Body).Decode(&in)
 		f.nextID++
-		a := &smokeAlbum{ID: fmt.Sprintf("al-%d", f.nextID), AlbumName: in.AlbumName, OwnerID: smokeOwner}
+		a := &smokeAlbum{ID: fmt.Sprintf("al-%d", f.nextID), AlbumName: in.AlbumName}
+		a.AlbumUsers = append(a.AlbumUsers, ownerEntry(smokeOwner, "owner"))
 		for _, u := range in.AlbumUsers {
-			e := struct {
-				Role string `json:"role"`
-				User struct {
-					ID string `json:"id"`
-				} `json:"user"`
-			}{Role: u.Role}
-			e.User.ID = u.UserID
-			a.AlbumUsers = append(a.AlbumUsers, e)
+			a.AlbumUsers = append(a.AlbumUsers, ownerEntry(u.UserID, u.Role))
 		}
 		f.albums[a.ID] = a
 		js(w, map[string]string{"id": a.ID})
@@ -120,23 +126,32 @@ func newSmokeFake(t *testing.T) (*httptest.Server, *smokeFake) {
 		a := f.albums[r.PathValue("id")]
 		res := []map[string]any{}
 		for _, id := range in.IDs {
-			dup := slices.ContainsFunc(a.Assets, func(x struct {
-				ID string `json:"id"`
-			}) bool {
-				return x.ID == id
-			})
-			if dup {
+			if slices.Contains(f.members[a.ID], id) {
 				res = append(res, map[string]any{"id": id, "error": "duplicate"})
 				continue
 			}
-			a.Assets = append(a.Assets, struct {
-				ID string `json:"id"`
-			}{id})
+			if !f.dropAdds {
+				f.members[a.ID] = append(f.members[a.ID], id)
+			}
 			res = append(res, map[string]any{"id": id, "success": true})
 		}
 		js(w, res)
 	})
 	mux.HandleFunc("GET /api/albums/{id}", func(w http.ResponseWriter, r *http.Request) { need(r, false); js(w, f.albums[r.PathValue("id")]) })
+	mux.HandleFunc("POST /api/search/metadata", func(w http.ResponseWriter, r *http.Request) {
+		need(r, false)
+		var in struct {
+			AlbumIDs []string `json:"albumIds"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		items := []map[string]string{}
+		if len(in.AlbumIDs) == 1 {
+			for _, id := range f.members[in.AlbumIDs[0]] {
+				items = append(items, map[string]string{"id": id})
+			}
+		}
+		js(w, map[string]any{"assets": map[string]any{"items": items, "count": len(items)}})
+	})
 	mux.HandleFunc("DELETE /api/albums/{id}", func(w http.ResponseWriter, r *http.Request) {
 		need(r, false)
 		delete(f.albums, r.PathValue("id"))
@@ -161,6 +176,14 @@ func TestSmokeAlbumLegUsesNarrowKeyAndCleansUp(t *testing.T) {
 	}
 	if len(f.badAuth) > 0 {
 		t.Errorf("wrong credential on: %s", strings.Join(f.badAuth, ", "))
+	}
+}
+
+func TestSmokeAlbumLegFailsWhenFilerNeverAddsAsset(t *testing.T) {
+	srv, f := newSmokeFake(t)
+	f.dropAdds = true
+	if code := runSmokeImmichAlbums(context.Background(), srv.Client(), srv.URL, "tok", "share@example.test", slog.New(slog.DiscardHandler)); code == 0 {
+		t.Fatal("want failure when albums hold no asset")
 	}
 }
 

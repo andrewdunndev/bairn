@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,13 +35,13 @@ func (c *smokeChecks) check(name string, ok bool, detail string) {
 }
 
 type smokeAlbum struct {
-	ID         string `json:"id"`
-	AlbumName  string `json:"albumName"`
-	OwnerID    string `json:"ownerId"`
-	AssetCount int    `json:"assetCount"`
-	Assets     []struct {
-		ID string `json:"id"`
-	} `json:"assets"`
+	ID         string   `json:"id"`
+	AlbumName  string   `json:"albumName"`
+	AssetCount int      `json:"assetCount"`
+	Members    []string `json:"-"`
+	// Immich 3.4.2 AlbumResponseDto has no ownerId or assets: the owner
+	// is the albumUsers entry with role "owner", and membership is read
+	// with a metadata search scoped to the album.
 	AlbumUsers []struct {
 		Role string `json:"role"`
 		User struct {
@@ -143,7 +144,27 @@ func runSmokeImmichAlbums(ctx context.Context, client *http.Client, host, token,
 			if err := contract.ImmichSessionJSON(c, client, host, token, http.MethodDelete, "/api/albums/"+url.PathEscape(a.ID), nil, nil); err != nil {
 				logger.Warn("smoke", "phase", "cleanup-album", "album_id", a.ID, "err", err)
 				cs.failed++
+			} else {
+				logger.Info("smoke", "phase", "cleanup-album", "album_id", a.ID, "result", "deleted")
 			}
+		}
+		var left []smokeAlbum
+		if err := contract.ImmichSessionJSON(c, client, host, token, http.MethodGet, "/api/albums", nil, &left); err != nil {
+			logger.Warn("smoke", "phase", "cleanup-verify", "err", err)
+			cs.failed++
+			return
+		}
+		remaining := 0
+		for _, a := range left {
+			if strings.HasPrefix(a.AlbumName, "bairn-smoke-") {
+				remaining++
+			}
+		}
+		if remaining > 0 {
+			logger.Warn("smoke", "phase", "cleanup-verify", "remaining", remaining)
+			cs.failed++
+		} else {
+			logger.Info("smoke", "phase", "cleanup-verify", "result", "no bairn-smoke- albums remain")
 		}
 	})
 
@@ -160,6 +181,8 @@ func runSmokeImmichAlbums(ctx context.Context, client *http.Client, host, token,
 				if err := contract.ImmichSessionJSON(c, client, host, token, http.MethodDelete, "/api/assets", map[string]any{"ids": []string{assetID}, "force": true}, nil); err != nil {
 					logger.Warn("smoke", "phase", "cleanup-asset", "asset_id", assetID, "err", err)
 					cs.failed++
+				} else {
+					logger.Info("smoke", "phase", "cleanup-asset", "asset_id", assetID, "result", "deleted")
 				}
 			})
 		}
@@ -176,6 +199,26 @@ func runSmokeImmichAlbums(ctx context.Context, client *http.Client, host, token,
 		}
 		return res, f.Flush(ctx)
 	}
+	// members lists asset ids in an album via the admin session; 3.4.2
+	// has no assets on GET /albums/{id}.
+	members := func(albumID string) ([]string, error) {
+		var out struct {
+			Assets struct {
+				Items []struct {
+					ID string `json:"id"`
+				} `json:"items"`
+			} `json:"assets"`
+		}
+		body := map[string]any{"albumIds": []string{albumID}, "size": 1000}
+		if err := contract.ImmichSessionJSON(ctx, client, host, token, http.MethodPost, "/api/search/metadata", body, &out); err != nil {
+			return nil, err
+		}
+		ids := make([]string, 0, len(out.Assets.Items))
+		for _, x := range out.Assets.Items {
+			ids = append(ids, x.ID)
+		}
+		return ids, nil
+	}
 	snapshot := func() map[string][]smokeAlbum {
 		out := map[string][]smokeAlbum{}
 		var all []smokeAlbum
@@ -191,6 +234,12 @@ func runSmokeImmichAlbums(ctx context.Context, client *http.Client, host, token,
 						cs.check("read album", false, err.Error())
 						continue
 					}
+					ids, err := members(a.ID)
+					if err != nil {
+						cs.check("read album members", false, err.Error())
+						continue
+					}
+					full.Members = ids
 					out[n] = append(out[n], full)
 				}
 			}
@@ -214,11 +263,12 @@ func runSmokeImmichAlbums(ctx context.Context, client *http.Client, host, token,
 				continue
 			}
 			a := as[0]
-			cs.check("leg1 owned by key owner "+n, a.OwnerID == me.ID, "owner differs")
-			has := false
-			for _, x := range a.Assets {
-				has = has || x.ID == assetID
+			owned := false
+			for _, u := range a.AlbumUsers {
+				owned = owned || (u.User.ID == me.ID && u.Role == "owner")
 			}
+			cs.check("leg1 owned by key owner "+n, owned, "owner differs")
+			has := slices.Contains(a.Members, assetID)
 			cs.check("leg1 contains asset "+n, has, "asset missing")
 			if shareID != "" {
 				editor := false
@@ -239,8 +289,8 @@ func runSmokeImmichAlbums(ctx context.Context, client *http.Client, host, token,
 		for _, n := range names {
 			cs.check("leg2 still one album "+n, len(after[n]) == 1, fmt.Sprintf("found %d", len(after[n])))
 			if len(after[n]) == 1 && len(before[n]) == 1 {
-				cs.check("leg2 asset count unchanged "+n, len(after[n][0].Assets) == len(before[n][0].Assets),
-					fmt.Sprintf("%d -> %d", len(before[n][0].Assets), len(after[n][0].Assets)))
+				cs.check("leg2 asset count unchanged "+n, len(after[n][0].Members) == len(before[n][0].Members),
+					fmt.Sprintf("%d -> %d", len(before[n][0].Members), len(after[n][0].Members)))
 			}
 		}
 	}
