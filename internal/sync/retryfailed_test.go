@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
+	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 )
@@ -268,5 +269,44 @@ func TestSavedAssetIsNoLongerFailed(t *testing.T) {
 	_ = st.MarkSaved(ctx, "a", "/p", time.Now())
 	if len(st.Failed()) != 0 {
 		t.Error("saved entry still failed")
+	}
+}
+
+func TestRetryFailedStopsAtTheFloorWhenADatedTargetIsMissing(t *testing.T) {
+	feed := newDatedFeed(t, 100, nil, false)
+	e := newRetryEnv(t, feed)
+	seedFailed(t, e.st, true, 40)
+	// Dated, but no such post in the feed: the walk must not run on to
+	// the oldest page looking for it.
+	_ = e.st.Discover(context.Background(), "img-gone", state.Asset{Source: "feed-image", FeedItemID: "post-x", FeedItemAt: postTime(25), DiscoveredAt: postTime(26)})
+	_ = e.st.MarkError(context.Background(), "img-gone", "boom")
+	res := e.run(t, false)
+	if r := res.Retry; r.Fixed != 1 || r.NotFound != 1 {
+		t.Fatalf("summary = %+v", r)
+	}
+	// Pages 40..31 and 30..21; the second ends before post 25's date.
+	if feed.pages != 2 {
+		t.Errorf("feed pages = %d (%v), want 2: stop after the page past the floor", feed.pages, feed.queries)
+	}
+}
+
+func TestRetryModeMakesNoTagCalls(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	srv, ti := newTagImmich(t)
+	ic := immich.New(srv.URL, "k")
+	st := openTestStore(t)
+	ctx := context.Background()
+	_ = st.Discover(ctx, "up", state.Asset{Source: "feed-image"})
+	_ = st.MarkUploaded(ctx, "up", "asset-9", "created", time.Now())
+	// A failed entry so the run goes past the nothing-to-retry exit.
+	_ = st.Discover(ctx, "bad", state.Asset{Source: "feed-image", DiscoveredAt: time.Now()})
+	_ = st.MarkError(ctx, "bad", "boom")
+	if len(st.Untagged()) != 1 {
+		t.Fatal("setup: want one owed tag")
+	}
+	tagRun(t, famlySrv, ic, st, true, Options{RetryFailed: true})
+	if ti.upserts.Load() != 0 || ti.tagCalls.Load() != 0 {
+		t.Errorf("--retry-failed made tag calls: %d/%d", ti.upserts.Load(), ti.tagCalls.Load())
 	}
 }

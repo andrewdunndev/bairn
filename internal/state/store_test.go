@@ -434,3 +434,15 @@ func TestUntaggedListsUploadsOwedTheTagOnce(t *testing.T) {
 		t.Errorf("stats = %+v", sm)
 	}
 }
+
+func TestFailedExcludesAnEntryThatWasSaved(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+	_ = s.Discover(ctx, "a", Asset{Source: "feed-image"})
+	_ = s.MarkSaved(ctx, "a", "/p", time.Now())
+	// Saved, then the upload failed: LastError and SavedAt both set.
+	_ = s.MarkError(ctx, "a", "upload: boom")
+	if got := s.Failed(); len(got) != 0 {
+		t.Errorf("Failed() = %+v, want a saved entry left out (--retry-failed is for unsaved ones)", got)
+	}
+}

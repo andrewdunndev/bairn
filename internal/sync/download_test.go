@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/internal/asset"
 	"gitlab.com/dunn.dev/bairn/internal/retry"
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 )
 
@@ -124,8 +126,13 @@ func TestDownloadStopsAtTheAttemptBound(t *testing.T) {
 }
 
 func TestDownloadDoesNotRetryAPermanentStatus(t *testing.T) {
-	body := jpegBytes(t)
-	_ = body
+	// 403 is an expired signed URL: retrying it would only storm the CDN.
+	for _, status := range []int{http.StatusNotFound, http.StatusForbidden} {
+		t.Run(fmt.Sprint(status), func(t *testing.T) { permanentStatus(t, status) })
+	}
+}
+
+func permanentStatus(t *testing.T, status int) {
 	var calls atomic.Int32
 	mux := http.NewServeMux()
 	srv := httptest.NewServer(mux)
@@ -139,11 +146,11 @@ func TestDownloadDoesNotRetryAPermanentStatus(t *testing.T) {
 	})
 	mux.HandleFunc("/gone", func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		w.WriteHeader(http.StatusNotFound)
+		w.WriteHeader(status)
 	})
 	res, _ := runFlaky(t, srv, 4)
 	if calls.Load() != 1 || res.Errors != 1 {
-		t.Errorf("a 404 must not be retried: calls=%d errors=%d", calls.Load(), res.Errors)
+		t.Errorf("a %d must not be retried: calls=%d errors=%d", status, calls.Load(), res.Errors)
 	}
 }
 
@@ -154,6 +161,12 @@ func TestIsTransient(t *testing.T) {
 	}{
 		{fmt.Errorf("x: %w", &asset.HTTPStatusError{Status: 502}), true},
 		{fmt.Errorf("x: %w", &asset.HTTPStatusError{Status: 404}), false},
+		{fmt.Errorf("x: %w", &asset.HTTPStatusError{Status: 403}), false},
+		{fmt.Errorf("x: %w", &asset.HTTPStatusError{Status: 429}), true},
+		{fmt.Errorf("x: %w", &asset.HTTPStatusError{Status: 408}), true},
+		{fmt.Errorf("x: %w", io.ErrUnexpectedEOF), true},
+		{fmt.Errorf("x: %w", io.EOF), true},
+		{fmt.Errorf("x: %w", safehttp.ErrIdle), true},
 		{fmt.Errorf("read: connection reset by peer"), true},
 		{fmt.Errorf("x: %w", context.Canceled), false},
 		{fmt.Errorf("disk full"), false},
