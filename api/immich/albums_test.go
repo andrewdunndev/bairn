@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 )
 
@@ -40,30 +42,17 @@ func TestFindOwnedAlbumNone(t *testing.T) {
 	}
 }
 
-func TestCreateAlbumSharesAsEditorAndIsNotRetried(t *testing.T) {
+func TestCreateAlbumSharesAsEditor(t *testing.T) {
 	var body map[string]any
-	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls++
 		if r.Method != http.MethodPost || r.URL.Path != "/albums" {
 			t.Errorf("%s %s", r.Method, r.URL.Path)
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
-		if calls == 1 {
-			http.Error(w, "boom", http.StatusInternalServerError)
-			return
-		}
 		_, _ = w.Write([]byte(`{"id":"new-1"}`))
 	}))
 	defer srv.Close()
-	c := New(srv.URL, "k", fastRetry())
-	if _, err := c.CreateAlbum(context.Background(), "A", []string{"u-1"}); err == nil {
-		t.Fatal("want error on 500")
-	}
-	if calls != 1 {
-		t.Errorf("calls after failure = %d, want 1 (no retry on create)", calls)
-	}
-	id, err := c.CreateAlbum(context.Background(), "A", []string{"u-1", "u-2"})
+	id, err := New(srv.URL, "k", fastRetry()).CreateAlbum(context.Background(), "A", []string{"u-1", "u-2"})
 	if err != nil || id != "new-1" {
 		t.Fatalf("id=%q err=%v", id, err)
 	}
@@ -73,6 +62,87 @@ func TestCreateAlbumSharesAsEditorAndIsNotRetried(t *testing.T) {
 	}
 	if body["albumName"] != "A" {
 		t.Errorf("albumName = %v", body["albumName"])
+	}
+}
+
+// fakeImmichAlbums is a server whose POST /albums creates the album and
+// then drops the response (lost) for the first lose posts.
+type fakeImmichAlbums struct {
+	mu     sync.Mutex
+	albums []string
+	posts  int
+	lose   int
+	status int // when non-zero, POST answers this status without creating
+}
+
+func (f *fakeImmichAlbums) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch {
+	case r.Method == http.MethodGet && r.URL.Path == "/albums":
+		out := []map[string]string{}
+		for i, n := range f.albums {
+			if n == r.URL.Query().Get("name") {
+				out = append(out, map[string]string{"id": fmt.Sprintf("al-%d", i), "albumName": n})
+			}
+		}
+		_ = json.NewEncoder(w).Encode(out)
+	case r.Method == http.MethodPost && r.URL.Path == "/albums":
+		f.posts++
+		if f.status != 0 {
+			http.Error(w, "no", f.status)
+			return
+		}
+		var in struct{ AlbumName string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		f.albums = append(f.albums, in.AlbumName)
+		if f.posts <= f.lose {
+			hj, _ := w.(http.Hijacker)
+			conn, _, _ := hj.Hijack()
+			_ = conn.Close()
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{"id":"al-%d"}`, len(f.albums)-1)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+func TestCreateAlbumLostResponseMakesExactlyOneAlbum(t *testing.T) {
+	f := &fakeImmichAlbums{lose: 1}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	id, err := New(srv.URL, "k", fastRetry()).CreateAlbum(context.Background(), "A", []string{"u-1"})
+	if err != nil || id != "al-0" {
+		t.Fatalf("id=%q err=%v", id, err)
+	}
+	if len(f.albums) != 1 || f.posts != 1 {
+		t.Errorf("albums=%d posts=%d, want 1 and 1 (found, not recreated)", len(f.albums), f.posts)
+	}
+}
+
+func TestCreateAlbumRetriesWhenStillAbsent(t *testing.T) {
+	f := &fakeImmichAlbums{status: http.StatusInternalServerError}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	c := New(srv.URL, "k", fastRetry())
+	if _, err := c.CreateAlbum(context.Background(), "A", nil); err == nil {
+		t.Fatal("want error when every attempt fails")
+	}
+	if f.posts != createAttempts || len(f.albums) != 0 {
+		t.Errorf("posts=%d albums=%d, want %d posts and none created", f.posts, len(f.albums), createAttempts)
+	}
+}
+
+func TestCreateAlbumClientErrorIsFinal(t *testing.T) {
+	f := &fakeImmichAlbums{status: http.StatusBadRequest}
+	srv := httptest.NewServer(f)
+	defer srv.Close()
+	if _, err := New(srv.URL, "k", fastRetry()).CreateAlbum(context.Background(), "A", nil); err == nil {
+		t.Fatal("want error")
+	}
+	if f.posts != 1 {
+		t.Errorf("posts = %d, want 1 (4xx is not retried)", f.posts)
 	}
 }
 

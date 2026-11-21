@@ -102,10 +102,10 @@ func (f FeedItem) SenderName() string {
 // Sender describes who posted a feed item. bairn uses Name
 // (typically the educator's display name) for EXIF Artist.
 type Sender struct {
-	ID          string `json:"id,omitempty"`
-	LoginID     string `json:"loginId,omitempty"`
-	Name        string `json:"name,omitempty"`
-	Subtitle    string `json:"subtitle,omitempty"`
+	ID       string `json:"id,omitempty"`
+	LoginID  string `json:"loginId,omitempty"`
+	Name     string `json:"name,omitempty"`
+	Subtitle string `json:"subtitle,omitempty"`
 }
 
 // Image is one image attached to a feed item. URL and BigURL are

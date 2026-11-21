@@ -38,6 +38,19 @@ func TestStateGuardRefusesMissingStateWithMedia(t *testing.T) {
 	}
 }
 
+func TestStateGuardIgnoresInFlightDownloads(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, ".bairn-dl-123.part"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".bairn-dl-456.jpg"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkStateGuard(filepath.Join(dir, "state.json"), dir, false); err != nil {
+		t.Errorf("in-flight temp counted as media: %v", err)
+	}
+}
+
 func TestStateGuardAllowsEmptyOrMedialessSaveDir(t *testing.T) {
 	dir := t.TempDir()
 	state := filepath.Join(dir, ".bairn-state.json.lock")

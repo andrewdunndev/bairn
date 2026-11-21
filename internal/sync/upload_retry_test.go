@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -527,5 +528,36 @@ func TestDryRunLeavesStateEmpty(t *testing.T) {
 	}
 	if sum, _ := st.Stats(context.Background()); sum.Total != 0 {
 		t.Errorf("dry run recorded %d state entries", sum.Total)
+	}
+}
+
+// A state file that stops accepting writes after the uploads (ENOSPC
+// in production) must be counted, so the CLI cannot exit 0.
+func TestStateRecordFailureIsCounted(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	inner, _ := newAlbumImmich(t)
+	dir := t.TempDir()
+	st, err := state.Open(context.Background(), filepath.Join(dir, "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	st.SetFlushEvery(1)
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700); _ = st.Close() })
+	// Make the state dir read-only once the album adds begin: every
+	// state write after that fails.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/assets") && r.Method == http.MethodPut {
+			_ = os.Chmod(dir, 0o500)
+		}
+		inner.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	res := albumRun(t, famlySrv, immich.New(srv.URL, "k"), st)
+	if res.StateErrors == 0 {
+		t.Fatalf("StateErrors = 0, want > 0 (result %+v)", res)
 	}
 }

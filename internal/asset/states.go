@@ -49,14 +49,14 @@ type Discovered struct {
 	tagNames      []string
 }
 
-func (d Discovered) FamlyImageID() string  { return d.famlyImageID }
-func (d Discovered) Source() Source        { return d.source }
-func (d Discovered) FeedItemID() string    { return d.feedItemID }
-func (d Discovered) URL() string           { return d.url }
-func (d Discovered) Filename() string      { return d.filename }
+func (d Discovered) FamlyImageID() string     { return d.famlyImageID }
+func (d Discovered) Source() Source           { return d.source }
+func (d Discovered) FeedItemID() string       { return d.feedItemID }
+func (d Discovered) URL() string              { return d.url }
+func (d Discovered) Filename() string         { return d.filename }
 func (d Discovered) FileCreatedAt() time.Time { return d.fileCreatedAt }
-func (d Discovered) Body() string          { return d.body }
-func (d Discovered) SenderName() string    { return d.senderName }
+func (d Discovered) Body() string             { return d.body }
+func (d Discovered) SenderName() string       { return d.senderName }
 
 // EXIF returns the bundle of metadata bairn knows about this
 // asset, ready to embed at Save time.
@@ -204,9 +204,9 @@ type Recorded struct {
 	recordedAt time.Time
 }
 
-func (r Recorded) Saved() Saved             { return r.saved }
-func (r Recorded) Uploaded() *Uploaded      { return r.uploaded }
-func (r Recorded) RecordedAt() time.Time    { return r.recordedAt }
+func (r Recorded) Saved() Saved          { return r.saved }
+func (r Recorded) Uploaded() *Uploaded   { return r.uploaded }
+func (r Recorded) RecordedAt() time.Time { return r.recordedAt }
 
 // videoOffset is the offset for a video's sidecar date. A video
 // carries no zone of its own, so it borrows the zone of a sibling

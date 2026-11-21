@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -16,8 +17,10 @@ import (
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/albums"
+	"gitlab.com/dunn.dev/bairn/internal/asset"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/drift"
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 	"gitlab.com/dunn.dev/bairn/internal/sync"
@@ -151,6 +154,11 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		fmt.Fprintln(os.Stderr, "fetch:", err)
 		return 2
 	}
+	if !*dryRun {
+		if n := asset.SweepStaleTemps(*saveDir, 24*time.Hour); n > 0 {
+			logger.Info("removed stale partial downloads", "count", n)
+		}
+	}
 
 	var immichSink *sink.Immich
 	var filer *albums.Filer
@@ -167,14 +175,17 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		}
 	}
 
-	tokenSrc := buildTokenSource(cfg)
-	fc := famly.New(tokenSrc, famlyOpts(cfg)...)
 	st, err := state.Open(ctx, cfg.StatePath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "state:", err)
 		return 1
 	}
 	defer st.Close()
+
+	// Built after state.Open so the session write sits under the state
+	// lock: two runs cannot race over the file.
+	tokenSrc := buildTokenSource(cfg, *dryRun, true, logger)
+	fc := famly.New(tokenSrc, famlyOpts(cfg)...)
 
 	logins := map[string]struct{}{}
 	children := map[string]struct{}{}
@@ -214,6 +225,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 
 	res, err := sync.Run(ctx, sync.Deps{
 		Famly: fc, Disk: disk, Immich: immichSink, Albums: filer, State: st, Logger: logger,
+		HTTP: safehttp.NewDownloadClient(),
 	}, sync.Options{
 		MaxPages:           *maxPages,
 		DryRun:             *dryRun,
@@ -231,15 +243,32 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(res)
+	return fetchExitCode(res, os.Stderr)
+}
+
+// fetchExitCode reports the run summary problems to w and returns the
+// fetch exit status: 1 when any item failed to download or save, any
+// upload failed or any album operation failed, so a scheduler never
+// records a partial run as a success.
+func fetchExitCode(res sync.Result, w io.Writer) int {
+	code := 0
+	if res.Errors > 0 {
+		fmt.Fprintf(w, "fetch: %d item(s) failed to download or save; rerun to retry\n", res.Errors)
+		code = 1
+	}
+	if res.StateErrors > 0 {
+		fmt.Fprintf(w, "fetch: %d state-file write(s) failed; check free space and permissions on the state path, then rerun\n", res.StateErrors)
+		code = 1
+	}
 	if res.UploadFailed > 0 {
-		fmt.Fprintf(os.Stderr, "fetch: %d asset(s) saved to disk but not uploaded to Immich; rerun to retry\n", res.UploadFailed)
-		return 1
+		fmt.Fprintf(w, "fetch: %d asset(s) saved to disk but not uploaded to Immich; rerun to retry\n", res.UploadFailed)
+		code = 1
 	}
 	if res.AlbumErrors > 0 {
-		fmt.Fprintf(os.Stderr, "fetch: %d Immich album operation(s) failed; the assets are uploaded but not filed (check the API key has album.read, album.create and albumAsset.create)\n", res.AlbumErrors)
-		return 1
+		fmt.Fprintf(w, "fetch: %d Immich album operation(s) failed; the assets are uploaded but not filed (check the API key has album.read, album.create and albumAsset.create)\n", res.AlbumErrors)
+		code = 1
 	}
-	return 0
+	return code
 }
 
 // runStatus implements the status subcommand.
@@ -300,14 +329,15 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	)
 
 	// Token resolution by manifest. Famly's auth_env is FAMLY_ACCESS_TOKEN;
-	// when that's set, prefer credentials (FAMLY_EMAIL+FAMLY_PASSWORD)
-	// over the short-lived static token for a self-healing tag pipeline.
+	// with credentials (FAMLY_EMAIL+FAMLY_PASSWORD) the gate ignores any
+	// static or cached token and logs in fresh, since Probe takes a plain
+	// string and could not heal a stale one.
 	// Other vendors (Immich's IMMICH_API_KEY, etc.) flow through Probe's
 	// env-fallback unchanged: leaving Token empty makes Probe read
 	// os.Getenv(m.AuthEnv).
 	var token string
 	if m.AuthEnv == "FAMLY_ACCESS_TOKEN" {
-		tokenSrc := buildTokenSource(cfg)
+		tokenSrc := buildTokenSource(cfg, true, false, logger)
 		token, err = tokenSrc.Token(ctx)
 		if err != nil {
 			logger.Error("drift", "phase", "token", "err", err)
@@ -414,11 +444,13 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	return 0
 }
 
-func buildTokenSource(cfg *config.Config) famly.TokenSource {
-	// Prefer credentials when present for self-healing cron.
-	// Otherwise fall back to the static token.
+// buildTokenSource prefers credentials when present for self-healing
+// cron (reusing the stored session so it logs in only when the token
+// expires); otherwise it falls back to the static token. readOnly keeps
+// the session file from being written.
+func buildTokenSource(cfg *config.Config, readOnly, seed bool, logger *slog.Logger) famly.TokenSource {
 	if cfg.FamlyEmail != "" && cfg.FamlyPassword != "" {
-		return famly.NewRefreshingTokenFromCredentials(cfg.FamlyBaseURL, cfg.FamlyEmail, cfg.FamlyPassword, cfg.FamlyDeviceID)
+		return sessionTokenSource(cfg, readOnly, seed, logger)
 	}
 	return famly.NewStaticToken(cfg.FamlyAccessToken)
 }

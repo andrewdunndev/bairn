@@ -14,13 +14,15 @@ import (
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/internal/config"
+	"gitlab.com/dunn.dev/bairn/internal/session"
 )
 
 // runLogin authenticates a Famly account with email and password,
 // fetches /me to confirm the new token works for actual API calls,
 // and prints success. The minted token is not persisted to disk;
 // the operator's next bairn run reads creds from env or config and
-// re-authenticates as needed.
+// logs in as needed. The device id it sends is the stored one (see
+// resolveDeviceID), so the first fetch is not a second new device.
 //
 // This is the recommended onboarding path. The advanced
 // FAMLY_ACCESS_TOKEN flow (paste a session token from devtools)
@@ -30,7 +32,7 @@ func runLogin(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	fs := flag.NewFlagSet("login", flag.ExitOnError)
 	emailFlag := fs.String("email", "", "Famly email (or set FAMLY_EMAIL)")
 	passwordFlag := fs.String("password", "", "Famly password (insecure; prefer FAMLY_PASSWORD or interactive prompt)")
-	deviceID := fs.String("device-id", cfg.FamlyDeviceID, "stable device identifier sent to Famly")
+	deviceID := fs.String("device-id", cfg.FamlyDeviceID, "device identifier sent to Famly (default: FAMLY_DEVICE_ID, else the one stored in the session file, generated on first use)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -61,6 +63,18 @@ func runLogin(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	}
 	if password == "" {
 		fmt.Fprintln(os.Stderr, "login: password is required")
+		return 2
+	}
+
+	if *deviceID == "" {
+		store := session.Open(cfg.SessionPath, false)
+		cur, lerr := store.Load()
+		if lerr != nil {
+			logger.Warn("famly session file ignored", "err", lerr)
+		}
+		*deviceID = resolveDeviceID(cfg, store, &cur, logger)
+	} else if !famly.ValidDeviceID(*deviceID) {
+		fmt.Fprintln(os.Stderr, "login: --device-id must be a UUID (8-4-4-4-12 hex digits)")
 		return 2
 	}
 

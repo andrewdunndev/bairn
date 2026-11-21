@@ -1,47 +1,30 @@
 package famly
 
 import (
-	"crypto/md5"
+	"crypto/rand"
 	"fmt"
-	"net"
-	"os"
+	"regexp"
 )
 
-// DeriveDeviceID returns a stable, per-host UUID-shaped string
-// suitable for Famly's `DeviceId` scalar.
-//
 // The vendor's GraphQL surface validates DeviceId as a UUID; an
 // arbitrary string like "bairn-default-device" is rejected with
-// 400 "Error during variable coercion." We derive a deterministic
-// UUID from the host's MAC address (or hostname as fallback) so
-// the same machine sends the same DeviceId across runs without
-// requiring the operator to configure one.
-//
-// Matches jacobbunk/famly-fetch's approach for compatibility:
-// MD5(MAC) formatted as 8-4-4-4-12 hex.
-func DeriveDeviceID() string {
-	seed := hostSeed()
-	d := md5.Sum(seed)
-	return fmt.Sprintf("%x-%x-%x-%x-%x", d[0:4], d[4:6], d[6:8], d[8:10], d[10:16])
-}
+// 400 "Error during variable coercion."
+var deviceIDShape = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
-// hostSeed returns a stable byte string identifying this host.
-// Prefers the first non-loopback MAC address; falls back to the
-// hostname when interfaces can't be enumerated (containers, etc.).
-func hostSeed() []byte {
-	if ifaces, err := net.Interfaces(); err == nil {
-		for _, ifc := range ifaces {
-			if ifc.Flags&net.FlagLoopback != 0 {
-				continue
-			}
-			if len(ifc.HardwareAddr) >= 6 {
-				return ifc.HardwareAddr
-			}
-		}
+// ValidDeviceID reports whether s has the UUID shape (8-4-4-4-12 hex)
+// Famly's DeviceId scalar accepts.
+func ValidDeviceID(s string) bool { return deviceIDShape.MatchString(s) }
+
+// NewDeviceID returns a random UUIDv4 for Famly's `DeviceId` scalar.
+// It is generated once and then stored by the caller: a value derived
+// from the host (a MAC, say) is not stable in containers and CI, where
+// it changes on every run and Famly reports a new device each time.
+func NewDeviceID() (string, error) {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		return "", fmt.Errorf("famly: generate device id: %w", err)
 	}
-	host, _ := os.Hostname()
-	if host == "" {
-		host = "bairn-unknown-host"
-	}
-	return []byte(host)
+	b[6] = b[6]&0x0f | 0x40
+	b[8] = b[8]&0x3f | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16]), nil
 }

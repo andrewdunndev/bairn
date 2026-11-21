@@ -44,7 +44,7 @@ func TestLoginFailedInvalidPassword(t *testing.T) {
 	}
 }
 
-func TestRefreshingTokenFromCredentialsRefreshes(t *testing.T) {
+func TestRefreshingTokenWithLoginRefreshes(t *testing.T) {
 	calls := 0
 	mux := http.NewServeMux()
 	mux.HandleFunc("/graphql", func(w http.ResponseWriter, r *http.Request) {
@@ -55,7 +55,10 @@ func TestRefreshingTokenFromCredentialsRefreshes(t *testing.T) {
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
 
-	src := NewRefreshingTokenFromCredentials(srv.URL, "alice@example.com", "pw", "device-1")
+	src := NewRefreshingToken("alice@example.com", "pw", "device-1",
+		func(ctx context.Context, e, p, d string) (string, error) {
+			return Login(ctx, srv.URL, e, p, d)
+		})
 	t1, err := src.Token(context.Background())
 	if err != nil {
 		t.Fatalf("first Token: %v", err)

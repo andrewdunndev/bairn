@@ -68,7 +68,8 @@ func checkStateGuard(statePath, saveDir string, allow bool) error {
 		if err != nil || found != "" {
 			return filepath.SkipAll
 		}
-		if !d.IsDir() && mediaExt[strings.ToLower(filepath.Ext(p))] {
+		// Dot-prefixed names are bairn's in-flight download files.
+		if !d.IsDir() && !strings.HasPrefix(d.Name(), ".") && mediaExt[strings.ToLower(filepath.Ext(p))] {
 			found = p
 			return filepath.SkipAll
 		}

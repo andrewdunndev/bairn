@@ -86,7 +86,7 @@ bairn does five jobs:
    from the disk sink, including its video `.xmp` sidecar, so a failed
    or skipped upload is fixed by rerunning `bairn fetch`. The run
    summary counts `saved`, `uploaded`, `uploadDuplicates` and
-   `uploadFailed`; the exit status is 1 while any upload failed. A 401 or 403 from
+   `uploadFailed`. A 401 or 403 from
    Immich, or five failed uploads in a row, stops uploads for the rest
    of the run: the remaining assets are still saved to disk and counted
    in `uploadFailed`, and a rerun uploads them. State
@@ -163,7 +163,33 @@ Auth (one of these is required):
 |---|---|
 | `FAMLY_EMAIL` + `FAMLY_PASSWORD` | **Recommended.** bairn re-authenticates on token expiry. |
 | `FAMLY_ACCESS_TOKEN` | Advanced; use when MFA is enabled on the account. |
-| `FAMLY_DEVICE_ID` | Optional; default is a stable per-host UUID. |
+| `FAMLY_DEVICE_ID` | Optional UUID pinning the device id sent to Famly. Default: the id stored in the session file, generated once at random. Set it in CI (see below). |
+
+**Session file.** bairn keeps `session.json` next to the state file
+(`$XDG_STATE_HOME/bairn/` by default, or the directory of
+`BAIRN_STATE_PATH`). It holds two values: the device id Famly knows
+this install by, and the last access token. The file is mode `0600`,
+written atomically, and the token is never logged. A run starts from
+the stored token and logs in with your password only when Famly
+rejects it, so Famly's "new log-in activity" e-mail is not sent every
+run. A token pasted in `FAMLY_ACCESS_TOKEN` wins over the stored one
+for `fetch`, even when credentials are also set; if Famly rejects it,
+bairn logs in with the credentials for that run only and writes no
+token to the file while the variable is set. `bairn drift` with credentials
+always logs in fresh and ignores both. `--dry-run` and `bairn drift`
+never write the file. Because they cannot store a device id, a
+first-ever `--dry-run` or `drift` on a fresh install (no session file, no
+`FAMLY_DEVICE_ID`) that needs a login looks like a new device to Famly;
+make the first run on a fresh install a real `fetch`. Delete the file to force a fresh login;
+back it up like a credential, not like the archive.
+
+**CI and containers.** A throwaway container has no session file, so
+each run would generate a new device id and Famly would report a new
+device. Set a fixed `FAMLY_DEVICE_ID` (any UUID you generate once, for
+example with `uuidgen`) as a masked CI variable; the drift-gate job,
+which runs on tags and weekly schedules, then always presents the same
+device and the notices stop. Do the same for a container whose state
+directory is not a persistent volume.
 
 Save and state:
 
@@ -191,6 +217,15 @@ Optional Immich sink (uploads alongside disk save):
 require them are not supported. It is verified against the
 `IMMICH_VERSION` pin in the Makefile (albums and key permissions
 included) through `make pre-tag-check`.
+
+Exit codes for `bairn fetch`: 0 means the run finished with nothing
+left over. 1 means the run ended but something failed (an item that
+could not be downloaded or saved, an upload that failed, an album
+operation that failed, or a write to the state file that failed), or a
+runtime error stopped it; rerun to retry. An EXIF reinjection failure
+is only a warning (the item is saved and uploaded) and still exits 0.
+2 means a usage or configuration error. A scheduler's last-success
+marker should advance only on 0.
 
 CLI flag overrides for `bairn fetch`:
 

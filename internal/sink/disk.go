@@ -117,36 +117,13 @@ func (d *Disk) Put(ctx context.Context, in PutInput) (Receipt, error) {
 		}
 	}
 
-	src, err := os.Open(in.SourcePath)
-	if err != nil {
-		return Receipt{}, fmt.Errorf("sink: open source %s: %w", in.SourcePath, err)
-	}
-	defer src.Close()
-
 	tmp := dest + ".tmp"
-	// 0o600: archival photos may carry children's faces and the
-	// vendor's metadata. Default to private; the operator can
-	// loosen with chmod if they want.
-	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	written, err := placeTemp(in.SourcePath, tmp)
 	if err != nil {
-		return Receipt{}, fmt.Errorf("sink: open dest tmp %s: %w", tmp, err)
-	}
-	written, err := io.Copy(out, src)
-	if err != nil {
-		_ = out.Close()
-		_ = os.Remove(tmp)
-		return Receipt{}, fmt.Errorf("sink: copy to %s: %w", tmp, err)
-	}
-	if err := out.Sync(); err != nil {
-		_ = out.Close()
-		_ = os.Remove(tmp)
-		return Receipt{}, fmt.Errorf("sink: fsync %s: %w", tmp, err)
-	}
-	if err := out.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return Receipt{}, fmt.Errorf("sink: close %s: %w", tmp, err)
+		return Receipt{}, err
 	}
 	if err := os.Rename(tmp, dest); err != nil {
+		_ = os.Remove(tmp)
 		return Receipt{}, fmt.Errorf("sink: rename %s -> %s: %w", tmp, dest, err)
 	}
 
@@ -245,4 +222,46 @@ func expandStrftime(pattern string, when time.Time) string {
 		"%j", when.Format("002"),
 	)
 	return r.Replace(pattern)
+}
+
+// placeTemp moves src to tmp. A same-filesystem rename is tried first
+// (the download temp lives under the save root); otherwise the bytes
+// are copied, fsynced and the source is left for its owner to clean up.
+// 0o600: archival photos may carry children's faces and the vendor's
+// metadata. Default to private; the operator can loosen with chmod.
+func placeTemp(src, tmp string) (int64, error) {
+	if err := os.Rename(src, tmp); err == nil {
+		fi, err := os.Stat(tmp)
+		if err != nil {
+			_ = os.Remove(tmp)
+			return 0, fmt.Errorf("sink: stat %s: %w", tmp, err)
+		}
+		_ = os.Chmod(tmp, 0o600)
+		return fi.Size(), nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return 0, fmt.Errorf("sink: open source %s: %w", src, err)
+	}
+	defer in.Close()
+	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return 0, fmt.Errorf("sink: open dest tmp %s: %w", tmp, err)
+	}
+	written, err := io.Copy(out, in)
+	if err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return 0, fmt.Errorf("sink: copy to %s: %w", tmp, err)
+	}
+	if err := out.Sync(); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
+		return 0, fmt.Errorf("sink: fsync %s: %w", tmp, err)
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return 0, fmt.Errorf("sink: close %s: %w", tmp, err)
+	}
+	return written, nil
 }

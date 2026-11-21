@@ -21,6 +21,18 @@ I will acknowledge receipt within seven days. From there, the
 goal is to either ship a fix or coordinate public disclosure
 within thirty days, whichever you and I agree is appropriate.
 
+## Credentials on disk
+
+bairn writes one credential file: `session.json` next to the state
+file, holding a Famly device id and the last session access token. It
+is created `0600`, replaced atomically, never logged, and never receives a
+token while `FAMLY_ACCESS_TOKEN` is set. The password is never
+written. Anyone who can read the file can act as the Famly session
+until it expires or you change your password; treat it like a
+credential, and delete it to force a fresh login. The Immich key is
+never stored by bairn; its scope stays `asset.upload`, `album.read`,
+`album.create` and `albumAsset.create`.
+
 ## In scope
 
 - Credential leakage: state file, log lines, error messages, EXIF

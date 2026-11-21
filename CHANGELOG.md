@@ -14,6 +14,56 @@ additions.
 
 ## [Unreleased]
 
+### Added
+
+- Famly session reuse. bairn keeps the last access token (and the
+  device id) in `session.json` next to the state file (0600, written
+  atomically) and starts from it, so a run logs in with the password
+  only when the token has expired. This stops Famly's "new log-in
+  activity" e-mail on every scheduled run. `FAMLY_ACCESS_TOKEN` still
+  wins when set and is never written to the file; dry runs and
+  `bairn drift` reuse the file but never write it. Delete the file to
+  force a fresh login.
+
+### Changed
+
+- The Famly device id is stable per install. Precedence is
+  `FAMLY_DEVICE_ID`, then the id stored in `session.json`, then a
+  random UUIDv4 generated once and stored. The MAC-derived default is
+  gone: containers and CI get a different MAC every run, so Famly saw a
+  new device each time. A device id Famly returns from login is stored.
+  `FAMLY_DEVICE_ID` must be a UUID. `bairn login` now sends the same
+  resolved id.
+
+### Fixed
+
+- `bairn fetch` exits 1 when any item failed to download or save
+  (for example a full disk), so a scheduler no longer records a
+  partial run as a success. Exit codes are documented in the README.
+- `bairn drift` with Famly credentials logs in fresh again instead of
+  probing with a stale `FAMLY_ACCESS_TOKEN` or cached session token.
+- The session file gains no token while `FAMLY_ACCESS_TOKEN` is set,
+  even after a re-login.
+- Partial downloads (`.bairn-dl-*.part`) left by a killed run are
+  removed at the next start once a day old.
+- `bairn fetch` also exits 1 when the state file could not be written
+  while recording progress (`stateErrors` in the summary). EXIF
+  reinjection failures remain warnings and exit 0.
+- Media downloads no longer use a client without timeouts. A stalled
+  CDN connection now fails after connect, TLS, response-header and
+  idle-read deadlines (a slow video that keeps sending is unaffected,
+  there is no total timeout) instead of hanging until the unit's limit.
+- The download temp file is created inside the save directory (a
+  dot-prefixed `.bairn-dl-*.part`, removed on failure) rather than the
+  system temp dir, so large videos no longer fill a small tmpfs and the
+  move into place is a same-filesystem rename. The missing-state guard
+  ignores these files.
+- Creating an Immich album survives a lost response. After a transport
+  error or a 5xx from the create, bairn looks the album up again by
+  exact owned name and only creates it again while it is still absent
+  (at most three attempts), so a create that landed no longer fails the
+  run or leaves an unshared duplicate.
+
 ## [0.6.1] - 2026-11-21
 
 ### Removed

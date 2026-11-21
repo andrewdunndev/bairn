@@ -54,3 +54,14 @@ func TestLoadTightensDefaultSaveDir(t *testing.T) {
 		t.Errorf("mode = %o, want 700", fi.Mode().Perm())
 	}
 }
+
+func TestValidateRejectsNonUUIDDeviceID(t *testing.T) {
+	c := &Config{FamlyDeviceID: "bairn-default-device", FamlyEmail: "a@example.com", FamlyPassword: "x", SaveDir: "d"}
+	if err := c.Validate("fetch"); err == nil {
+		t.Error("want error for a non-UUID FAMLY_DEVICE_ID")
+	}
+	c.FamlyDeviceID = "0b6f3c1e-9d2a-4c1b-8f3e-1a2b3c4d5e6f"
+	if err := c.Validate("fetch"); err != nil {
+		t.Errorf("valid id: %v", err)
+	}
+}

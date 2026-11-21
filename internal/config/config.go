@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/internal/privdir"
+	"gitlab.com/dunn.dev/bairn/internal/session"
 )
 
 // Config is the application-level configuration. Populated by Load.
@@ -23,8 +24,10 @@ type Config struct {
 	FamlyEmail    string
 	FamlyPassword string
 
-	// FamlyDeviceID is a stable per-host identifier sent to Famly's
-	// Authenticate mutation. Optional; derived as a stable per-host UUID when unset.
+	// FamlyDeviceID (FAMLY_DEVICE_ID) pins the device identifier sent to
+	// Famly's Authenticate mutation, for CI and containers. Optional:
+	// when unset, the id stored in the session file is used, and a
+	// random UUID is generated and stored on first use.
 	FamlyDeviceID string
 
 	// FamlyBaseURL overrides the production endpoint. Read from
@@ -51,6 +54,10 @@ type Config struct {
 	// SaveDir is the root for saved photos and videos.
 	// Default: $XDG_DATA_HOME/bairn/assets
 	SaveDir string
+
+	// SessionPath is the Famly session file (device id and last
+	// access token), always next to the state file.
+	SessionPath string
 
 	// StatePath is the JSON state file path.
 	// Default: $XDG_STATE_HOME/bairn/state.json
@@ -86,11 +93,6 @@ func Load() (*Config, error) {
 		Zone:             os.Getenv("BAIRN_TZ"),
 		LogFormat:        os.Getenv("BAIRN_LOG_FORMAT"),
 	}
-	if c.FamlyDeviceID == "" {
-		// Famly's DeviceId scalar validates as UUID. Use a stable
-		// per-host derivation rather than a constant string.
-		c.FamlyDeviceID = famly.DeriveDeviceID()
-	}
 	if c.LogFormat == "" {
 		c.LogFormat = "json"
 	}
@@ -111,6 +113,7 @@ func Load() (*Config, error) {
 		}
 		c.StatePath = filepath.Join(dir, "state.json")
 	}
+	c.SessionPath = filepath.Join(filepath.Dir(c.StatePath), session.FileName)
 	return c, nil
 }
 
@@ -118,6 +121,9 @@ func Load() (*Config, error) {
 // mode. fetch requires Famly auth and a save dir; Immich is
 // optional (auto-enabled when both URL and key are present).
 func (c *Config) Validate(mode string) error {
+	if c.FamlyDeviceID != "" && !famly.ValidDeviceID(c.FamlyDeviceID) {
+		return errors.New("config: FAMLY_DEVICE_ID must be a UUID (8-4-4-4-12 hex digits); unset it to use the stored per-install id")
+	}
 	switch mode {
 	case "fetch":
 		if c.FamlyAccessToken == "" && (c.FamlyEmail == "" || c.FamlyPassword == "") {
