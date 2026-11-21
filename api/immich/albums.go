@@ -140,13 +140,22 @@ func (c *Client) AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs 
 	in := struct {
 		IDs []string `json:"ids"`
 	}{assetIDs}
-	var out []struct {
-		ID    string `json:"id"`
-		Error string `json:"error"`
-	}
+	var out []bulkResult
 	if err := c.doJSON(ctx, http.MethodPut, "/albums/"+url.PathEscape(albumID)+"/assets", in, &out, true); err != nil {
 		return nil, err
 	}
+	return refusals(out, "add assets to album")
+}
+
+// bulkResult is one entry of a BulkIdResponseDto list.
+type bulkResult struct {
+	ID    string `json:"id"`
+	Error string `json:"error"`
+}
+
+// refusals sorts a bulk answer: the final refusals by asset, or an
+// error when any entry failed for a reason that may be transient.
+func refusals(out []bulkResult, what string) (map[string]string, error) {
 	var refused map[string]string
 	var transient []string
 	for _, r := range out {
@@ -162,7 +171,7 @@ func (c *Client) AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs 
 		}
 	}
 	if len(transient) > 0 {
-		return nil, fmt.Errorf("immich: add assets to album: %d assets failed with a non-final reason (%s)", len(transient), transient[0])
+		return nil, fmt.Errorf("immich: %s: %d assets failed with a non-final reason (%s)", what, len(transient), transient[0])
 	}
 	return refused, nil
 }

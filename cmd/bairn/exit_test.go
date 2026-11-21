@@ -21,6 +21,8 @@ func TestFetchExitCode(t *testing.T) {
 		{"exif error is warn-only", sync.Result{ExifErrors: 1}, 0},
 		{"state error", sync.Result{StateErrors: 1}, 1},
 		{"album error", sync.Result{AlbumErrors: 1}, 1},
+		{"tag error", sync.Result{TagErrors: 1}, 1},
+		{"tag refused is not a failure", sync.Result{TagsRefused: 2}, 0},
 	}
 	for _, c := range cases {
 		if got := fetchExitCode(c.res, io.Discard); got != c.want {

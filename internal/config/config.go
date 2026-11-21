@@ -15,6 +15,9 @@ import (
 	"gitlab.com/dunn.dev/bairn/internal/session"
 )
 
+// DefaultTag is the Immich tag put on every upload.
+const DefaultTag = "bairn"
+
 // DefaultProgressEvery is the page interval between progress lines.
 const DefaultProgressEvery = 10
 
@@ -54,6 +57,11 @@ type Config struct {
 	AlbumMonth string
 	AlbumYear  string
 	AlbumShare string
+
+	// Tag (BAIRN_TAG) is the Immich tag put on every upload; empty means
+	// "bairn". NoTag (BAIRN_NO_TAG) turns tagging off.
+	Tag   string
+	NoTag bool
 
 	// ProgressEvery (BAIRN_PROGRESS_EVERY) is how many feed pages pass
 	// between progress log lines; 0 turns them off. Default 10.
@@ -96,6 +104,8 @@ func Load() (*Config, error) {
 		AlbumMonth:       os.Getenv("BAIRN_ALBUM_MONTH"),
 		AlbumYear:        os.Getenv("BAIRN_ALBUM_YEAR"),
 		AlbumShare:       os.Getenv("BAIRN_ALBUM_SHARE"),
+		Tag:              os.Getenv("BAIRN_TAG"),
+		NoTag:            envBool("BAIRN_NO_TAG"),
 		SaveDir:          os.Getenv("BAIRN_SAVE_DIR"),
 		StatePath:        os.Getenv("BAIRN_STATE_PATH"),
 		Zone:             os.Getenv("BAIRN_TZ"),
@@ -103,6 +113,9 @@ func Load() (*Config, error) {
 	}
 	if c.LogFormat == "" {
 		c.LogFormat = "json"
+	}
+	if c.Tag == "" {
+		c.Tag = DefaultTag
 	}
 	c.ProgressEvery = DefaultProgressEvery
 	if v := os.Getenv("BAIRN_PROGRESS_EVERY"); v != "" {

@@ -48,8 +48,14 @@ type Asset struct {
 	// asset to an album (an asset deleted or trashed since upload).
 	// It is terminal: the asset is never queued for albums again.
 	AlbumsRefused string `json:"albumsRefused,omitempty"`
-	LastError     string `json:"lastError,omitempty"`
-	Retries       int    `json:"retries,omitempty"`
+	// TaggedAt marks the asset as carrying the Immich tag. Entries from
+	// before tagging existed lack it and are tagged once, from state.
+	TaggedAt time.Time `json:"taggedAt,omitempty"`
+	// TagRefused holds Immich's reason when it refused to tag the asset
+	// (deleted or trashed since upload). Terminal, like AlbumsRefused.
+	TagRefused string `json:"tagRefused,omitempty"`
+	LastError  string `json:"lastError,omitempty"`
+	Retries    int    `json:"retries,omitempty"`
 }
 
 // Store owns the in-memory map and the file lock. Open it once per
@@ -270,6 +276,45 @@ func (s *Store) MarkAlbumsRefused(ctx context.Context, id, reason string) error 
 	return s.update(id, func(a *Asset) { a.AlbumsRefused = reason })
 }
 
+// MarkTagged records that the asset carries the Immich tag.
+func (s *Store) MarkTagged(ctx context.Context, id string, at time.Time) error {
+	return s.update(id, func(a *Asset) { a.TaggedAt = at.UTC() })
+}
+
+// MarkTagRefused records that Immich refused to tag the asset, with its
+// reason. The asset is not queued for tagging again.
+func (s *Store) MarkTagRefused(ctx context.Context, id, reason string) error {
+	return s.update(id, func(a *Asset) { a.TagRefused = reason })
+}
+
+// owedTag reports whether an asset is owed the tag: uploaded, with an
+// Immich asset ID, not yet tagged and not refused.
+func owedTag(a *Asset) bool {
+	return !a.UploadedAt.IsZero() && a.ImmichAssetID != "" && a.TaggedAt.IsZero() && a.TagRefused == ""
+}
+
+// UntaggedAsset is an uploaded asset still owed its tag.
+type UntaggedAsset struct {
+	ID            string
+	ImmichAssetID string
+}
+
+// Untagged lists the assets owed the tag (see owedTag), ordered by ID.
+// Tagging writes TaggedAt, so an entry from before tagging existed is
+// listed once and then never again.
+func (s *Store) Untagged() []UntaggedAsset {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []UntaggedAsset
+	for id, a := range s.data {
+		if owedTag(a) {
+			out = append(out, UntaggedAsset{ID: id, ImmichAssetID: a.ImmichAssetID})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 // UnfiledAsset is an uploaded asset still owed its albums.
 type UnfiledAsset struct {
 	ID            string
@@ -403,11 +448,16 @@ type Summary struct {
 	WithErrors int `json:"withErrors"`
 	// AlbumsFiled, AlbumsUnfiled and AlbumsRefused count uploads by
 	// album state; Unfiled is what a run with albums on still owes.
-	AlbumsFiled   int       `json:"albumsFiled"`
-	AlbumsUnfiled int       `json:"albumsUnfiled"`
-	AlbumsRefused int       `json:"albumsRefused"`
-	LastSave      time.Time `json:"lastSave,omitzero"`
-	LastUpload    time.Time `json:"lastUpload,omitzero"`
+	AlbumsFiled   int `json:"albumsFiled"`
+	AlbumsUnfiled int `json:"albumsUnfiled"`
+	AlbumsRefused int `json:"albumsRefused"`
+	// TagsApplied, TagsOwed and TagsRefused count uploads by tag state;
+	// Owed is what a run with tagging on still owes.
+	TagsApplied int       `json:"tagsApplied"`
+	TagsOwed    int       `json:"tagsOwed"`
+	TagsRefused int       `json:"tagsRefused"`
+	LastSave    time.Time `json:"lastSave,omitzero"`
+	LastUpload  time.Time `json:"lastUpload,omitzero"`
 }
 
 // Stats returns a Summary. Cheap; an in-memory pass over the map.
@@ -436,6 +486,14 @@ func (s *Store) Stats(ctx context.Context) (Summary, error) {
 			if _, ok := owedAlbums(a); ok {
 				sm.AlbumsUnfiled++
 			}
+		}
+		switch {
+		case !a.TaggedAt.IsZero():
+			sm.TagsApplied++
+		case a.TagRefused != "":
+			sm.TagsRefused++
+		case owedTag(a):
+			sm.TagsOwed++
 		}
 		if a.LastError != "" {
 			sm.WithErrors++

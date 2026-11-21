@@ -19,6 +19,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/internal/retry"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
+	"gitlab.com/dunn.dev/bairn/internal/tags"
 )
 
 // Source selects which feed images to download. Mutually exclusive
@@ -110,9 +111,17 @@ type Deps struct {
 	// albums. Optional; nil = no albums. Run flushes it at the end.
 	Albums *albums.Filer
 
+	// Tags applies the bairn tag to each uploaded asset. Optional; nil =
+	// no tagging. Run flushes it at the end.
+	Tags *tags.Tagger
+
 	gate   *uploadGate         // set by Run
 	owners map[string][]string // Immich asset ID -> state IDs queued for albums; set by Run
-	marked func(ctx context.Context, filed []string, refused map[string]string, logger *slog.Logger)
+	// tagOwners maps an Immich asset ID to the state IDs queued for the
+	// tag; tagMarked writes the outcome back. Set by Run.
+	tagOwners map[string][]string
+	tagMarked func(ctx context.Context, tagged []string, refused map[string]string, logger *slog.Logger)
+	marked    func(ctx context.Context, filed []string, refused map[string]string, logger *slog.Logger)
 }
 
 func defaultDownloadRetry() retry.Policy { return retry.DownloadPolicy() }
@@ -176,6 +185,14 @@ type Result struct {
 	// or trashed since upload). They are recorded and not retried, and
 	// they do not fail the run.
 	AlbumsRefused int `json:"albumsRefused,omitempty"`
+	// TagErrors counts tag operations that failed; the assets stay
+	// uploaded but untagged, and a rerun tags them. The CLI exits
+	// non-zero while any remain.
+	TagErrors int `json:"tagErrors,omitempty"`
+	// TagsRefused counts assets Immich refused to tag (deleted or
+	// trashed since upload). They are recorded and not retried, and they
+	// do not fail the run.
+	TagsRefused int `json:"tagsRefused,omitempty"`
 	// UploadFailed counts assets on disk but not confirmed in Immich.
 	// A rerun retries them; the CLI exits non-zero while any remain.
 	UploadFailed int `json:"uploadFailed"`
@@ -338,6 +355,11 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 		}
 	}
 
+	deps.tagOwners = map[string][]string{}
+	deps.tagMarked = func(ctx context.Context, tagged []string, refused map[string]string, logger *slog.Logger) {
+		markTags(ctx, deps, &res, tagged, refused, logger)
+	}
+
 	flushAlbums := func() {
 		if deps.Albums == nil {
 			return
@@ -350,6 +372,10 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			logger.Error("albums", "err", err)
 		}
 		deps.marked(fctx, deps.Albums.TakeFiled(), deps.Albums.TakeRefused(), logger)
+	}
+	flush := func() {
+		flushAlbums()
+		flushTags(ctx, deps, &res, logger)
 	}
 
 	var plan *retryPlan
@@ -372,9 +398,15 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 		}
 	}
 
+	if deps.Tags != nil && !opts.DryRun && plan == nil {
+		for _, u := range deps.State.Untagged() {
+			tagAsset(ctx, deps, u.ID, u.ImmichAssetID, &res, logger)
+		}
+	}
+
 	for page, err := range pages {
 		if err != nil {
-			flushAlbums()
+			flush()
 			res.FinishedAt = time.Now().UTC()
 			res.Errors++
 			return res, err
@@ -398,7 +430,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			break
 		}
 	}
-	flushAlbums()
+	flush()
 	res.FinishedAt = time.Now().UTC()
 	if plan != nil {
 		res.Retry = plan.summary(ctx, deps.State, opts.DryRun)
@@ -644,6 +676,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 	deps.gate.succeeded()
 	countUpload(res, up.ImmichStatus())
 	fileInAlbums(ctx, deps, id, up.ImmichAssetID(), disc.FileCreatedAt(), res, logger)
+	tagAsset(ctx, deps, id, up.ImmichAssetID(), res, logger)
 	logger.Info("complete",
 		"id", id, "path", saved.FinalPath(),
 		"immich_id", up.ImmichAssetID(), "immich_status", up.ImmichStatus())
@@ -682,10 +715,11 @@ func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger 
 	deps.gate.succeeded()
 	countUpload(res, status)
 	logger.Info("uploaded from disk", "id", id, "immich_status", status)
-	if deps.Albums != nil {
-		if a, err := deps.State.Get(ctx, id); err == nil {
+	if a, err := deps.State.Get(ctx, id); err == nil {
+		if deps.Albums != nil {
 			fileInAlbums(ctx, deps, id, a.ImmichAssetID, a.DownloadedAt, res, logger)
 		}
+		tagAsset(ctx, deps, id, a.ImmichAssetID, res, logger)
 	}
 	return uploadBucket(status)
 }

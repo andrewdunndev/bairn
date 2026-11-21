@@ -16,11 +16,12 @@ import (
 	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/albums"
 	"gitlab.com/dunn.dev/bairn/internal/contract"
+	"gitlab.com/dunn.dev/bairn/internal/tags"
 )
 
 // smokeAlbumPermissions is the whole scope of fetch's API key. The
 // smoke mints exactly this, so a pass proves the narrow key suffices.
-var smokeAlbumPermissions = []string{"asset.upload", "album.read", "album.create", "albumAsset.create"}
+var smokeAlbumPermissions = []string{"asset.upload", "album.read", "album.create", "albumAsset.create", "tag.create", "tag.asset"}
 
 // smokeChecks prints one PASS/FAIL line per assertion.
 type smokeChecks struct{ failed int }
@@ -311,10 +312,112 @@ func runSmokeImmichAlbums(ctx context.Context, client *http.Client, host, token,
 		logger.Info("smoke", "phase", "leg3", "refusal_reason", reason)
 	}
 
+	smokeTagLeg(ctx, client, host, token, ic, assetID, prefix+"-tag", &cs, &cleanups, logger)
+
 	if cs.failed > 0 {
-		fmt.Fprintf(os.Stderr, "smoke immich: %d album assertion(s) failed\n", cs.failed)
+		fmt.Fprintf(os.Stderr, "smoke immich: %d album or tag assertion(s) failed\n", cs.failed)
 		return 1
 	}
-	logger.Info("smoke", "result", "ok", "phase", "albums")
+	logger.Info("smoke", "result", "ok", "phase", "albums-and-tags")
 	return 0
+}
+
+type smokeTag struct {
+	ID    string `json:"id"`
+	Value string `json:"value"`
+}
+
+// smokeTagLeg exercises tagging the way fetch does, through the tagger
+// with the narrow key: the tag is created once and the asset tagged;
+// a rerun leaves the tag and the asset's tags as they were; a missing
+// asset comes back as a refusal. The tag is read back and deleted with
+// the login session, which is the only deleter.
+func smokeTagLeg(ctx context.Context, client *http.Client, host, token string, ic *immich.Client, assetID, tagName string, cs *smokeChecks, cleanups *[]func(context.Context), logger *slog.Logger) {
+	*cleanups = append(*cleanups, func(c context.Context) {
+		var all []smokeTag
+		if err := contract.ImmichSessionJSON(c, client, host, token, http.MethodGet, "/api/tags", nil, &all); err != nil {
+			logger.Warn("smoke", "phase", "cleanup-tags", "err", err)
+			cs.failed++
+			return
+		}
+		for _, tg := range all {
+			if !strings.HasPrefix(tg.Value, "bairn-smoke-") {
+				continue
+			}
+			if err := contract.ImmichSessionJSON(c, client, host, token, http.MethodDelete, "/api/tags/"+url.PathEscape(tg.ID), nil, nil); err != nil {
+				logger.Warn("smoke", "phase", "cleanup-tag", "tag_id", tg.ID, "err", err)
+				cs.failed++
+			} else {
+				logger.Info("smoke", "phase", "cleanup-tag", "tag_id", tg.ID, "result", "deleted")
+			}
+		}
+	})
+	if assetID == "" {
+		cs.check("tag leg needs the uploaded asset", false, "no asset from the album legs")
+		return
+	}
+	named := func() (ids []string, err error) {
+		var all []smokeTag
+		if err := contract.ImmichSessionJSON(ctx, client, host, token, http.MethodGet, "/api/tags", nil, &all); err != nil {
+			return nil, err
+		}
+		for _, tg := range all {
+			if tg.Value == tagName {
+				ids = append(ids, tg.ID)
+			}
+		}
+		return ids, nil
+	}
+	assetTags := func() (int, error) {
+		var a struct {
+			Tags []smokeTag `json:"tags"`
+		}
+		if err := contract.ImmichSessionJSON(ctx, client, host, token, http.MethodGet, "/api/assets/"+url.PathEscape(assetID), nil, &a); err != nil {
+			return 0, err
+		}
+		n := 0
+		for _, tg := range a.Tags {
+			if tg.Value == tagName {
+				n++
+			}
+		}
+		return n, nil
+	}
+	tagOnce := func(id string) (*tags.Tagger, error) {
+		t := tags.New(ic, tagName, logger)
+		if err := t.Add(ctx, id); err != nil {
+			return t, err
+		}
+		return t, t.Flush(ctx)
+	}
+
+	t1, err := tagOnce(assetID)
+	cs.check("tag leg1 tag and apply with narrow key", err == nil, fmt.Sprint(err))
+	if err == nil {
+		cs.check("tag leg1 asset reported tagged", slices.Contains(t1.TakeTagged(), assetID), "asset not reported tagged")
+		ids, err := named()
+		cs.check("tag leg1 tag created once", err == nil && len(ids) == 1, fmt.Sprintf("found %d (%v)", len(ids), err))
+		n, err := assetTags()
+		cs.check("tag leg1 asset carries the tag", err == nil && n == 1, fmt.Sprintf("count %d (%v)", n, err))
+	}
+
+	_, err = tagOnce(assetID)
+	cs.check("tag leg2 rerun", err == nil, fmt.Sprint(err))
+	if err == nil {
+		ids, err := named()
+		cs.check("tag leg2 still one tag", err == nil && len(ids) == 1, fmt.Sprintf("found %d (%v)", len(ids), err))
+		n, err := assetTags()
+		cs.check("tag leg2 rerun adds nothing", err == nil && n == 1, fmt.Sprintf("count %d (%v)", n, err))
+	}
+
+	// leg3: an id that names no asset is a per-item refusal, not a call
+	// failure; the shape the tagger records for a deleted upload.
+	const ghostID = "00000000-0000-4000-8000-000000000000"
+	g, gerr := tagOnce(ghostID)
+	cs.check("tag leg3 refused asset is not a call failure", gerr == nil, fmt.Sprint(gerr))
+	if gerr == nil {
+		reason := g.TakeRefused()[ghostID]
+		cs.check("tag leg3 refusal carries a reason", reason != "", "no per-item error returned")
+		logger.Info("smoke", "phase", "tag-leg3", "refusal_reason", reason)
+	}
 }

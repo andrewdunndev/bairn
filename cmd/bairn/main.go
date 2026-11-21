@@ -24,6 +24,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 	"gitlab.com/dunn.dev/bairn/internal/sync"
+	"gitlab.com/dunn.dev/bairn/internal/tags"
 )
 
 // Version is overridden at build time via -ldflags "-X main.Version=...".
@@ -119,6 +120,8 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	albumMonth := fs.String("album-month", cfg.AlbumMonth, "month album name pattern (%Y %m %B %b); setting it enables that album. With --albums: \""+albums.DefaultMonthPattern+"\"")
 	albumYear := fs.String("album-year", cfg.AlbumYear, "year album name pattern; setting it enables that album. With --albums: \""+albums.DefaultYearPattern+"\"")
 	albumShare := fs.String("album-share", cfg.AlbumShare, "comma-separated Immich user IDs (UUIDs) to share a newly created album with as editors")
+	tagName := fs.String("tag", cfg.Tag, "Immich tag put on every upload (created once per run in the key owner's account; never removed); BAIRN_TAG sets the default")
+	noTag := fs.Bool("no-tag", cfg.NoTag, "do not tag uploads in Immich (BAIRN_NO_TAG=1)")
 	allowMissingState := fs.Bool("allow-missing-state", false, "upload even though the state file is absent and the save dir already holds media (every file would be treated as new)")
 	progressEvery := fs.Int("progress-every", cfg.ProgressEvery, "log a progress line every N feed pages (0 = off); BAIRN_PROGRESS_EVERY sets the default")
 	retryFailed := fs.Bool("retry-failed", false, "revisit only state entries that failed to download or save, without walking the whole feed; the walk jumps to each entry's post date and stops after the oldest. --max-pages 0 unless set; works with --dry-run")
@@ -179,6 +182,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 
 	var immichSink *sink.Immich
 	var filer *albums.Filer
+	var tagger *tags.Tagger
 	if !*noImmich && cfg.ImmichBaseURL != "" && cfg.ImmichAPIKey != "" {
 		ic := immich.New(cfg.ImmichBaseURL, cfg.ImmichAPIKey, immich.WithLogger(logger))
 		immichSink = sink.NewImmich(ic)
@@ -189,6 +193,13 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		}
 		if acfg.Enabled() {
 			filer = albums.New(ic, acfg, logger)
+		}
+		if !*noTag {
+			if err := tags.ValidateName(*tagName); err != nil {
+				fmt.Fprintln(os.Stderr, "fetch: --tag:", err)
+				return 2
+			}
+			tagger = tags.New(ic, *tagName, logger)
 		}
 	}
 
@@ -241,7 +252,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	}
 
 	res, err := sync.Run(ctx, sync.Deps{
-		Famly: fc, Disk: disk, Immich: immichSink, Albums: filer, State: st, Logger: logger,
+		Famly: fc, Disk: disk, Immich: immichSink, Albums: filer, Tags: tagger, State: st, Logger: logger,
 		HTTP: safehttp.NewDownloadClient(),
 	}, sync.Options{
 		MaxPages:           *maxPages,
@@ -285,6 +296,10 @@ func fetchExitCode(res sync.Result, w io.Writer) int {
 	}
 	if res.AlbumErrors > 0 {
 		fmt.Fprintf(w, "fetch: %d Immich album operation(s) failed; the assets are uploaded but not filed (check the API key has album.read, album.create and albumAsset.create)\n", res.AlbumErrors)
+		code = 1
+	}
+	if res.TagErrors > 0 {
+		fmt.Fprintf(w, "fetch: %d Immich tag operation(s) failed; the assets are uploaded but untagged, and a rerun tags them (check the API key has tag.create and tag.asset, or pass --no-tag)\n", res.TagErrors)
 		code = 1
 	}
 	return code
