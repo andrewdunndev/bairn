@@ -60,7 +60,7 @@ Verify the binary signature:
 
     cosign verify-blob \
       --bundle bairn-linux-amd64.bundle \
-      --certificate-identity-regexp '^https://gitlab.com/dunn.dev/bairn/.*//\.gitlab-ci\.yml@refs/tags/.+$' \
+      --certificate-identity-regexp '^https://gitlab.com/dunn.dev/bairn//\.gitlab-ci\.yml@refs/tags/.+$' \
       --certificate-oidc-issuer https://gitlab.com \
       bairn-linux-amd64
 
@@ -69,7 +69,7 @@ Verify the SLSA provenance:
     cosign verify-blob-attestation \
       --bundle bairn-linux-amd64.sigstore.json \
       --type slsaprovenance1 \
-      --certificate-identity-regexp '^https://gitlab.com/dunn.dev/bairn/.*//\.gitlab-ci\.yml@refs/tags/.+$' \
+      --certificate-identity-regexp '^https://gitlab.com/dunn.dev/bairn//\.gitlab-ci\.yml@refs/tags/.+$' \
       --certificate-oidc-issuer https://gitlab.com \
       bairn-linux-amd64
 
