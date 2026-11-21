@@ -16,6 +16,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/albums"
 	"gitlab.com/dunn.dev/bairn/internal/asset"
+	"gitlab.com/dunn.dev/bairn/internal/retry"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 )
@@ -91,6 +92,10 @@ type Deps struct {
 	Logger *slog.Logger
 	HTTP   *http.Client
 
+	// DownloadRetry bounds in-run download retries; the zero value is
+	// retry.DownloadPolicy.
+	DownloadRetry retry.Policy
+
 	// Albums files each uploaded asset into its month and year
 	// albums. Optional; nil = no albums. Run flushes it at the end.
 	Albums *albums.Filer
@@ -99,6 +104,8 @@ type Deps struct {
 	owners map[string][]string // Immich asset ID -> state IDs queued for albums; set by Run
 	marked func(ctx context.Context, filed []string, refused map[string]string, logger *slog.Logger)
 }
+
+func defaultDownloadRetry() retry.Policy { return retry.DownloadPolicy() }
 
 // maxUploadFailures is how many uploads in a row may fail before the
 // run stops trying Immich. The disk archive is the backup and a rerun
@@ -399,7 +406,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		return
 	}
 
-	dl, err := disc.Download(ctx, deps.HTTP, deps.Disk.Root())
+	dl, err := download(ctx, deps, disc, logger)
 	if err != nil {
 		res.Errors++
 		logger.Error("download", "id", id, "err", err)

@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 	"gitlab.com/dunn.dev/bairn/internal/urlerr"
@@ -47,7 +50,7 @@ func (d Discovered) Download(ctx context.Context, hc *http.Client, tmpDir string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return Downloaded{}, fmt.Errorf("asset: download %s: HTTP %d", d.famlyImageID, resp.StatusCode)
+		return Downloaded{}, fmt.Errorf("asset: download %s: %w", d.famlyImageID, &HTTPStatusError{Status: resp.StatusCode})
 	}
 
 	tmp, err := os.CreateTemp(tmpDir, TempPrefix+"*.part")
@@ -77,6 +80,39 @@ func (d Discovered) Download(ctx context.Context, hc *http.Client, tmpDir string
 		size:        written,
 		contentType: resp.Header.Get("Content-Type"),
 	}, nil
+}
+
+// HTTPStatusError is a non-2xx answer from the media CDN.
+type HTTPStatusError struct{ Status int }
+
+func (e *HTTPStatusError) Error() string { return fmt.Sprintf("HTTP %d", e.Status) }
+
+// IsTransient reports whether a Download error is worth another try:
+// a connection reset or drop, a truncated body, a timeout or stalled
+// transfer, or a 408, 429 or 5xx answer. Anything else (a 4xx, a disk
+// error, a cancelled context) will fail the same way again.
+func IsTransient(err error) bool {
+	if err == nil || errors.Is(err, context.Canceled) {
+		return false
+	}
+	var hs *HTTPStatusError
+	if errors.As(err, &hs) {
+		return hs.Status == http.StatusRequestTimeout || hs.Status == http.StatusTooManyRequests || hs.Status >= 500
+	}
+	if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNABORTED) ||
+		errors.Is(err, syscall.EPIPE) || errors.Is(err, safehttp.ErrIdle) ||
+		errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	// An HTTP/2 stream reset or a server hang-up surfaces as text only.
+	msg := err.Error()
+	return strings.Contains(msg, "connection reset") || strings.Contains(msg, "unexpected EOF") ||
+		strings.Contains(msg, "stream error")
 }
 
 // Cleanup removes the temp file created by Download. Callers
