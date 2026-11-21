@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime/debug"
 	"strings"
 	"testing"
@@ -56,15 +57,25 @@ func TestResolveVersion(t *testing.T) {
 
 func TestVersionBeforeConfig(t *testing.T) {
 	// `bairn version` must not need or create config directories.
-	home := t.TempDir()
-	cmd := exec.Command("go", "run", ".", "--version")
-	cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+home+"/d", "XDG_STATE_HOME="+home+"/s", "XDG_CONFIG_HOME="+home+"/c")
-	out, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("run: %v", err)
+	// Build first with the ambient environment: the go toolchain itself
+	// writes under XDG_CONFIG_HOME (telemetry) on Linux, which would
+	// pollute the scan below. Only the built binary runs with the XDG
+	// directories pointed at the empty temp dir.
+	bin := filepath.Join(t.TempDir(), "bairn")
+	if out, err := exec.Command("go", "build", "-o", bin, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build: %v\n%s", err, out)
 	}
-	if !strings.HasPrefix(string(out), "bairn ") {
-		t.Errorf("output %q lacks the bairn prefix", out)
+	home := t.TempDir()
+	for _, arg := range []string{"version", "--version", "-V", "help", "-h"} {
+		cmd := exec.Command(bin, arg)
+		cmd.Env = append(os.Environ(), "XDG_DATA_HOME="+home+"/d", "XDG_STATE_HOME="+home+"/s", "XDG_CONFIG_HOME="+home+"/c", "HOME="+home+"/h")
+		out, err := cmd.Output()
+		if err != nil {
+			t.Fatalf("run %s: %v", arg, err)
+		}
+		if !strings.Contains(string(out), "bairn") {
+			t.Errorf("%s: output %q lacks bairn", arg, out)
+		}
 	}
 	if entries, _ := os.ReadDir(home); len(entries) != 0 {
 		t.Errorf("version created directories: %v", entries)
