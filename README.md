@@ -306,6 +306,15 @@ stays uploaded, exit is 1, and a rerun tags it. bairn never removes a
 tag from an asset or deletes a tag. Changing `--tag` later tags new
 uploads only; entries already marked tagged are not revisited.
 
+Rolling out: widen the API key (`tag.create`, `tag.asset`) before the
+first fetch at this version, or set `BAIRN_NO_TAG=1` on the timer for
+that run, since a key without them makes every fetch exit 1. The first
+tagging run also back-files every earlier upload from the state file, in
+batches of 100. Rolling back to an older binary drops the new state
+fields when it rewrites the file, so rolling forward again re-queues
+the tags (harmless, tagging is idempotent) and re-locates undated
+failed entries.
+
 The calls and the permission the Immich 3.4.2 spec requires for each
 (`x-immich-permission`):
 
@@ -333,6 +342,13 @@ once every entry is found, so `--max-pages 0` is its default (`--max-pages N`
 still caps it). If the server ignored `olderThan`, the walk simply
 starts at the newest post and still stops at the same place. Entries
 found are filled in with their post date for next time.
+
+An undated entry whose post has since vanished from Famly cannot be
+found, so with no stop date the walk reads the whole feed to be sure.
+Bound that with `--max-pages N`, run `--retry-failed --dry-run` first to
+see the date it would jump to, or accept the full walk once; entries it
+does find are dated afterwards, and the entries it does not are reported
+as `notFound`.
 
 The flag cannot be combined with `--source`, `--include-system-posts`
 or `--allow-missing-state`, works with `--dry-run`, and skips the album

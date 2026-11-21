@@ -57,7 +57,9 @@ additions.
   `album.create`, `albumAsset.create`, `tag.create` and `tag.asset`
   (checked against Immich 3.4.2). A key without the two tag scopes
   still uploads; with tagging on, fetch exits 1 until the key is
-  widened or `--no-tag` is set.
+  widened or `--no-tag` is set. Widen the key before deploying. Rolling
+  back to 0.6.x drops the tag and post-date markers from the state file
+  when it next writes it, so rolling forward re-queues the tags.
 - `discovered` now counts every media item read from the feed,
   including those filtered by `--source`, skipped as system posts or
   not ready, where it used to count only items that reached the
