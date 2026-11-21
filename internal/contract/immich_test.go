@@ -10,7 +10,7 @@ func TestFieldNameFromMessage(t *testing.T) {
 		in   string
 		want string
 	}{
-		// class-validator format Andy reported on Immich v2.7.5
+		// class-validator format Immich v2.7.5 returned
 		{"deviceAssetId must be a string", "deviceAssetId"},
 		{"deviceAssetId should not be empty", "deviceAssetId"},
 		{"deviceId must be a string", "deviceId"},

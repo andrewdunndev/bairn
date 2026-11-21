@@ -1,5 +1,5 @@
-// Package config loads bairn's configuration from flags, env vars,
-// and an optional TOML file. Precedence: flags > env > file > zero.
+// Package config loads bairn's configuration from env vars; fetch
+// flags override them. bairn reads no configuration file.
 package config
 
 import (
@@ -15,8 +15,8 @@ import (
 
 // Config is the application-level configuration. Populated by Load.
 type Config struct {
-	// FamlyAccessToken is the session token (preferred for short
-	// runs and CI).
+	// FamlyAccessToken is a pasted session token, for accounts where
+	// email and password cannot be used (MFA). It does not refresh.
 	FamlyAccessToken string
 
 	// FamlyEmail and FamlyPassword enable token refresh on 401.
@@ -24,10 +24,11 @@ type Config struct {
 	FamlyPassword string
 
 	// FamlyDeviceID is a stable per-host identifier sent to Famly's
-	// Authenticate mutation. Optional; falls back to a constant.
+	// Authenticate mutation. Optional; derived as a stable per-host UUID when unset.
 	FamlyDeviceID string
 
-	// FamlyBaseURL overrides the production endpoint. Tests only.
+	// FamlyBaseURL overrides the production endpoint. Read from
+	// FAMLY_BASE_URL for tests only; it is not an operator setting.
 	FamlyBaseURL string
 
 	// ImmichBaseURL is the Immich API root, e.g.

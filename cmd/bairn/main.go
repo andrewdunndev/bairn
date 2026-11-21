@@ -38,10 +38,10 @@ const usage = `usage: bairn <subcommand> [flags]
 subcommands:
   login    authenticate against Famly with email and password
   fetch    pull new photos and videos to disk (and Immich, if configured)
-  status   summarise the most recent fetch
+  status   print totals for the whole state file
   version  print the bairn version
   drift    check the vendor surface for schema drift
-  smoke    non-destructive contract probe of a sink's live validator
+  smoke    live contract probe of a sink on a smoke account
 
 run "bairn <sub> -h" for subcommand flags; "bairn --version" prints the version.
 `
@@ -109,8 +109,8 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	source := fs.String("source", "all", "feed filter: all (every image and video), tagged (only images tagged with one of our children), or liked (only images liked by a household login)")
 	saveDir := fs.String("save-dir", cfg.SaveDir, "root directory for saved photos and videos")
 	noImmich := fs.Bool("no-immich", false, "save to disk only; skip Immich even when configured")
-	filenamePat := fs.String("filename-pattern", "", "filename template (default: feed-{{.Source}}-%Y-%m-%d_%H-%M-%S-{{.ID}}.{{.Ext}})")
-	dirPat := fs.String("dir-pattern", "", "directory template under save-dir (default: %Y-%m-%d)")
+	filenamePat := fs.String("filename-pattern", "", "filename template (default: "+sink.DefaultFilenamePattern+")")
+	dirPat := fs.String("dir-pattern", "", "directory template under save-dir (default: "+sink.DefaultDirPattern+")")
 	includeSystem := fs.Bool("include-system-posts", false, "include automated Famly posts (check-ins, sign-outs); off by default to keep templated text out of photo captions")
 	albumsOn := fs.Bool("albums", cfg.Albums, "file uploads into Immich month and year albums named from the post date, using the default patterns for any not set below")
 	albumMonth := fs.String("album-month", cfg.AlbumMonth, "month album name pattern (%Y %m %B %b); setting it enables that album. With --albums: \""+albums.DefaultMonthPattern+"\"")

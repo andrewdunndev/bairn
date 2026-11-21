@@ -31,7 +31,7 @@ with `cat` and `jq`.
 
 State persists as a single JSON file. Default location:
 `$XDG_STATE_HOME/bairn/state.json`. Operators can override via
-`BAIRN_STATE_PATH` env or `--state-path` flag; a common alternate
+`BAIRN_STATE_PATH`; a common alternate
 is `<save-dir>/.bairn-state.json` for keep-photos-and-state-together
 deployments.
 
@@ -58,8 +58,7 @@ Format: a flat object keyed by Famly image ID, values are records:
 }
 ```
 
-Concurrency: an OS file lock (`syscall.Flock` LOCK_EX|LOCK_NB on
-unix; `LockFileEx` on Windows) is held for the duration of a run, on a sibling `<state-path>.lock`
+Concurrency: an OS file lock (`flock` LOCK_EX|LOCK_NB, unix only) is held for the duration of a run, on a sibling `<state-path>.lock`
 that is never renamed (the state file is replaced on every flush).
 A second `bairn fetch` against the same state file fails fast with
 a prescriptive message naming the lock holder if discoverable.

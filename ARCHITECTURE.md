@@ -19,7 +19,7 @@ metadata reinjected, optionally also push to Immich.
    does not become visible at its final path until both have
    happened). A run interrupted between `Saved` and `Recorded`
    recovers on the next start because the state file shows
-   `savedAt` set and `recordedAt` empty.
+   `savedAt` set and `uploadedAt` empty.
    The same rule drives Immich: `savedAt` set and `uploadedAt` empty
    means on disk but unconfirmed, and the next run uploads it from the
    disk sink (`asset.UploadFromDisk`) rather than re-downloading.
@@ -40,26 +40,44 @@ metadata reinjected, optionally also push to Immich.
    A video's date takes a sibling image's zone, else `--tz`, else the
    running machine's local zone, at the post's date.
 7. **Privacy boundary at the repository edge.** Discovery captures,
-   schema dumps, and vendor-specific manifests are gitignored. The
-   committed surface stays minimal.
+   HARs, schema dumps and local manifests stay untracked. The
+   canonical `discovery/probe/manifest.toml` and the anonymized
+   `discovery/baselines/main/` shapes are committed on purpose,
+   because the CI drift gate reads them. The committed surface stays
+   minimal.
+8. **bairn only adds; the state file is the tombstone.** It never
+   deletes, trashes or removes any photo, video or album, in Immich
+   or on disk. An
+   asset recorded as uploaded is never uploaded again, even if a
+   parent later deleted it in Immich, so the state file must be
+   backed up with the archive and a missing one is refused. The
+   Immich API key scope is exactly `asset.upload`, `album.read`,
+   `album.create` and `albumAsset.create`, and is a ceiling, not a
+   starting point. `bairn smoke immich` is the one deleter: it
+   removes only its own test asset, albums and key, through a login
+   session on the smoke account.
 
 ## Commands
 
 | Subcommand | Purpose |
 |---|---|
 | `bairn fetch` | Pull recent feed pages, save assets to disk with EXIF reinjected, optionally upload to Immich. Cron-friendly. |
-| `bairn status` | Print last-run summary from the JSON state file. |
+| `bairn login` | Check Famly credentials interactively (no-echo prompt). |
+| `bairn status` | Print totals for the whole JSON state file: counts per phase, album filing, and the latest save and upload. |
 | `bairn drift` | Run shape probes against the live vendor surface; diff against committed baselines; exit non-zero on drift. |
+| `bairn smoke` | Live contract probe of a sink; `smoke immich` uploads, files into albums and cleans up on a smoke account. |
+| `bairn version` | Print the version (`--version` and `-V` too). |
 
 ## Auth model
 
-- **Famly**: `FAMLY_ACCESS_TOKEN` (preferred for cron) or
-  `FAMLY_EMAIL` + `FAMLY_PASSWORD` (auto-refresh on 401).
+- **Famly**: `FAMLY_EMAIL` + `FAMLY_PASSWORD` (preferred for cron;
+  auto-refresh on 401) or `FAMLY_ACCESS_TOKEN` (advanced, for accounts
+  with MFA).
 - **Immich (optional)**: set both `IMMICH_BASE_URL` and
   `IMMICH_API_KEY` to enable the Immich sink. Absence of either
   disables Immich; bairn runs disk-only.
-- All can also live in `$XDG_CONFIG_HOME/bairn/config.toml`. CLI
-  flags override env, env overrides config file.
+- Credentials come from the environment only; bairn reads no
+  configuration file. Flags override env.
 
 ## Storage
 
@@ -72,7 +90,7 @@ metadata reinjected, optionally also push to Immich.
 - **Directory pattern**: `%Y-%m-%d/` per-day buckets by default.
 - **State file**: `$XDG_STATE_HOME/bairn/state.json` by default,
   with `flock` on `state.json.lock` for single-writer enforcement. Override via
-  `--state-path` or `BAIRN_STATE_PATH`. A common alternate is
+  `BAIRN_STATE_PATH`. A common alternate is
   `<save-dir>/.bairn-state.json`.
 
 ## Build
@@ -86,7 +104,7 @@ make build-linux bin/bairn-linux-amd64 for headless
 
 ## Modern Go
 
-This binary targets Go 1.25+. Idioms in use:
+This binary targets Go 1.26+. Idioms in use:
 
 - `tool` directive in go.mod for codegen (no tools.go)
 - `log/slog` JSON handler for structured output

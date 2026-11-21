@@ -15,7 +15,6 @@ coverage.txt
 /web/.astro/
 
 # Local config: never commit credentials
-/config.toml
 /*.env
 .envrc
 
@@ -33,11 +32,6 @@ coverage.txt
 /discovery/probe/*.shape
 /discovery/probe/*.har
 /discovery/probe/manifest.local.toml
-
-# Runtime state
-/state.db
-*.sqlite
-*.sqlite3
 
 # Tempfiles and editor cruft
 /tmp/
