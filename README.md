@@ -307,6 +307,14 @@ quota-limited test user separate from your archive account), or
 falls back to `IMMICH_BASE_URL` / `IMMICH_API_KEY` for ad-hoc
 runs. It is a local gate only: CI runners cannot reach a LAN Immich.
 
+On the login path the smoke also runs the album leg: it mints a key
+with only `asset.upload`, `album.read`, `album.create` and
+`albumAsset.create`, uploads a tiny asset and files it into uniquely
+named `bairn-smoke-*` month and year albums twice through the same
+filer fetch uses, asserts one album per name, the asset in each and
+(with `SMOKE_SHARE_USER_EMAIL` set) that user as editor, then deletes
+the albums, asset and key with the login session, even on failure.
+
 `IMMICH_VERSION` in the Makefile is the Immich release bairn is
 verified against via `make pre-tag-check`. Renovate proposes bumps
 (automerge off); a bump MR means: upgrade the home Immich, recapture

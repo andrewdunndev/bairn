@@ -28,6 +28,10 @@ changes; patch bumps within `0.x.y` are bug fixes only.
   records `postedAt` and `albumsFiledAt` per asset, so an asset whose
   filing failed or was interrupted is filed on the next run; entries
   written before these fields existed are not back-filed.
+- `bairn smoke immich` (login path) runs an album leg with a key holding
+  only `asset.upload`, `album.read`, `album.create` and `albumAsset.create`,
+  sharing to `SMOKE_SHARE_USER_EMAIL`, and cleans up with the login session.
+  The login-path round trip no longer mints `asset.delete`.
 - `--allow-missing-state`: `bairn fetch` now refuses to upload to Immich
   when the state file is absent but the save dir already holds media
   (every file would look new); the flag overrides the refusal. The check

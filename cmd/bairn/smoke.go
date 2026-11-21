@@ -104,9 +104,10 @@ func runSmokeImmich(ctx context.Context, cfg *config.Config, logger *slog.Logger
 
 	httpClient := smokeHTTPClient()
 
-	// Authenticate. If user+password, do the login + mint flow so
-	// the rest of the gate runs through the production x-api-key
-	// code path. If apiKey, use it directly.
+	// Authenticate. With user+password the round trip is the album
+	// leg: it mints a key holding only fetch's album scopes and cleans
+	// up with the login session. Probe-only mints an upload-only key.
+	// With an apiKey alone, use it directly for the plain round trip.
 	apiKey := sc.apiKey
 	var minted *contract.ImmichAPIKey
 	var token string
@@ -117,11 +118,10 @@ func runSmokeImmich(ctx context.Context, cfg *config.Config, logger *slog.Logger
 			logger.Error("smoke", "phase", "login", "err", err)
 			return 1
 		}
-		permissions := []string{"asset.upload", "asset.delete"}
-		if *probeOnly {
-			permissions = []string{"asset.upload"}
+		if !*probeOnly {
+			return runSmokeImmichAlbums(ctx, httpClient, sc.host, token, os.Getenv("SMOKE_SHARE_USER_EMAIL"), logger)
 		}
-		minted, err = contract.MintImmichAPIKey(ctx, httpClient, sc.host, token, fmt.Sprintf("bairn-smoke-%d", time.Now().Unix()), permissions)
+		minted, err = contract.MintImmichAPIKey(ctx, httpClient, sc.host, token, fmt.Sprintf("bairn-smoke-%d", time.Now().Unix()), []string{"asset.upload"})
 		if err != nil {
 			logger.Error("smoke", "phase", "mint-api-key", "err", err)
 			return 1
