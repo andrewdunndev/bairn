@@ -21,7 +21,8 @@ import (
 // fetches /me to confirm the new token works for actual API calls,
 // and prints success. The minted token is not persisted to disk;
 // the operator's next bairn run reads creds from env or config and
-// re-authenticates as needed.
+// logs in as needed. The device id it sends is the stored one (see
+// resolveDeviceID), so the first fetch is not a second new device.
 //
 // This is the recommended onboarding path. The advanced
 // FAMLY_ACCESS_TOKEN flow (paste a session token from devtools)

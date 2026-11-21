@@ -163,7 +163,27 @@ Auth (one of these is required):
 |---|---|
 | `FAMLY_EMAIL` + `FAMLY_PASSWORD` | **Recommended.** bairn re-authenticates on token expiry. |
 | `FAMLY_ACCESS_TOKEN` | Advanced; use when MFA is enabled on the account. |
-| `FAMLY_DEVICE_ID` | Optional; default is a stable per-host UUID. |
+| `FAMLY_DEVICE_ID` | Optional UUID pinning the device id sent to Famly. Default: the id stored in the session file, generated once at random. Set it in CI (see below). |
+
+**Session file.** bairn keeps `session.json` next to the state file
+(`$XDG_STATE_HOME/bairn/` by default, or the directory of
+`BAIRN_STATE_PATH`). It holds two values: the device id Famly knows
+this install by, and the last access token. The file is mode `0600`,
+written atomically, and the token is never logged. A run starts from
+the stored token and logs in with your password only when Famly
+rejects it, so Famly's "new log-in activity" e-mail is not sent every
+run. A token pasted in `FAMLY_ACCESS_TOKEN` wins over the stored one
+and is never written to the file. `--dry-run` and `bairn drift` reuse
+the file but never write it. Delete the file to force a fresh login;
+back it up like a credential, not like the archive.
+
+**CI and containers.** A throwaway container has no session file, so
+each run would generate a new device id and Famly would report a new
+device. Set a fixed `FAMLY_DEVICE_ID` (any UUID you generate once, for
+example with `uuidgen`) as a masked CI variable; the drift-gate job,
+which runs on tags and weekly schedules, then always presents the same
+device and the notices stop. Do the same for a container whose state
+directory is not a persistent volume.
 
 Save and state:
 

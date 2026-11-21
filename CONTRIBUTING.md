@@ -9,7 +9,12 @@ but the bar is "does this make my own cron run more reliably."
 - Optional: a Famly account for live testing
 - Optional: an Immich instance for end-to-end runs
 
-Tests run without either, against fixture servers.
+Tests run without either, against fixture servers. Never put a real
+token, password, device id or family data in a test, fixture or commit.
+
+The Famly session (device id and token) lives in `session.json` next
+to the state file; see `internal/session`. Tests that touch it use a
+temp dir and a fake Famly server, never the operator's real file.
 
 ## The make targets that matter
 
@@ -37,7 +42,10 @@ A tag is cut only on a commit whose main pipeline is green.
 change cannot block a release; `osv-verdict` is the blocking
 dependency gate on main. `osv-verdict`, `reference-check` and the site
 build do not run on tag pipelines, and `drift-gate` runs only on tags
-and the weekly schedule. Nothing in CI reaches Immich. `stamp-check` (tag only) flags a
+and the weekly schedule. The drift-gate job runs in a throwaway container with no session
+file, so give it a fixed masked `FAMLY_DEVICE_ID` project variable;
+otherwise every tag and weekly run is a new device to Famly. Nothing
+in CI reaches Immich. `stamp-check` (tag only) flags a
 `+dirty` binary stamp after the release is published, so a red run
 means yank the release and re-tag.
 

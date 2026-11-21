@@ -44,6 +44,14 @@ bairn supports both.
   introduces stale-cache bug class, requires careful file locking
   for concurrent runs. Rejected for the simplicity of in-memory.
 
+**Amended in 0.6.2.** Each run's password login made Famly e-mail a
+"new log-in activity" notice, which outweighed the stale-cache risk.
+bairn now stores the last token and a stable device id in
+`session.json` (0600, atomic). The stale-cache failure mode is
+covered by the existing path: a 401 invalidates the seed and the next
+call logs in and rewrites the file. Concurrent runs are already
+excluded by the state file lock.
+
 ## Consequences
 
 - Operator can run with token only for short-lived experiments, or
