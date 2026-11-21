@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"strings"
 	"testing"
 
 	"gitlab.com/dunn.dev/bairn/internal/sync"
@@ -25,5 +26,15 @@ func TestFetchExitCode(t *testing.T) {
 		if got := fetchExitCode(c.res, io.Discard); got != c.want {
 			t.Errorf("%s: exit %d, want %d", c.name, got, c.want)
 		}
+	}
+}
+
+func TestRetryFailedRefusesFilterFlags(t *testing.T) {
+	if err := checkRetryFailed(map[string]bool{"dry-run": true, "max-pages": true}); err != nil {
+		t.Errorf("compatible flags refused: %v", err)
+	}
+	err := checkRetryFailed(map[string]bool{"source": true, "include-system-posts": true})
+	if err == nil || !strings.Contains(err.Error(), "--include-system-posts, --source") {
+		t.Errorf("err = %v, want both incompatible flags named", err)
 	}
 }

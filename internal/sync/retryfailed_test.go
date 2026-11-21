@@ -1,0 +1,272 @@
+package sync
+
+import (
+	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"path/filepath"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+
+	"gitlab.com/dunn.dev/bairn/api/famly"
+	"gitlab.com/dunn.dev/bairn/internal/sink"
+	"gitlab.com/dunn.dev/bairn/internal/state"
+)
+
+var feedBase = time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+
+func postTime(n int) time.Time { return feedBase.Add(time.Duration(n) * time.Hour) }
+
+// datedFeed serves n posts, one image each, newest (n-1) first, 10 per
+// page, honouring olderThan and cursor like Famly. Image i is served
+// from /img/i unless i is in gone, which answers 404. It records the
+// query of every feed request.
+type datedFeed struct {
+	*httptest.Server
+	mu      sync.Mutex
+	queries []string
+	pages   int
+}
+
+func newDatedFeed(t *testing.T, n int, gone map[int]bool, ignoreOlderThan bool) *datedFeed {
+	t.Helper()
+	body := jpegBytes(t)
+	f := &datedFeed{}
+	mux := http.NewServeMux()
+	f.Server = httptest.NewServer(mux)
+	t.Cleanup(f.Close)
+	mux.HandleFunc("/api/feed/feed/feed", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		f.mu.Lock()
+		f.queries = append(f.queries, r.URL.RawQuery)
+		f.pages++
+		f.mu.Unlock()
+		hi := n - 1
+		if c := q.Get("cursor"); c != "" {
+			id, _ := strconv.Atoi(c[len("post-"):])
+			hi = id - 1
+		} else if ot := q.Get("olderThan"); ot != "" && !ignoreOlderThan {
+			at, err := time.Parse(time.RFC3339, ot)
+			if err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			for hi >= 0 && !postTime(hi).Before(at) {
+				hi--
+			}
+		}
+		out := `{"feedItems":[`
+		for i, c := hi, 0; i >= 0 && c < FeedPageSizeForTest; i, c = i-1, c+1 {
+			if c > 0 {
+				out += ","
+			}
+			out += fmt.Sprintf(`{"feedItemId":"post-%[1]d","createdDate":%[2]q,"images":[{"imageId":"img-%[1]d","url":"%[3]s/img/%[1]d","url_big":"%[3]s/img/%[1]d","createdAt":{"date":%[2]q}}],"videos":[]}`,
+				i, postTime(i).Format(time.RFC3339), f.URL)
+		}
+		_, _ = w.Write([]byte(out + `]}`))
+	})
+	mux.HandleFunc("/img/", func(w http.ResponseWriter, r *http.Request) {
+		i, _ := strconv.Atoi(r.URL.Path[len("/img/"):])
+		if gone[i] {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		_, _ = w.Write(body)
+	})
+	return f
+}
+
+// FeedPageSizeForTest mirrors famly.FeedPageSize.
+const FeedPageSizeForTest = famly.FeedPageSize
+
+type retryEnv struct {
+	feed *datedFeed
+	deps Deps
+	st   *state.Store
+	dir  string
+}
+
+// seedFailed records the images as discovered and failed, with the post
+// date when dated.
+func seedFailed(t *testing.T, st *state.Store, dated bool, ids ...int) {
+	t.Helper()
+	for _, i := range ids {
+		a := state.Asset{Source: "feed-image", FeedItemID: fmt.Sprintf("post-%d", i), DiscoveredAt: postTime(i).Add(time.Minute)}
+		if dated {
+			a.FeedItemAt = postTime(i)
+		}
+		id := fmt.Sprintf("img-%d", i)
+		if err := st.Discover(context.Background(), id, a); err != nil {
+			t.Fatal(err)
+		}
+		_ = st.MarkError(context.Background(), id, "asset: stream body: connection reset by peer")
+	}
+}
+
+func newRetryEnv(t *testing.T, feed *datedFeed) *retryEnv {
+	t.Helper()
+	dir := t.TempDir()
+	disk, _ := sink.NewDisk(dir, "", "")
+	st, err := state.Open(context.Background(), filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(feed.URL), famly.WithPageDelay(0))
+	return &retryEnv{feed: feed, st: st, dir: dir,
+		deps: Deps{Famly: fc, Disk: disk, State: st, DownloadRetry: instantRetry(1)}}
+}
+
+func (e *retryEnv) run(t *testing.T, dry bool) Result {
+	t.Helper()
+	res, err := Run(context.Background(), e.deps, Options{Source: SourceAll, RetryFailed: true, DryRun: dry})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return res
+}
+
+func TestRetryFailedJumpsToTheFailedItemsAndStopsAfterThem(t *testing.T) {
+	feed := newDatedFeed(t, 100, nil, false)
+	e := newRetryEnv(t, feed)
+	seedFailed(t, e.st, true, 61, 55)
+	res := e.run(t, false)
+
+	if r := res.Retry; r == nil || r.Failed != 2 || r.Retried != 2 || r.Fixed != 2 || r.StillFailing != 0 {
+		t.Fatalf("retry summary = %+v, want 2 failed, retried, fixed", r)
+	}
+	if res.Saved != 2 || res.Discovered != 2 {
+		t.Errorf("saved=%d discovered=%d, want 2/2: only the failed items are touched", res.Saved, res.Discovered)
+	}
+	// 100 posts is 10 pages; the walk jumped past the 38 newer posts and
+	// read only the pages down to post 55 (61..52), not the whole feed.
+	if feed.pages != 1 {
+		t.Errorf("feed pages read = %d (%v), want 1", feed.pages, feed.queries)
+	}
+	if q := feed.queries[0]; q == "" || !contains(q, "olderThan=") || contains(q, "cursor=") {
+		t.Errorf("first request %q did not jump with olderThan alone", q)
+	}
+	if ok, _ := e.st.IsSaved(context.Background(), "img-61"); !ok {
+		t.Error("img-61 not saved")
+	}
+	if len(e.st.Failed()) != 0 {
+		t.Error("fixed entries still listed as failed")
+	}
+}
+
+func contains(s, sub string) bool {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return true
+		}
+	}
+	return false
+}
+
+func TestRetryFailedSpansPagesBetweenTheTwoDates(t *testing.T) {
+	feed := newDatedFeed(t, 100, nil, false)
+	e := newRetryEnv(t, feed)
+	seedFailed(t, e.st, true, 80, 40)
+	res := e.run(t, false)
+	if res.Retry.Fixed != 2 {
+		t.Fatalf("summary = %+v", res.Retry)
+	}
+	// 80..71, 70..61, 60..51, 50..41, 40..31: five pages, not ten.
+	if feed.pages != 5 {
+		t.Errorf("feed pages = %d, want 5", feed.pages)
+	}
+}
+
+func TestRetryFailedReportsStillFailingAndNotFound(t *testing.T) {
+	feed := newDatedFeed(t, 50, map[int]bool{30: true}, false)
+	e := newRetryEnv(t, feed)
+	seedFailed(t, e.st, true, 30, 20)
+	// An entry whose post is no longer in the feed.
+	_ = e.st.Discover(context.Background(), "img-gone", state.Asset{Source: "feed-image", FeedItemID: "post-x", FeedItemAt: postTime(25), DiscoveredAt: postTime(26)})
+	_ = e.st.MarkError(context.Background(), "img-gone", "boom")
+	res := e.run(t, false)
+	r := res.Retry
+	if r.Failed != 3 || r.Retried != 2 || r.Fixed != 1 || r.StillFailing != 2 || r.NotFound != 1 {
+		t.Errorf("summary = %+v, want failed 3, retried 2, fixed 1, stillFailing 2, notFound 1", r)
+	}
+	if res.Errors != 1 {
+		t.Errorf("Errors = %d, want the one failed retry", res.Errors)
+	}
+	if got, _ := e.st.Get(context.Background(), "img-30"); got.Retries != 2 || got.LastError == "" {
+		t.Errorf("failed retry not recorded: %+v", got)
+	}
+}
+
+func TestRetryFailedUndatedEntriesFallBackToDiscoveryTime(t *testing.T) {
+	feed := newDatedFeed(t, 100, nil, false)
+	e := newRetryEnv(t, feed)
+	seedFailed(t, e.st, false, 70)
+	res := e.run(t, false)
+	if r := res.Retry; r.Undated != 1 || r.Fixed != 1 {
+		t.Fatalf("summary = %+v, want the undated entry found and fixed", r)
+	}
+	// Started at its discovery time and stopped as soon as it was found.
+	if feed.pages != 1 {
+		t.Errorf("feed pages = %d, want 1", feed.pages)
+	}
+	// The post date is recorded for next time.
+	st, _ := e.st.Get(context.Background(), "img-70")
+	if !st.FeedItemAt.Equal(postTime(70)) {
+		t.Errorf("FeedItemAt = %v, want %v backfilled", st.FeedItemAt, postTime(70))
+	}
+}
+
+func TestRetryFailedToleratesAServerThatIgnoresOlderThan(t *testing.T) {
+	feed := newDatedFeed(t, 40, nil, true)
+	e := newRetryEnv(t, feed)
+	seedFailed(t, e.st, true, 15)
+	res := e.run(t, false)
+	if res.Retry.Fixed != 1 || res.Errors != 0 {
+		t.Errorf("want a full walk from the head to still find it: %+v errors=%d", res.Retry, res.Errors)
+	}
+}
+
+func TestRetryFailedDryRunChangesNothing(t *testing.T) {
+	feed := newDatedFeed(t, 50, nil, false)
+	e := newRetryEnv(t, feed)
+	seedFailed(t, e.st, true, 30)
+	res := e.run(t, true)
+	if r := res.Retry; r.Retried != 1 || r.Fixed != 0 {
+		t.Errorf("summary = %+v, want 1 would-retry, 0 fixed", r)
+	}
+	if ok, _ := e.st.IsSaved(context.Background(), "img-30"); ok {
+		t.Error("dry run saved an asset")
+	}
+	if matches, _ := filepath.Glob(filepath.Join(e.dir, "*", "*")); len(matches) != 0 {
+		t.Errorf("dry run wrote files: %v", matches)
+	}
+	if got, _ := e.st.Get(context.Background(), "img-30"); got.Retries != 1 {
+		t.Errorf("dry run touched the entry: %+v", got)
+	}
+}
+
+func TestRetryFailedWithNothingFailedReadsNoFeed(t *testing.T) {
+	feed := newDatedFeed(t, 10, nil, false)
+	e := newRetryEnv(t, feed)
+	res := e.run(t, false)
+	if res.Retry == nil || res.Retry.Failed != 0 || feed.pages != 0 {
+		t.Errorf("summary = %+v pages=%d, want none", res.Retry, feed.pages)
+	}
+}
+
+func TestSavedAssetIsNoLongerFailed(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	_ = st.Discover(ctx, "a", state.Asset{Source: "feed-image"})
+	_ = st.MarkError(ctx, "a", "x")
+	if len(st.Failed()) != 1 {
+		t.Fatal("want one failed")
+	}
+	_ = st.MarkSaved(ctx, "a", "/p", time.Now())
+	if len(st.Failed()) != 0 {
+		t.Error("saved entry still failed")
+	}
+}

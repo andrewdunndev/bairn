@@ -26,8 +26,12 @@ import (
 // Asset is the durable per-image record. JSON-encoded; new fields
 // can land with `omitempty` and existing files decode unchanged.
 type Asset struct {
-	Source        string    `json:"source"`
-	FeedItemID    string    `json:"feedItemId,omitempty"`
+	Source     string `json:"source"`
+	FeedItemID string `json:"feedItemId,omitempty"`
+	// FeedItemAt is the creation date of the feed item the asset came
+	// from, the key the feed is ordered by. It lets a retry jump the
+	// feed to the item; entries from before v0.7.0 lack it.
+	FeedItemAt    time.Time `json:"feedItemAt,omitempty"`
 	DiscoveredAt  time.Time `json:"discoveredAt"`
 	DownloadedAt  time.Time `json:"downloadedAt,omitempty"`
 	SavedAt       time.Time `json:"savedAt,omitempty"`
@@ -199,9 +203,15 @@ func (s *Store) Discover(ctx context.Context, id string, a Asset) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, exists := s.data[id]; exists {
+	if cur, exists := s.data[id]; exists {
+		// Entries written before FeedItemAt existed gain it here.
+		if cur.FeedItemAt.IsZero() && !a.FeedItemAt.IsZero() {
+			cur.FeedItemAt = a.FeedItemAt.UTC()
+			return s.changedLocked()
+		}
 		return nil
 	}
+	a.FeedItemAt = a.FeedItemAt.UTC()
 	v := a
 	s.data[id] = &v
 	return s.changedLocked()
@@ -222,6 +232,7 @@ func (s *Store) MarkSaved(ctx context.Context, id, savedPath string, at time.Tim
 	return s.update(id, func(a *Asset) {
 		a.SavedAt = at.UTC()
 		a.SavedPath = savedPath
+		a.LastError = "" // a failed fetch is resolved once the file is on disk
 	})
 }
 
@@ -292,6 +303,34 @@ func (s *Store) Unfiled() []UnfiledAsset {
 	for id, a := range s.data {
 		if at, ok := owedAlbums(a); ok {
 			out = append(out, UnfiledAsset{ID: id, ImmichAssetID: a.ImmichAssetID, PostedAt: at})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// FailedAsset is an entry whose fetch failed and that never reached
+// the disk.
+type FailedAsset struct {
+	ID         string
+	Source     string
+	FeedItemID string
+	// FeedItemAt is zero for an entry written before it was recorded.
+	FeedItemAt   time.Time
+	DiscoveredAt time.Time
+}
+
+// Failed lists the entries with a LastError and no SavedAt, ordered by
+// ID: the work a retry-only run revisits. An asset saved but not
+// uploaded is not listed; an ordinary run uploads those from disk.
+func (s *Store) Failed() []FailedAsset {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []FailedAsset
+	for id, a := range s.data {
+		if a.LastError != "" && a.SavedAt.IsZero() {
+			out = append(out, FailedAsset{ID: id, Source: a.Source, FeedItemID: a.FeedItemID,
+				FeedItemAt: a.FeedItemAt, DiscoveredAt: a.DiscoveredAt})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })

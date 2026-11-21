@@ -80,6 +80,12 @@ type Options struct {
 	// notices, etc.). Off by default; their templated text often
 	// isn't what an operator wants embedded as photo captions.
 	IncludeSystemPosts bool
+
+	// RetryFailed revisits only the state entries that failed (a
+	// LastError and no SavedAt) instead of walking the feed for new
+	// items. The walk jumps to the newest of their dates and stops past
+	// the oldest; Source and IncludeSystemPosts do not apply.
+	RetryFailed bool
 }
 
 // Deps are the wired-in collaborators. Disk is required; Immich
@@ -172,6 +178,8 @@ type Result struct {
 	// since a rerun may repeat work or lose album filing.
 	StateErrors int `json:"stateErrors,omitempty"`
 	Errors      int `json:"errors"`
+	// Retry is set on a RetryFailed run.
+	Retry *RetrySummary `json:"retry,omitempty"`
 	// SystemPostsFiltered counts source-matching images that were
 	// skipped because their feed item was system-generated and the
 	// run did not pass --include-system-posts. Surfaces the
@@ -240,13 +248,27 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 		deps.marked(fctx, deps.Albums.TakeFiled(), deps.Albums.TakeRefused(), logger)
 	}
 
-	if deps.Albums != nil && !opts.DryRun {
+	var plan *retryPlan
+	pages := deps.Famly.Pages(ctx)
+	if opts.RetryFailed {
+		plan = newRetryPlan(deps.State.Failed())
+		pages = deps.Famly.PagesFrom(ctx, plan.start)
+		logger.Info("retry-failed: revisiting failed entries", "entries", len(plan.targets),
+			"undated", plan.undated, "jumpTo", plan.start.Format(time.RFC3339), "stopAfter", plan.floor.Format(time.RFC3339))
+		if len(plan.targets) == 0 {
+			res.Retry = plan.summary(ctx, deps.State, opts.DryRun)
+			res.FinishedAt = time.Now().UTC()
+			return res, nil
+		}
+	}
+
+	if deps.Albums != nil && !opts.DryRun && plan == nil {
 		for _, u := range deps.State.Unfiled() {
 			fileInAlbums(ctx, deps, u.ID, u.ImmichAssetID, u.PostedAt, &res, logger)
 		}
 	}
 
-	for page, err := range deps.Famly.Pages(ctx) {
+	for page, err := range pages {
 		if err != nil {
 			flushAlbums()
 			res.FinishedAt = time.Now().UTC()
@@ -255,7 +277,14 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 		}
 		res.PagesWalked++
 		for _, item := range page.FeedItems {
-			processItem(ctx, deps, opts, item, &res, logger)
+			if plan != nil {
+				processRetryItem(ctx, deps, opts, plan, item, &res, logger)
+			} else {
+				processItem(ctx, deps, opts, item, &res, logger)
+			}
+		}
+		if plan != nil && plan.finished(page) {
+			break
 		}
 		if opts.MaxPages > 0 && res.PagesWalked >= opts.MaxPages {
 			logger.Info("max pages reached", "pages", res.PagesWalked, "limit", opts.MaxPages)
@@ -264,6 +293,11 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 	}
 	flushAlbums()
 	res.FinishedAt = time.Now().UTC()
+	if plan != nil {
+		res.Retry = plan.summary(ctx, deps.State, opts.DryRun)
+		logger.Info("retry-failed complete", "failed", res.Retry.Failed, "retried", res.Retry.Retried,
+			"fixed", res.Retry.Fixed, "stillFailing", res.Retry.StillFailing, "notFound", res.Retry.NotFound)
+	}
 	logger.Info("fetch complete",
 		"pages", res.PagesWalked,
 		"source", string(opts.Source),
@@ -400,6 +434,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 	if err := deps.State.Discover(ctx, id, state.Asset{
 		Source:     string(disc.Source()),
 		FeedItemID: disc.FeedItemID(),
+		FeedItemAt: disc.FeedItemAt(),
 	}); err != nil {
 		res.Errors++
 		logger.Error("discover", "id", id, "err", err)

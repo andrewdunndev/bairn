@@ -1,0 +1,131 @@
+package sync
+
+import (
+	"context"
+	"log/slog"
+	"time"
+
+	"gitlab.com/dunn.dev/bairn/api/famly"
+	"gitlab.com/dunn.dev/bairn/internal/asset"
+	"gitlab.com/dunn.dev/bairn/internal/state"
+)
+
+// RetrySummary is the result of a RetryFailed run.
+type RetrySummary struct {
+	// Failed is how many state entries (a LastError and no SavedAt)
+	// the run set out to revisit.
+	Failed int `json:"failed"`
+	// Retried is how many of them the feed walk found and ran through
+	// the pipeline again (with DryRun, how many it would).
+	Retried int `json:"retried"`
+	// Fixed is how many of those are now saved.
+	Fixed int `json:"fixed"`
+	// StillFailing is every entry not fixed: those that failed again
+	// plus those the walk never found (NotFound).
+	StillFailing int `json:"stillFailing"`
+	// NotFound is how many entries the feed walk did not turn up: the
+	// post is gone, the video is still transcoding, or --max-pages
+	// stopped the walk first.
+	NotFound int `json:"notFound"`
+	// Undated is how many entries predate FeedItemAt and so were
+	// located from their discovery time instead of their post date.
+	Undated int `json:"undated,omitempty"`
+}
+
+// retryPlan is the set of failed assets a RetryFailed run looks for,
+// and where in the feed to look.
+type retryPlan struct {
+	targets   map[string]state.FailedAsset
+	attempted map[string]struct{}
+	// start is where the walk jumps to: the newest date any target can
+	// sit at, its post date when recorded, else when it was discovered
+	// (a post cannot be newer than the run that first saw it).
+	start time.Time
+	// floor is the oldest post date among the targets; the walk stops
+	// once a page ends before it. Zero when any target is undated: with
+	// no known post date the walk only stops when every target is found.
+	floor   time.Time
+	undated int
+}
+
+func newRetryPlan(failed []state.FailedAsset) *retryPlan {
+	p := &retryPlan{targets: map[string]state.FailedAsset{}, attempted: map[string]struct{}{}}
+	allDated := true
+	for _, f := range failed {
+		p.targets[f.ID] = f
+		at := f.FeedItemAt
+		if at.IsZero() {
+			allDated = false
+			p.undated++
+			at = f.DiscoveredAt
+		}
+		if at.After(p.start) {
+			p.start = at
+		}
+		if !f.FeedItemAt.IsZero() && (p.floor.IsZero() || f.FeedItemAt.Before(p.floor)) {
+			p.floor = f.FeedItemAt
+		}
+	}
+	if !allDated {
+		p.floor = time.Time{}
+	}
+	return p
+}
+
+func (p *retryPlan) want(id string) bool {
+	if _, ok := p.targets[id]; !ok {
+		return false
+	}
+	_, done := p.attempted[id]
+	return !done
+}
+
+// finished reports whether the walk can stop after page: every target
+// is found, or the page reached past the oldest post date.
+func (p *retryPlan) finished(page famly.FeedPage) bool {
+	if len(p.attempted) == len(p.targets) {
+		return true
+	}
+	if p.floor.IsZero() || len(page.FeedItems) == 0 {
+		return false
+	}
+	return page.FeedItems[len(page.FeedItems)-1].CreatedDate.Before(p.floor)
+}
+
+// processRetryItem runs the target assets of item through the usual
+// pipeline. Filters are not applied: the entry was accepted by an
+// earlier run, and --retry-failed takes no filters of its own.
+func processRetryItem(ctx context.Context, deps Deps, opts Options, p *retryPlan, item famly.FeedItem, res *Result, logger *slog.Logger) {
+	for _, img := range item.Images {
+		if p.want(img.ImageID) {
+			p.attempted[img.ImageID] = struct{}{}
+			processOne(ctx, deps, opts, asset.DiscoverImage(img, item, opts.Zone), res, logger)
+		}
+	}
+	for _, vid := range item.Videos {
+		// Not final yet: leave it failing until Famly serves the file.
+		if !p.want(vid.VideoID) || vid.Transcoding || vid.URL == "" {
+			continue
+		}
+		p.attempted[vid.VideoID] = struct{}{}
+		processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item, opts.Zone), res, logger)
+	}
+}
+
+// summary tallies the run once the walk has ended.
+func (p *retryPlan) summary(ctx context.Context, st *state.Store, dryRun bool) *RetrySummary {
+	s := &RetrySummary{Failed: len(p.targets), Retried: len(p.attempted), Undated: p.undated}
+	s.NotFound = s.Failed - s.Retried
+	s.StillFailing = s.NotFound
+	if dryRun {
+		return s
+	}
+	for id := range p.attempted {
+		if ok, _ := st.IsSaved(ctx, id); ok {
+			s.Fixed++
+		} else {
+			s.StillFailing++
+		}
+	}
+	return s
+}

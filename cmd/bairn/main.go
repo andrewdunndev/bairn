@@ -120,8 +120,20 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	albumYear := fs.String("album-year", cfg.AlbumYear, "year album name pattern; setting it enables that album. With --albums: \""+albums.DefaultYearPattern+"\"")
 	albumShare := fs.String("album-share", cfg.AlbumShare, "comma-separated Immich user IDs (UUIDs) to share a newly created album with as editors")
 	allowMissingState := fs.Bool("allow-missing-state", false, "upload even though the state file is absent and the save dir already holds media (every file would be treated as new)")
+	retryFailed := fs.Bool("retry-failed", false, "revisit only state entries that failed to download or save, without walking the whole feed; the walk jumps to each entry's post date and stops after the oldest. --max-pages 0 unless set; works with --dry-run")
 	if err := fs.Parse(args); err != nil {
 		return 2
+	}
+	set := map[string]bool{}
+	fs.Visit(func(f *flag.Flag) { set[f.Name] = true })
+	if *retryFailed {
+		if err := checkRetryFailed(set); err != nil {
+			fmt.Fprintln(os.Stderr, "fetch:", err)
+			return 2
+		}
+		if !set["max-pages"] {
+			*maxPages = 0
+		}
 	}
 
 	zone, err := resolveZone(*tz)
@@ -235,6 +247,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		HouseholdChildren:  children,
 		Software:           software(Version),
 		IncludeSystemPosts: *includeSystem,
+		RetryFailed:        *retryFailed,
 	})
 	if err != nil {
 		logger.Error("fetch", "err", err)
