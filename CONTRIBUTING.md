@@ -28,8 +28,7 @@ bairn validates operations against; introspection
 The Immich client in `api/immich` is hand-written. `IMMICH_VERSION`
 in the Makefile is the Immich release it is verified against via
 `make pre-tag-check`; Renovate bumps it, and a bump MR means upgrade
-the home Immich, run `make refresh-immich-validator`, then
-`make pre-tag-check`.
+the home Immich, then run `make pre-tag-check`.
 
 ## Release gates
 

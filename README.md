@@ -331,14 +331,8 @@ the albums, asset and key with the login session, even on failure.
 
 `IMMICH_VERSION` in the Makefile is the Immich release bairn is
 verified against via `make pre-tag-check`. Renovate proposes bumps
-(automerge off); a bump MR means: upgrade the home Immich, recapture
-`api/immich/required-fields.json` with `make refresh-immich-validator`,
-then run `make pre-tag-check`.
-
-For the no-write case (auditing a server you can't upload to),
-`bairn smoke immich --probe-only` sends a deliberately incomplete
-POST and parses the validator's rejection. `--capture <path>`
-writes the captured required-field set as a static manifest.
+(automerge off); a bump MR means: upgrade the home Immich, then run
+`make pre-tag-check`.
 
 `make gen` reads `api/famly/schema.graphql`, the hand-curated SDL
 bairn validates operations against. Introspection

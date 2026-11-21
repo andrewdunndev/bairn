@@ -1,9 +1,8 @@
-.PHONY: build build-linux build-darwin build-all test lint clean tidy gen gen-famly refresh-immich-validator smoke-immich pre-tag-check require-exiftool
+.PHONY: build build-linux build-darwin build-all test lint clean tidy gen gen-famly smoke-immich pre-tag-check require-exiftool
 
 # The Immich release bairn is verified against via `make pre-tag-check`.
 # Renovate tracks it (automerge off). A bump MR means: upgrade the
-# home Immich to the new release, recapture api/immich/required-fields.json
-# with `make refresh-immich-validator`, then run `make pre-tag-check`.
+# home Immich to the new release, then run `make pre-tag-check`.
 # renovate: datasource=github-releases depName=immich-app/immich
 IMMICH_VERSION := 3.4.2
 
@@ -28,16 +27,6 @@ gen-famly:
 # IMMICH_BASE_URL + IMMICH_API_KEY.
 smoke-immich: build
 	$(BINARY) smoke immich
-
-# Validator-probe-only mode (no upload). Captures the required-
-# field set into a JSON manifest. For diagnostics or for capturing
-# a static record when the live server doesn't permit writes
-# (public demos, audit modes). Not the gate; smoke-immich is.
-refresh-immich-validator: build
-	$(BINARY) smoke immich --probe-only --capture api/immich/required-fields.json
-	@echo
-	@echo "Captured required-field set. Review with:"
-	@echo "  git diff api/immich/required-fields.json"
 
 # Stamped into main.Version; "dev" when built without these targets.
 VERSION ?= $(or $(shell git describe --tags --always --dirty 2>/dev/null),dev)

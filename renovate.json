@@ -15,7 +15,7 @@
   ],
   "packageRules": [
     {
-      "description": "An Immich bump is a human gate: upgrade the home Immich, recapture required-fields.json, run make pre-tag-check.",
+      "description": "An Immich bump is a human gate: upgrade the home Immich, run make pre-tag-check.",
       "matchDepNames": ["immich-app/immich"],
       "automerge": false
     }

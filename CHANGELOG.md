@@ -14,6 +14,14 @@ additions.
 
 ## [Unreleased]
 
+### Removed
+
+- The Immich required-fields manifest machinery: `bairn smoke immich
+  --probe-only` and `--capture`, `make refresh-immich-validator` and
+  the `TestUploadEmitsAllRequiredFields` test. The manifest was never
+  committed, so the test skipped on every run; the live
+  `make smoke-immich` is the gate.
+
 ### Fixed
 
 - Uploads recorded before 0.6.0 (no post date) are now filed into the
