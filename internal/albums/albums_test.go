@@ -14,9 +14,12 @@ type fakeAPI struct {
 	shared   [][]string
 	added    map[string][]string
 	findErr  error
+	finds    int
+	addErr   error
 }
 
 func (f *fakeAPI) FindOwnedAlbum(_ context.Context, name string) (string, error) {
+	f.finds++
 	return f.existing[name], f.findErr
 }
 func (f *fakeAPI) CreateAlbum(_ context.Context, name string, users []string) (string, error) {
@@ -27,6 +30,9 @@ func (f *fakeAPI) CreateAlbum(_ context.Context, name string, users []string) (s
 	return id, nil
 }
 func (f *fakeAPI) AddAssetsToAlbum(_ context.Context, id string, assets []string) error {
+	if f.addErr != nil {
+		return f.addErr
+	}
 	f.added[id] = append(f.added[id], assets...)
 	return nil
 }
@@ -126,6 +132,43 @@ func TestLookupCachedWithinRun(t *testing.T) {
 	_ = f.Flush(context.Background())
 	if len(api.created) != 1 {
 		t.Errorf("created %v, want exactly one create across flushes", api.created)
+	}
+	if api.finds != 1 {
+		t.Errorf("Find called %d times, want 1 across flushes", api.finds)
+	}
+}
+
+func TestTakeFiledReportsOnlyFullyFiledAssets(t *testing.T) {
+	api := newFake()
+	f := New(api, Config{MonthPattern: "M %m", YearPattern: "Y %Y", Zone: time.UTC}, nil)
+	at := time.Date(2026, 5, 6, 0, 0, 0, 0, time.UTC)
+	_ = f.Add(context.Background(), "a1", at)
+	api.addErr = errors.New("down")
+	if err := f.Flush(context.Background()); err == nil {
+		t.Fatal("want error")
+	}
+	if got := f.TakeFiled(); len(got) != 0 {
+		t.Fatalf("filed after failed flush = %v, want none", got)
+	}
+	api.addErr = nil
+	if err := f.Flush(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.TakeFiled(); len(got) != 1 || got[0] != "a1" {
+		t.Fatalf("filed = %v, want [a1]", got)
+	}
+	if got := f.TakeFiled(); len(got) != 0 {
+		t.Fatalf("filed drained twice = %v", got)
+	}
+}
+
+func TestZeroPostDateIsRefused(t *testing.T) {
+	f := New(newFake(), Config{YearPattern: "Y %Y", Zone: time.UTC}, nil)
+	if err := f.Add(context.Background(), "a1", time.Time{}); err == nil {
+		t.Fatal("want error for zero post date")
+	}
+	if len(f.pending) != 0 {
+		t.Errorf("pending = %v, want none", f.pending)
 	}
 }
 

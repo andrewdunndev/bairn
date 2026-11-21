@@ -55,6 +55,8 @@ type Filer struct {
 	logger  *slog.Logger
 	ids     map[string]string   // album name -> album ID
 	pending map[string][]string // album name -> asset IDs
+	waiting map[string]int      // asset ID -> album adds still outstanding
+	filed   []string            // asset IDs whose every album add succeeded
 }
 
 // New returns a Filer. A nil logger uses slog.Default.
@@ -66,7 +68,7 @@ func New(api API, cfg Config, logger *slog.Logger) *Filer {
 		cfg.Zone = time.Local
 	}
 	return &Filer{api: api, cfg: cfg, logger: logger,
-		ids: map[string]string{}, pending: map[string][]string{}}
+		ids: map[string]string{}, pending: map[string][]string{}, waiting: map[string]int{}}
 }
 
 // Names renders the album names for a post date, month first. Empty
@@ -92,8 +94,16 @@ func (f *Filer) Add(ctx context.Context, assetID string, at time.Time) error {
 	if assetID == "" {
 		return errors.New("albums: empty asset id")
 	}
+	if at.IsZero() {
+		return fmt.Errorf("albums: asset %s has no post date", assetID)
+	}
 	var errs []error
-	for _, name := range f.Names(at) {
+	names := f.Names(at)
+	f.waiting[assetID] += len(names)
+	if len(names) == 0 {
+		f.filed = append(f.filed, assetID)
+	}
+	for _, name := range names {
 		f.pending[name] = append(f.pending[name], assetID)
 		if len(f.pending[name]) >= flushAt {
 			if err := f.flushOne(ctx, name); err != nil {
@@ -102,6 +112,14 @@ func (f *Filer) Add(ctx context.Context, assetID string, at time.Time) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// TakeFiled returns, and forgets, the IDs of assets whose every album
+// add has succeeded since the last call.
+func (f *Filer) TakeFiled() []string {
+	out := f.filed
+	f.filed = nil
+	return out
 }
 
 // Flush adds every queued asset to its album.
@@ -128,6 +146,12 @@ func (f *Filer) flushOne(ctx context.Context, name string) error {
 		return fmt.Errorf("album %q: %w", name, err)
 	}
 	delete(f.pending, name)
+	for _, a := range assets {
+		if f.waiting[a]--; f.waiting[a] <= 0 {
+			delete(f.waiting, a)
+			f.filed = append(f.filed, a)
+		}
+	}
 	f.logger.Info("album updated", "album", name, "assets", len(assets))
 	return nil
 }

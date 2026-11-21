@@ -95,7 +95,9 @@ type Deps struct {
 	// albums. Optional; nil = no albums. Run flushes it at the end.
 	Albums *albums.Filer
 
-	gate *uploadGate // set by Run
+	gate   *uploadGate         // set by Run
+	owners map[string][]string // Immich asset ID -> state IDs queued for albums; set by Run
+	marked func(ctx context.Context, filed []string, logger *slog.Logger)
 }
 
 // maxUploadFailures is how many uploads in a row may fail before the
@@ -181,6 +183,17 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 
 	res := Result{StartedAt: time.Now().UTC()}
 	deps.gate = &uploadGate{}
+	deps.owners = map[string][]string{}
+	deps.marked = func(ctx context.Context, filed []string, logger *slog.Logger) {
+		for _, immichID := range filed {
+			for _, id := range deps.owners[immichID] {
+				if err := deps.State.MarkAlbumsFiled(ctx, id, time.Now()); err != nil {
+					logger.Error("albums: record filed", "id", id, "err", err)
+				}
+			}
+			delete(deps.owners, immichID)
+		}
+	}
 
 	flushAlbums := func() {
 		if deps.Albums == nil {
@@ -192,6 +205,13 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 		if err := deps.Albums.Flush(fctx); err != nil {
 			res.AlbumErrors++
 			logger.Error("albums", "err", err)
+		}
+		deps.marked(fctx, deps.Albums.TakeFiled(), logger)
+	}
+
+	if deps.Albums != nil && !opts.DryRun {
+		for _, u := range deps.State.Unfiled() {
+			fileInAlbums(ctx, deps, u.ID, u.ImmichAssetID, u.PostedAt, &res, logger)
 		}
 	}
 
@@ -341,17 +361,17 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		return
 	}
 
+	if opts.DryRun {
+		logger.Info("dry-run: would download+save+upload", "id", id, "source", disc.Source())
+		return
+	}
+
 	if err := deps.State.Discover(ctx, id, state.Asset{
 		Source:     string(disc.Source()),
 		FeedItemID: disc.FeedItemID(),
 	}); err != nil {
 		res.Errors++
 		logger.Error("discover", "id", id, "err", err)
-		return
-	}
-
-	if opts.DryRun {
-		logger.Info("dry-run: would download+save+upload", "id", id, "source", disc.Source())
 		return
 	}
 
@@ -424,7 +444,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 
 	deps.gate.succeeded()
 	countUpload(res, up.ImmichStatus())
-	fileInAlbums(ctx, deps, up.ImmichAssetID(), disc.FileCreatedAt(), res, logger)
+	fileInAlbums(ctx, deps, id, up.ImmichAssetID(), disc.FileCreatedAt(), res, logger)
 	logger.Info("complete",
 		"id", id, "path", saved.FinalPath(),
 		"immich_id", up.ImmichAssetID(), "immich_status", up.ImmichStatus())
@@ -456,7 +476,7 @@ func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger 
 	logger.Info("uploaded from disk", "id", id, "immich_status", status)
 	if deps.Albums != nil {
 		if a, err := deps.State.Get(ctx, id); err == nil {
-			fileInAlbums(ctx, deps, a.ImmichAssetID, a.DownloadedAt, res, logger)
+			fileInAlbums(ctx, deps, id, a.ImmichAssetID, a.DownloadedAt, res, logger)
 		}
 	}
 }
@@ -464,11 +484,19 @@ func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger 
 // fileInAlbums queues an uploaded asset (created or duplicate) for its
 // month and year albums. A failure costs the asset its album, never
 // its upload.
-func fileInAlbums(ctx context.Context, deps Deps, immichID string, postedAt time.Time, res *Result, logger *slog.Logger) {
+func fileInAlbums(ctx context.Context, deps Deps, id, immichID string, postedAt time.Time, res *Result, logger *slog.Logger) {
 	if deps.Albums == nil {
 		return
 	}
-	if err := deps.Albums.Add(ctx, immichID, postedAt); err != nil {
+	if !postedAt.IsZero() {
+		if err := deps.State.MarkPosted(ctx, id, postedAt); err != nil {
+			logger.Error("albums: record post date", "id", id, "err", err)
+		}
+		deps.owners[immichID] = append(deps.owners[immichID], id)
+	}
+	err := deps.Albums.Add(ctx, immichID, postedAt)
+	deps.marked(ctx, deps.Albums.TakeFiled(), logger)
+	if err != nil {
 		res.AlbumErrors++
 		logger.Error("albums", "immich_id", immichID, "err", err)
 	}

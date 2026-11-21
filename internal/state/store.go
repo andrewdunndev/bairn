@@ -15,6 +15,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -37,6 +38,8 @@ type Asset struct {
 	UploadedAt    time.Time `json:"uploadedAt,omitempty"`
 	ImmichAssetID string    `json:"immichAssetId,omitempty"`
 	ImmichStatus  string    `json:"immichStatus,omitempty"`
+	PostedAt      time.Time `json:"postedAt,omitempty"`
+	AlbumsFiledAt time.Time `json:"albumsFiledAt,omitempty"`
 	LastError     string    `json:"lastError,omitempty"`
 	Retries       int       `json:"retries,omitempty"`
 }
@@ -226,6 +229,39 @@ func (s *Store) MarkUploaded(ctx context.Context, id, immichID, status string, a
 		a.ImmichAssetID = immichID
 		a.ImmichStatus = status
 	})
+}
+
+// MarkPosted records the post date an upload is to be filed under.
+func (s *Store) MarkPosted(ctx context.Context, id string, at time.Time) error {
+	return s.update(id, func(a *Asset) { a.PostedAt = at.UTC() })
+}
+
+// MarkAlbumsFiled records that every album add for the asset succeeded.
+func (s *Store) MarkAlbumsFiled(ctx context.Context, id string, at time.Time) error {
+	return s.update(id, func(a *Asset) { a.AlbumsFiledAt = at.UTC() })
+}
+
+// UnfiledAsset is an uploaded asset still owed its albums.
+type UnfiledAsset struct {
+	ID            string
+	ImmichAssetID string
+	PostedAt      time.Time
+}
+
+// Unfiled lists assets that are uploaded and have a post date but no
+// albums-filed mark, ordered by ID. Records without PostedAt, written
+// before filing was tracked, are never listed.
+func (s *Store) Unfiled() []UnfiledAsset {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []UnfiledAsset
+	for id, a := range s.data {
+		if !a.UploadedAt.IsZero() && a.ImmichAssetID != "" && !a.PostedAt.IsZero() && a.AlbumsFiledAt.IsZero() {
+			out = append(out, UnfiledAsset{ID: id, ImmichAssetID: a.ImmichAssetID, PostedAt: a.PostedAt})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
 }
 
 // MarkError increments retries and records the message.
