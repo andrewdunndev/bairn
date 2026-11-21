@@ -23,6 +23,11 @@ additions.
   CDN connection now fails after connect, TLS, response-header and
   idle-read deadlines (a slow video that keeps sending is unaffected,
   there is no total timeout) instead of hanging until the unit's limit.
+- The download temp file is created inside the save directory (a
+  dot-prefixed `.bairn-dl-*.part`, removed on failure) rather than the
+  system temp dir, so large videos no longer fill a small tmpfs and the
+  move into place is a same-filesystem rename. The missing-state guard
+  ignores these files.
 
 ## [0.6.1] - 2026-11-21
 

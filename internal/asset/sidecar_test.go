@@ -81,7 +81,7 @@ func TestSaveWritesVideoSidecarOnly(t *testing.T) {
 		{DiscoverVideo(famly.Video{VideoID: "vid-001", URL: srv.URL + "/v"}, item, time.UTC), true},
 		{DiscoverImage(famly.Image{ImageID: "img-001", BigURL: srv.URL + "/i"}, item, time.UTC), false},
 	} {
-		dl, err := c.disc.Download(context.Background(), nil)
+		dl, err := c.disc.Download(context.Background(), nil, t.TempDir())
 		if err != nil {
 			t.Fatalf("Download: %v", err)
 		}
@@ -126,7 +126,7 @@ func TestUploadSendsVideoSidecar(t *testing.T) {
 	disk, _ := sink.NewDisk(t.TempDir(), "", "")
 	item := famly.FeedItem{FeedItemID: "p", Body: "Nap time",
 		CreatedDate: famly.FamlyTime{Time: time.Date(2026, 5, 6, 14, 0, 0, 0, time.UTC)}}
-	dl, err := DiscoverVideo(famly.Video{VideoID: "vid-001", URL: srv.URL + "/v"}, item, time.UTC).Download(context.Background(), nil)
+	dl, err := DiscoverVideo(famly.Video{VideoID: "vid-001", URL: srv.URL + "/v"}, item, time.UTC).Download(context.Background(), nil, t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -258,7 +258,7 @@ func TestImageOffsetDefaultsToZone(t *testing.T) {
 func TestDownloadErrorOmitsSignedQuery(t *testing.T) {
 	img := famly.Image{ImageID: "img-001", BigURL: "http://127.0.0.1:1/i.jpg?Signature=SECRET"}
 	d := DiscoverImage(img, famly.FeedItem{}, time.UTC)
-	_, err := d.Download(context.Background(), nil)
+	_, err := d.Download(context.Background(), nil, t.TempDir())
 	if err == nil {
 		t.Fatal("want a transport error")
 	}

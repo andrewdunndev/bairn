@@ -18,13 +18,22 @@ import (
 	"gitlab.com/dunn.dev/bairn/internal/urlerr"
 )
 
+// TempPrefix starts the name of an in-flight download file. The leading
+// dot keeps it out of every scan of the save dir.
+const TempPrefix = ".bairn-dl-"
+
 // Download streams the asset bytes from the signed CDN URL to a
 // temporary file. The URL is short-lived; this transition must be
 // called soon after the Discovered value was produced.
 //
+// tmpDir is the save root, so the temp file shares a filesystem with
+// the final path (no tmpfs pressure, and Put can rename it into place).
+// The name is dot-prefixed with a .part suffix: media scans and the
+// missing-state guard ignore it, and it is removed on any failure.
+//
 // Streaming-to-disk avoids holding entire video bytes in memory.
 // SHA1 is computed during the copy.
-func (d Discovered) Download(ctx context.Context, hc *http.Client) (Downloaded, error) {
+func (d Discovered) Download(ctx context.Context, hc *http.Client, tmpDir string) (Downloaded, error) {
 	if hc == nil {
 		hc = http.DefaultClient
 	}
@@ -41,7 +50,7 @@ func (d Discovered) Download(ctx context.Context, hc *http.Client) (Downloaded, 
 		return Downloaded{}, fmt.Errorf("asset: download %s: HTTP %d", d.famlyImageID, resp.StatusCode)
 	}
 
-	tmp, err := os.CreateTemp("", "bairn-dl-*"+filepath.Ext(d.filename))
+	tmp, err := os.CreateTemp(tmpDir, TempPrefix+"*.part")
 	if err != nil {
 		return Downloaded{}, fmt.Errorf("asset: create temp for %s: %w", d.famlyImageID, err)
 	}

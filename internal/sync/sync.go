@@ -390,7 +390,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		return
 	}
 
-	dl, err := disc.Download(ctx, deps.HTTP)
+	dl, err := disc.Download(ctx, deps.HTTP, deps.Disk.Root())
 	if err != nil {
 		res.Errors++
 		logger.Error("download", "id", id, "err", err)

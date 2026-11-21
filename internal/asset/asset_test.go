@@ -149,7 +149,7 @@ func TestPipelineSavedOnly(t *testing.T) {
 		t.Fatalf("state.Discover: %v", err)
 	}
 
-	dl, err := disc.Download(context.Background(), nil)
+	dl, err := disc.Download(context.Background(), nil, t.TempDir())
 	if err != nil {
 		t.Fatalf("Download: %v", err)
 	}
