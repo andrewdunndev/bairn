@@ -13,6 +13,56 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [Unreleased]
 
+### Added
+
+- Immich albums: with `--albums` (or `--album-month` / `--album-year`),
+  each uploaded asset, newly created or answered `duplicate`, is added to
+  a month album and a year album named from its post date in the run's
+  zone (`EDC November 2026` and `EDC 2026` by default). Albums are found
+  by exact name among those the API key's owner owns and created only
+  when absent, shared as editor with the `--album-share` user IDs, so
+  reruns never make a second album. Adds are batched per album and
+  idempotent. bairn only ever adds: it never removes an asset from an
+  album, deletes an album, or trashes anything. The key needs
+  `album.read`, `album.create` and `albumAsset.create`. The state file
+  records `postedAt` and `albumsFiledAt` per asset, so an asset whose
+  filing failed or was interrupted is filed on the next run; entries
+  written before these fields existed are not back-filed.
+- `bairn smoke immich` (login path) runs an album leg with a key holding
+  only `asset.upload`, `album.read`, `album.create` and `albumAsset.create`,
+  sharing to `SMOKE_SHARE_USER_EMAIL`, and cleans up with the login session.
+  The login-path round trip no longer mints `asset.delete`.
+- `--allow-missing-state`: `bairn fetch` now refuses to upload to Immich
+  when the state file is absent but the save dir already holds media
+  (every file would look new); the flag overrides the refusal. The check
+  runs for every fetch, dry runs included, and a dry run no longer
+  records assets in the state file.
+- `--tz` / `BAIRN_TZ` set the fallback zone for video dates. `--max-pages
+  0` (unlimited) is documented and tested as the way to walk a full
+  history.
+- Both the Famly and Immich clients retry transport errors, 429
+  (honouring `Retry-After`) and 5xx with capped exponential backoff and
+  jitter; other 4xx fail at once. A retried Immich upload is safe: the
+  server dedupes on the file checksum per owner and answers
+  `duplicate`.
+- A Famly 401 mid-run refreshes the token once through the token
+  source (ADR 0003) and retries; a second 401 fails.
+- The feed walk pauses one second between pages.
+- CI: a weekly scheduled `drift-gate` run against the operator's own
+  Famly account (two GETs). Drift diffing now treats `<empty>` and
+  `null` shapes as wildcards and merges nested shapes across
+  feed items, so a week with photos is not reported as drift.
+- `IMMICH_VERSION` in the Makefile names the Immich release bairn is
+  verified against via `make pre-tag-check`; Renovate tracks it with
+  automerge off.
+- XMP `digiKam:TagsList` (flat child names, same source as
+  `dc:subject`) in the photo packet; Immich reads it and ignores
+  `dc:subject`.
+- Videos now carry metadata: a standalone `<file>.xmp` (description,
+  date with its offset, tags) is written beside each video and sent to
+  Immich as `sidecarData`. Photos still embed their XMP and get no
+  sidecar.
+
 ### Changed
 
 - The default save root and state directory (under the XDG data and state
@@ -48,6 +98,14 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 ### Removed
 
 - `discovery/probe/shape.py`, superseded by `bairn drift`.
+- CI: the `drift-gate-immich` and `smoke-immich` jobs (web/api only,
+  never reachable from the runner), the Immich drift manifest and
+  its empty baseline, and the `claude-drift-triage` include. `make
+  pre-tag-check` remains the Immich gate.
+- The vendored Immich `openapi.json`, the unused generated `imapi`
+  client, the oapi-codegen config, `make gen-immich` and
+  `make refresh-immich-spec`, and the oapi-codegen `go.mod` tool.
+  The hand-written `api/immich` client and its contract test stay.
 
 ### Fixed
 
@@ -100,37 +158,6 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 - The state file is flushed every 50 changes and on exit instead of
   being rewritten and fsynced on every change, which was quadratic
   over a full history.
-
-### Added
-
-- `--tz` / `BAIRN_TZ` set the fallback zone for video dates. `--max-pages
-  0` (unlimited) is documented and tested as the way to walk a full
-  history.
-- Both the Famly and Immich clients retry transport errors, 429
-  (honouring `Retry-After`) and 5xx with capped exponential backoff and
-  jitter; other 4xx fail at once. A retried Immich upload is safe: the
-  server dedupes on the file checksum per owner and answers
-  `duplicate`.
-- A Famly 401 mid-run refreshes the token once through the token
-  source (ADR 0003) and retries; a second 401 fails.
-- The feed walk pauses one second between pages.
-- CI: a weekly scheduled `drift-gate` run against the operator's own
-  Famly account (two GETs). Drift diffing now treats `<empty>` and
-  `null` shapes as wildcards and merges nested shapes across
-  feed items, so a week with photos is not reported as drift.
-- `IMMICH_VERSION` in the Makefile names the Immich release bairn is
-  verified against via `make pre-tag-check`; Renovate tracks it with
-  automerge off.
-- XMP `digiKam:TagsList` (flat child names, same source as
-  `dc:subject`) in the photo packet; Immich reads it and ignores
-  `dc:subject`.
-- Videos now carry metadata: a standalone `<file>.xmp` (description,
-  date with its offset, tags) is written beside each video and sent to
-  Immich as `sidecarData`. Photos still embed their XMP and get no
-  sidecar.
-
-### Fixed
-
 - `bairn drift` exits 2 when an endpoint errors, answers non-2xx, or
   serves a non-JSON page, instead of passing on the endpoints that
   did answer. With `--anonymize` it no longer prints response sizes.
@@ -144,17 +171,6 @@ changes; patch bumps within `0.x.y` are bug fixes only.
   wall-clock time in the labelled offset. Previously the UTC clock
   reading was written next to a non-UTC offset, so the label disagreed
   with the time. Files already archived keep the old values.
-
-### Removed
-
-- CI: the `drift-gate-immich` and `smoke-immich` jobs (web/api only,
-  never reachable from the runner), the Immich drift manifest and
-  its empty baseline, and the `claude-drift-triage` include. `make
-  pre-tag-check` remains the Immich gate.
-- The vendored Immich `openapi.json`, the unused generated `imapi`
-  client, the oapi-codegen config, `make gen-immich` and
-  `make refresh-immich-spec`, and the oapi-codegen `go.mod` tool.
-  The hand-written `api/immich` client and its contract test stay.
 
 ## [0.5.0] - 2026-05-09
 

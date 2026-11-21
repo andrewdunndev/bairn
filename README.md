@@ -179,6 +179,10 @@ Optional Immich sink (uploads alongside disk save):
 |---|---|---|
 | `IMMICH_BASE_URL` | Immich API URL, ending in `/api`, e.g. `https://photos.example.com/api` | unset |
 | `IMMICH_API_KEY` | Immich API key (User Settings → API Keys) | unset |
+| `BAIRN_ALBUMS` | `1` files uploads into month and year albums with the default patterns | off |
+| `BAIRN_ALBUM_MONTH` | Month album name pattern (`%Y %m %B %b`); setting it enables that album | unset (`EDC %B %Y` with `BAIRN_ALBUMS`) |
+| `BAIRN_ALBUM_YEAR` | Year album name pattern; setting it enables that album | unset (`EDC %Y` with `BAIRN_ALBUMS`) |
+| `BAIRN_ALBUM_SHARE` | Comma-separated Immich user UUIDs a new album is shared with as editors | unset |
 
 **Immich version requirement: v3.0.2 or later.** bairn targets the
 Immich 3.x `/assets` upload contract, which no longer takes
@@ -201,7 +205,29 @@ CLI flag overrides for `bairn fetch`:
 --include-system-posts   include automated check-in/sign-out posts
                          (off by default; their templated text isn't great
                          photo caption material)
+--albums                 file Immich uploads into month and year albums,
+                         using the default patterns below (BAIRN_ALBUMS=1)
+--album-month PAT        month album name; setting it enables that album
+                         (BAIRN_ALBUM_MONTH; with --albums: "EDC %B %Y",
+                         e.g. "EDC November 2026")
+--album-year PAT         year album name (BAIRN_ALBUM_YEAR; with --albums:
+                         "EDC %Y")
+--album-share IDS        comma-separated Immich user IDs (UUIDs) a newly
+                         created album is shared with as editors
+                         (BAIRN_ALBUM_SHARE)
+--allow-missing-state    upload even though the state file is missing and the
+                         save dir already holds media (refused by default)
 ```
+
+Albums are off unless `--albums` or a pattern is set. Patterns take
+`%Y %m %B %b`, read in the run's zone at the post date. An album is
+found by exact name among the albums the API key's owner owns and is
+created only if absent, so reruns add to the same album. bairn only
+adds assets to albums; it never removes an asset, deletes an album or
+trashes anything. The Immich API key needs these permissions:
+`asset.upload`, and for albums `album.read`, `album.create` and
+`albumAsset.create` (checked against Immich v3.4.2). Share with user
+IDs rather than emails so the key needs no `user.read`.
 
 ## Filename layout
 
@@ -280,6 +306,14 @@ v0.4.6 added the smoke and v0.5.0 folded lint into the same gate.
 quota-limited test user separate from your archive account), or
 falls back to `IMMICH_BASE_URL` / `IMMICH_API_KEY` for ad-hoc
 runs. It is a local gate only: CI runners cannot reach a LAN Immich.
+
+On the login path the smoke also runs the album leg: it mints a key
+with only `asset.upload`, `album.read`, `album.create` and
+`albumAsset.create`, uploads a tiny asset and files it into uniquely
+named `bairn-smoke-*` month and year albums twice through the same
+filer fetch uses, asserts one album per name, the asset in each and
+(with `SMOKE_SHARE_USER_EMAIL` set) that user as editor, then deletes
+the albums, asset and key with the login session, even on failure.
 
 `IMMICH_VERSION` in the Makefile is the Immich release bairn is
 verified against via `make pre-tag-check`. Renovate proposes bumps

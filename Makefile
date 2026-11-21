@@ -5,7 +5,7 @@
 # home Immich to the new release, recapture api/immich/required-fields.json
 # with `make refresh-immich-validator`, then run `make pre-tag-check`.
 # renovate: datasource=github-releases depName=immich-app/immich
-IMMICH_VERSION := 3.4.1
+IMMICH_VERSION := 3.4.2
 
 BINARY := bin/bairn
 
@@ -16,8 +16,11 @@ gen: gen-famly
 gen-famly:
 	cd api/famly && go tool genqlient
 
-# Run the full Immich smoke locally: login + mint ephemeral API
-# key + upload tiny JPEG + assert + delete asset + delete API key.
+# Run the full Immich smoke locally: login + mint an ephemeral API key
+# holding only fetch's scopes (asset.upload, album.read, album.create,
+# albumAsset.create) + upload a tiny JPEG and file it into unique
+# month/year albums twice + assert + clean up with the login session.
+# SMOKE_SHARE_USER_EMAIL names the user the albums are shared with.
 # Useful before tagging if you touched anything in api/immich/ or
 # internal/sink/immich. Run it against Immich $(IMMICH_VERSION).
 #

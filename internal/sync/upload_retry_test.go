@@ -2,15 +2,20 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
+	"gitlab.com/dunn.dev/bairn/internal/albums"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 )
@@ -243,5 +248,205 @@ func TestUploadsStopAtOnceOnForbidden(t *testing.T) {
 	r := runWith(t, famlySrv, disk, sink.NewImmich(immich.New(imSrv.URL, "k")), st)
 	if hits.Load() != 1 || r.UploadFailed != 4 || r.Saved != 4 {
 		t.Fatalf("hits=%d failed=%d saved=%d, want 1/4/4", hits.Load(), r.UploadFailed, r.Saved)
+	}
+}
+
+// albumImmich is a stateful fake of the Immich album surface.
+type albumImmich struct {
+	failAdds atomic.Bool
+	created  []string
+	added    map[string][]string
+}
+
+func newAlbumImmich(t *testing.T) (*httptest.Server, *albumImmich) {
+	t.Helper()
+	a := &albumImmich{added: map[string][]string{}}
+	names := map[string]string{}
+	uploads := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/assets", func(w http.ResponseWriter, r *http.Request) {
+		status := "created"
+		if uploads++; uploads > 1 {
+			status = "duplicate"
+		}
+		_, _ = fmt.Fprintf(w, `{"id":"asset-1","status":%q}`, status)
+	})
+	mux.HandleFunc("GET /albums", func(w http.ResponseWriter, r *http.Request) {
+		n := r.URL.Query().Get("name")
+		if id, ok := names[n]; ok {
+			_, _ = fmt.Fprintf(w, `[{"id":%q,"albumName":%q}]`, id, n)
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("POST /albums", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ AlbumName string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		a.created = append(a.created, in.AlbumName)
+		names[in.AlbumName] = "al-" + in.AlbumName
+		_, _ = fmt.Fprintf(w, `{"id":%q}`, names[in.AlbumName])
+	})
+	mux.HandleFunc("PUT /albums/{id}/assets", func(w http.ResponseWriter, r *http.Request) {
+		if a.failAdds.Load() {
+			http.Error(w, "no", http.StatusForbidden)
+			return
+		}
+		var in struct{ IDs []string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		dupe := len(a.added[r.PathValue("id")]) > 0
+		a.added[r.PathValue("id")] = append(a.added[r.PathValue("id")], in.IDs...)
+		if dupe {
+			_, _ = w.Write([]byte(`[{"id":"asset-1","success":false,"error":"duplicate"}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[{"id":"asset-1","success":true}]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, a
+}
+
+func TestUploadsAreFiledInMonthAndYearAlbumsIdempotently(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	srv, fake := newAlbumImmich(t)
+	ic := immich.New(srv.URL, "k")
+	for run := range 2 {
+		disk, _ := sink.NewDisk(t.TempDir(), "", "")
+		fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
+		filer := albums.New(ic, albums.Config{MonthPattern: "EDC %B %Y", YearPattern: "EDC %Y", Zone: time.UTC}, nil)
+		// A fresh state each run models a lost state file: the asset
+		// uploads again, Immich answers duplicate, albums stay put.
+		res, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, Immich: sink.NewImmich(ic), Albums: filer, State: openTestStore(t)},
+			Options{MaxPages: 2, Source: SourceAll})
+		if err != nil {
+			t.Fatalf("run %d: %v", run, err)
+		}
+		if res.AlbumErrors != 0 {
+			t.Errorf("run %d: AlbumErrors = %d, want 0", run, res.AlbumErrors)
+		}
+	}
+	slices.Sort(fake.created)
+	if !slices.Equal(fake.created, []string{"EDC 2026", "EDC May 2026"}) {
+		t.Errorf("created = %v, want each album exactly once", fake.created)
+	}
+	if len(fake.added["al-EDC May 2026"]) != 2 {
+		t.Errorf("month adds = %v, want one per run", fake.added)
+	}
+}
+
+func albumRun(t *testing.T, famlySrv *httptest.Server, ic *immich.Client, st *state.Store) Result {
+	t.Helper()
+	disk, _ := sink.NewDisk(t.TempDir(), "", "")
+	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
+	filer := albums.New(ic, albums.Config{MonthPattern: "EDC %B %Y", YearPattern: "EDC %Y", Zone: time.UTC}, nil)
+	res, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, Immich: sink.NewImmich(ic), Albums: filer, State: st},
+		Options{MaxPages: 2, Source: SourceAll})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	return res
+}
+
+func unfiledCount(st *state.Store) int { return len(st.Unfiled()) }
+
+func TestFailedFinalFlushIsRefiledOnRerun(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	srv, fake := newAlbumImmich(t)
+	ic := immich.New(srv.URL, "k")
+	st := openTestStore(t)
+
+	fake.failAdds.Store(true)
+	if res := albumRun(t, famlySrv, ic, st); res.AlbumErrors == 0 {
+		t.Fatal("first run: want album errors")
+	}
+	if unfiledCount(st) == 0 {
+		t.Fatal("failed flush left no unfiled asset in state")
+	}
+
+	fake.failAdds.Store(false)
+	res := albumRun(t, famlySrv, ic, st)
+	if res.AlbumErrors != 0 {
+		t.Fatalf("rerun AlbumErrors = %d", res.AlbumErrors)
+	}
+	if len(fake.added["al-EDC 2026"]) == 0 || len(fake.added["al-EDC May 2026"]) == 0 {
+		t.Errorf("rerun did not file: %v", fake.added)
+	}
+	if unfiledCount(st) != 0 {
+		t.Errorf("unfiled after rerun = %d, want 0", unfiledCount(st))
+	}
+}
+
+func TestCrashBeforeFilingIsRefiledFromStateFile(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	srv, fake := newAlbumImmich(t)
+	ic := immich.New(srv.URL, "k")
+	path := filepath.Join(t.TempDir(), "state.json")
+	st, err := state.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fake.failAdds.Store(true)
+	albumRun(t, famlySrv, ic, st)
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	fake.failAdds.Store(false)
+	st2, err := state.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st2.Close() })
+	if unfiledCount(st2) == 0 {
+		t.Fatal("reopened state has no unfiled asset")
+	}
+	if res := albumRun(t, famlySrv, ic, st2); res.AlbumErrors != 0 {
+		t.Fatalf("AlbumErrors = %d", res.AlbumErrors)
+	}
+	if len(fake.added["al-EDC May 2026"]) == 0 || unfiledCount(st2) != 0 {
+		t.Errorf("not filed after crash rerun: %v unfiled=%d", fake.added, unfiledCount(st2))
+	}
+}
+
+func TestEntriesWithoutPostDateAreNeverRequeued(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	srv, fake := newAlbumImmich(t)
+	ic := immich.New(srv.URL, "k")
+	st := openTestStore(t)
+	ctx := context.Background()
+	if err := st.Discover(ctx, "old-1", state.Asset{Source: "feed-image", DiscoveredAt: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkUploaded(ctx, "old-1", "old-immich", "created", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	albumRun(t, famlySrv, ic, st)
+	for id, got := range fake.added {
+		if slices.Contains(got, "old-immich") {
+			t.Errorf("old entry was filed into %s", id)
+		}
+	}
+	a, _ := st.Get(ctx, "old-1")
+	if !a.PostedAt.IsZero() || !a.AlbumsFiledAt.IsZero() {
+		t.Errorf("old entry modified: %+v", a)
+	}
+}
+
+func TestDryRunLeavesStateEmpty(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	disk, _ := sink.NewDisk(t.TempDir(), "", "")
+	st := openTestStore(t)
+	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
+	if _, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, State: st},
+		Options{MaxPages: 2, Source: SourceAll, DryRun: true}); err != nil {
+		t.Fatal(err)
+	}
+	if sum, _ := st.Stats(context.Background()); sum.Total != 0 {
+		t.Errorf("dry run recorded %d state entries", sum.Total)
 	}
 }

@@ -15,6 +15,7 @@ import (
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
+	"gitlab.com/dunn.dev/bairn/internal/albums"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/drift"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
@@ -104,6 +105,11 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	filenamePat := fs.String("filename-pattern", "", "filename template (default: feed-{{.Source}}-%Y-%m-%d_%H-%M-%S-{{.ID}}.{{.Ext}})")
 	dirPat := fs.String("dir-pattern", "", "directory template under save-dir (default: %Y-%m-%d)")
 	includeSystem := fs.Bool("include-system-posts", false, "include automated Famly posts (check-ins, sign-outs); off by default to keep templated text out of photo captions")
+	albumsOn := fs.Bool("albums", cfg.Albums, "file uploads into Immich month and year albums named from the post date, using the default patterns for any not set below")
+	albumMonth := fs.String("album-month", cfg.AlbumMonth, "month album name pattern (%Y %m %B %b); setting it enables that album. With --albums: \""+albums.DefaultMonthPattern+"\"")
+	albumYear := fs.String("album-year", cfg.AlbumYear, "year album name pattern; setting it enables that album. With --albums: \""+albums.DefaultYearPattern+"\"")
+	albumShare := fs.String("album-share", cfg.AlbumShare, "comma-separated Immich user IDs (UUIDs) to share a newly created album with as editors")
+	allowMissingState := fs.Bool("allow-missing-state", false, "upload even though the state file is absent and the save dir already holds media (every file would be treated as new)")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -134,10 +140,24 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		return 2
 	}
 
+	if err := checkStateGuard(cfg.StatePath, *saveDir, *allowMissingState); err != nil {
+		fmt.Fprintln(os.Stderr, "fetch:", err)
+		return 2
+	}
+
 	var immichSink *sink.Immich
+	var filer *albums.Filer
 	if !*noImmich && cfg.ImmichBaseURL != "" && cfg.ImmichAPIKey != "" {
 		ic := immich.New(cfg.ImmichBaseURL, cfg.ImmichAPIKey, immich.WithLogger(logger))
 		immichSink = sink.NewImmich(ic)
+		acfg, err := albumConfig(*albumsOn, *albumMonth, *albumYear, *albumShare, zone)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "fetch:", err)
+			return 2
+		}
+		if acfg.Enabled() {
+			filer = albums.New(ic, acfg, logger)
+		}
 	}
 
 	tokenSrc := buildTokenSource(cfg)
@@ -186,7 +206,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	}
 
 	res, err := sync.Run(ctx, sync.Deps{
-		Famly: fc, Disk: disk, Immich: immichSink, State: st, Logger: logger,
+		Famly: fc, Disk: disk, Immich: immichSink, Albums: filer, State: st, Logger: logger,
 	}, sync.Options{
 		MaxPages:           *maxPages,
 		DryRun:             *dryRun,
@@ -206,6 +226,10 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	_ = enc.Encode(res)
 	if res.UploadFailed > 0 {
 		fmt.Fprintf(os.Stderr, "fetch: %d asset(s) saved to disk but not uploaded to Immich; rerun to retry\n", res.UploadFailed)
+		return 1
+	}
+	if res.AlbumErrors > 0 {
+		fmt.Fprintf(os.Stderr, "fetch: %d Immich album operation(s) failed; the assets are uploaded but not filed (check the API key has album.read, album.create and albumAsset.create)\n", res.AlbumErrors)
 		return 1
 	}
 	return 0
