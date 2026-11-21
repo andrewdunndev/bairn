@@ -28,3 +28,7 @@ linters:
       # messages). A failed write to stderr is unrecoverable.
       - linters: [errcheck]
         text: 'Error return value of `fmt\.Fprint(ln|f)?` is not checked'
+
+formatters:
+  enable:
+    - gofmt

@@ -30,7 +30,7 @@ type ProbeResult struct {
 // ProbeOptions configures Probe.
 type ProbeOptions struct {
 	HTTPClient *http.Client
-	Token      string                      // overrides auth_env when set
+	Token      string // overrides auth_env when set
 	Logger     *slog.Logger
 	Compare    func(id string) (any, bool) // returns prior signature if available
 	Sleep      func(d time.Duration)       // injected for tests; defaults to time.Sleep

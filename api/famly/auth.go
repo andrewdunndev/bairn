@@ -30,9 +30,9 @@ type TokenSource interface {
 // invalidation so the next Token call returns ErrTokenExpired with
 // guidance.
 type StaticToken struct {
-	value      string
-	invalid    bool
-	mu         sync.Mutex
+	value   string
+	invalid bool
+	mu      sync.Mutex
 }
 
 // NewStaticToken constructs a StaticToken from a session string.
