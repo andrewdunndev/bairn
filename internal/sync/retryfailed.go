@@ -99,7 +99,7 @@ func processRetryItem(ctx context.Context, deps Deps, opts Options, p *retryPlan
 	for _, img := range item.Images {
 		if p.want(img.ImageID) {
 			p.attempted[img.ImageID] = struct{}{}
-			processOne(ctx, deps, opts, asset.DiscoverImage(img, item, opts.Zone), res, logger)
+			res.item(processOne(ctx, deps, opts, asset.DiscoverImage(img, item, opts.Zone), res, logger))
 		}
 	}
 	for _, vid := range item.Videos {
@@ -108,7 +108,7 @@ func processRetryItem(ctx context.Context, deps Deps, opts Options, p *retryPlan
 			continue
 		}
 		p.attempted[vid.VideoID] = struct{}{}
-		processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item, opts.Zone), res, logger)
+		res.item(processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item, opts.Zone), res, logger))
 	}
 }
 

@@ -325,7 +325,7 @@ func TestRunSkipsTranscodingVideos(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Discovered != 0 || res.Skipped != 2 {
-		t.Errorf("Discovered = %d, Skipped = %d; want 0 and 2", res.Discovered, res.Skipped)
+	if res.Discovered != 2 || res.Skipped != 2 || res.Buckets.NotReady != 2 {
+		t.Errorf("Discovered = %d, Skipped = %d, NotReady = %d; want 2, 2, 2", res.Discovered, res.Skipped, res.Buckets.NotReady)
 	}
 }

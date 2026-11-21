@@ -155,11 +155,17 @@ type Result struct {
 	StartedAt   time.Time `json:"startedAt"`
 	FinishedAt  time.Time `json:"finishedAt"`
 	PagesWalked int       `json:"pagesWalked"`
-	Discovered  int       `json:"discovered"`
-	Skipped     int       `json:"skipped"`
-	Saved       int       `json:"saved"`
-	Uploaded    int       `json:"uploaded"`
-	Duplicates  int       `json:"duplicates"`
+	// Discovered counts every media item read from the feed, filtered
+	// or not; Buckets places each in exactly one outcome and sums to it.
+	Discovered int     `json:"discovered"`
+	Buckets    Buckets `json:"buckets"`
+	// Unreconciled is Discovered minus the bucket total; non-zero only
+	// if the accounting has a bug (it is logged as an error).
+	Unreconciled int `json:"unreconciled,omitempty"`
+	Skipped      int `json:"skipped"`
+	Saved        int `json:"saved"`
+	Uploaded     int `json:"uploaded"`
+	Duplicates   int `json:"duplicates"`
 	// UploadDuplicates counts Immich uploads the server answered with
 	// "duplicate"; they are confirmed, like a fresh upload.
 	UploadDuplicates int `json:"uploadDuplicates"`
@@ -190,6 +196,100 @@ type Result struct {
 	// interaction between the system-post default-off rule and the
 	// --source filter so operators see what they're missing.
 	SystemPostsFiltered int `json:"systemPostsFiltered,omitempty"`
+}
+
+// Buckets partitions every discovered media item into exactly one
+// terminal outcome of the run. Discovered is the sum; Reconcile checks
+// it.
+type Buckets struct {
+	// SavedNew: fetched and saved to disk this run, with no Immich
+	// upload in play (Immich off). A disk-level duplicate counts here.
+	SavedNew int `json:"savedNew"`
+	// AlreadyDone: recorded as saved (and uploaded, when Immich is on)
+	// by an earlier run; nothing left to do.
+	AlreadyDone int `json:"alreadyDone"`
+	// UploadedNew: confirmed in Immich as newly created this run, whether
+	// freshly downloaded or sent from disk.
+	UploadedNew int `json:"uploadedNew"`
+	// UploadedDuplicate: Immich answered "duplicate", so it already held
+	// the file; confirmed all the same.
+	UploadedDuplicate int `json:"uploadedDuplicate"`
+	// SkippedSystem: media on a system-generated post, without
+	// --include-system-posts.
+	SkippedSystem int `json:"skippedSystem"`
+	// FilteredBySource: excluded by --source (an untagged or unliked
+	// image, or any video under a filtered source).
+	FilteredBySource int `json:"filteredBySource"`
+	// NotReady: a video still transcoding, or with no URL yet; a later
+	// run takes it.
+	NotReady int `json:"notReady"`
+	// WouldProcess: under --dry-run, an item a real run would act on.
+	WouldProcess int `json:"wouldProcess"`
+	// Failed: could not be fetched, saved, uploaded or recorded this
+	// run. A rerun retries it.
+	Failed int `json:"failed"`
+}
+
+type bucket int
+
+const (
+	bSavedNew bucket = iota
+	bAlreadyDone
+	bUploadedNew
+	bUploadedDuplicate
+	bSkippedSystem
+	bFilteredBySource
+	bNotReady
+	bWouldProcess
+	bFailed
+)
+
+func (b *Buckets) add(k bucket) {
+	switch k {
+	case bSavedNew:
+		b.SavedNew++
+	case bAlreadyDone:
+		b.AlreadyDone++
+	case bUploadedNew:
+		b.UploadedNew++
+	case bUploadedDuplicate:
+		b.UploadedDuplicate++
+	case bSkippedSystem:
+		b.SkippedSystem++
+	case bFilteredBySource:
+		b.FilteredBySource++
+	case bNotReady:
+		b.NotReady++
+	case bWouldProcess:
+		b.WouldProcess++
+	case bFailed:
+		b.Failed++
+	}
+}
+
+// Total is the number of items placed in a bucket.
+func (b Buckets) Total() int {
+	return b.SavedNew + b.AlreadyDone + b.UploadedNew + b.UploadedDuplicate +
+		b.SkippedSystem + b.FilteredBySource + b.NotReady + b.WouldProcess + b.Failed
+}
+
+// item records one discovered media item and the bucket it ended in.
+func (r *Result) item(k bucket) {
+	r.Discovered++
+	r.Buckets.add(k)
+}
+
+// Reconcile checks that every discovered item landed in exactly one
+// bucket. A mismatch is a bug in the accounting, not in the data: it is
+// logged as an error and recorded in Unreconciled.
+func (r *Result) Reconcile(logger *slog.Logger) bool {
+	if n := r.Buckets.Total(); n != r.Discovered {
+		r.Unreconciled = r.Discovered - n
+		logger.Error("run summary does not reconcile: buckets do not add up to discovered",
+			"discovered", r.Discovered, "bucketTotal", n, "buckets", r.Buckets)
+		return false
+	}
+	return true
 }
 
 // Run performs the fetch loop. Returns the run result and an error
@@ -305,10 +405,11 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 		logger.Info("retry-failed complete", "failed", res.Retry.Failed, "retried", res.Retry.Retried,
 			"fixed", res.Retry.Fixed, "stillFailing", res.Retry.StillFailing, "notFound", res.Retry.NotFound)
 	}
+	res.Reconcile(logger)
 	logger.Info("fetch complete",
 		"pages", res.PagesWalked,
 		"source", string(opts.Source),
-		"discovered", res.Discovered, "skipped", res.Skipped,
+		"discovered", res.Discovered, "buckets", res.Buckets, "skipped", res.Skipped,
 		"saved", res.Saved, "uploaded", res.Uploaded,
 		"duplicates", res.Duplicates, "exifErrors", res.ExifErrors,
 		"systemPostsFiltered", res.SystemPostsFiltered,
@@ -318,7 +419,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 	// but matched nothing is the kind of silent zero-result that
 	// hides config drift (e.g. childId rotated, no recent likes).
 	// Surface it explicitly above the run summary noise.
-	if opts.Source != SourceAll && res.Saved == 0 && res.Discovered > 0 {
+	if matched := res.Discovered - res.Buckets.FilteredBySource - res.Buckets.SkippedSystem - res.Buckets.NotReady; opts.Source != SourceAll && matched == 0 && res.Discovered > 0 {
 		logger.Warn("fetch matched 0 of N discovered images via source filter",
 			"source", string(opts.Source),
 			"discovered", res.Discovered,
@@ -341,14 +442,18 @@ func logProgress(logger *slog.Logger, res Result, page famly.FeedPage) {
 }
 
 // processItem walks one feed item's images and videos, applies the
-// source filter, and runs each new asset through the pipeline.
+// source filter, and runs each new asset through the pipeline. Every
+// media item lands in exactly one Buckets outcome.
 func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedItem, res *Result, logger *slog.Logger) {
 	if item.IsSystemGenerated() && !opts.IncludeSystemPosts {
-		// Count any media on system posts toward Skipped so the
-		// summary doesn't mislead operators about feed coverage.
+		// Media on system posts counts toward Skipped so the summary
+		// doesn't mislead operators about feed coverage.
 		skipped := len(item.Images) + len(item.Videos)
 		if skipped > 0 {
 			res.Skipped += skipped
+			for range skipped {
+				res.item(bSkippedSystem)
+			}
 			// Trap C: if the operator is filtering by source, count
 			// images that the filter would have matched in this
 			// system-skipped post. Surfaces in the run summary so
@@ -376,18 +481,25 @@ func processItem(ctx context.Context, deps Deps, opts Options, item famly.FeedIt
 	for _, img := range item.Images {
 		if !shouldDownloadImage(img, opts) {
 			res.Skipped++
+			res.item(bFilteredBySource)
 			continue
 		}
-		processOne(ctx, deps, opts, asset.DiscoverImage(img, item, opts.Zone), res, logger)
+		res.item(processOne(ctx, deps, opts, asset.DiscoverImage(img, item, opts.Zone), res, logger))
 	}
 	for _, vid := range item.Videos {
-		// A video still transcoding is left for a later run, which
+		// Videos carry no child tags or likes, so only --source=all takes
+		// them. One still transcoding is left for a later run, which
 		// picks it up once Famly serves the final file.
-		if opts.Source != SourceAll || vid.Transcoding || vid.URL == "" {
+		switch {
+		case opts.Source != SourceAll:
 			res.Skipped++
-			continue
+			res.item(bFilteredBySource)
+		case vid.Transcoding || vid.URL == "":
+			res.Skipped++
+			res.item(bNotReady)
+		default:
+			res.item(processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item, opts.Zone), res, logger))
 		}
-		processOne(ctx, deps, opts, asset.DiscoverVideo(vid, item, opts.Zone), res, logger)
 	}
 }
 
@@ -417,9 +529,9 @@ func shouldDownloadImage(img famly.Image, opts Options) bool {
 	return false
 }
 
-// processOne runs the typestate transitions for one asset.
-func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discovered, res *Result, logger *slog.Logger) {
-	res.Discovered++
+// processOne runs the typestate transitions for one asset and returns
+// the bucket it ended in.
+func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discovered, res *Result, logger *slog.Logger) bucket {
 	id := disc.FamlyImageID()
 
 	// Skip if already saved.
@@ -434,21 +546,22 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 			if uploaded, _ := deps.State.IsUploaded(ctx, id); !uploaded {
 				if opts.DryRun {
 					logger.Info("dry-run: would upload saved asset", "id", id)
-				} else if deps.gate.isStopped() {
-					res.UploadFailed++
-				} else {
-					uploadSaved(ctx, deps, id, res, logger)
+					return bWouldProcess
 				}
-				return
+				if deps.gate.isStopped() {
+					res.UploadFailed++
+					return bFailed
+				}
+				return uploadSaved(ctx, deps, id, res, logger)
 			}
 		}
 		res.Skipped++
-		return
+		return bAlreadyDone
 	}
 
 	if opts.DryRun {
 		logger.Info("dry-run: would download+save+upload", "id", id, "source", disc.Source())
-		return
+		return bWouldProcess
 	}
 
 	if err := deps.State.Discover(ctx, id, state.Asset{
@@ -458,7 +571,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 	}); err != nil {
 		res.Errors++
 		logger.Error("discover", "id", id, "err", err)
-		return
+		return bFailed
 	}
 
 	dl, err := download(ctx, deps, disc, logger)
@@ -466,7 +579,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		res.Errors++
 		logger.Error("download", "id", id, "err", err)
 		_ = deps.State.MarkError(ctx, id, err.Error())
-		return
+		return bFailed
 	}
 	defer dl.Cleanup()
 
@@ -477,7 +590,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		res.Errors++
 		logger.Error("save", "id", id, "err", err)
 		_ = deps.State.MarkError(ctx, id, err.Error())
-		return
+		return bFailed
 	}
 	if saved.ExifError() != "" {
 		res.ExifErrors++
@@ -493,10 +606,10 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		if _, err := saved.Record(ctx, deps.State); err != nil {
 			res.Errors++
 			logger.Error("record (saved-only)", "id", id, "err", err)
-			return
+			return bFailed
 		}
 		logger.Info("saved", "id", id, "path", saved.FinalPath())
-		return
+		return bSavedNew
 	}
 
 	if deps.gate.isStopped() {
@@ -505,7 +618,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 			res.Errors++
 			logger.Error("record (saved-only)", "id", id, "err", recErr)
 		}
-		return
+		return bFailed
 	}
 
 	up, err := saved.Upload(ctx, deps.Immich)
@@ -519,13 +632,13 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 			logger.Error("record (saved-after-upload-failure)", "id", id, "err", recErr)
 		}
 		_ = deps.State.MarkError(ctx, id, err.Error())
-		return
+		return bFailed
 	}
 
 	if _, err := up.Record(ctx, deps.State); err != nil {
 		res.Errors++
 		logger.Error("record (uploaded)", "id", id, "err", err)
-		return
+		return bFailed
 	}
 
 	deps.gate.succeeded()
@@ -534,6 +647,15 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 	logger.Info("complete",
 		"id", id, "path", saved.FinalPath(),
 		"immich_id", up.ImmichAssetID(), "immich_status", up.ImmichStatus())
+	return uploadBucket(up.ImmichStatus())
+}
+
+// uploadBucket is the outcome of a confirmed Immich upload.
+func uploadBucket(status string) bucket {
+	if status == "duplicate" {
+		return bUploadedDuplicate
+	}
+	return bUploadedNew
 }
 
 // countUpload tallies a confirmed Immich upload.
@@ -547,7 +669,7 @@ func countUpload(res *Result, status string) {
 
 // uploadSaved uploads an asset the state store holds as saved but not
 // confirmed in Immich, reading it back from the disk sink.
-func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger *slog.Logger) {
+func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger *slog.Logger) bucket {
 	status, err := asset.UploadFromDisk(ctx, deps.Immich, deps.State, deps.Disk.Root(), id)
 	if err != nil {
 		res.Errors++
@@ -555,7 +677,7 @@ func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger 
 		logger.Error("upload (retry from disk)", "id", id, "err", err)
 		deps.gate.failed(err, logger)
 		_ = deps.State.MarkError(ctx, id, err.Error())
-		return
+		return bFailed
 	}
 	deps.gate.succeeded()
 	countUpload(res, status)
@@ -565,6 +687,7 @@ func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger 
 			fileInAlbums(ctx, deps, id, a.ImmichAssetID, a.DownloadedAt, res, logger)
 		}
 	}
+	return uploadBucket(status)
 }
 
 // fileInAlbums queues an uploaded asset (created or duplicate) for its

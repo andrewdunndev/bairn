@@ -84,7 +84,7 @@ func runFlaky(t *testing.T, srv *httptest.Server, attempts int) (Result, string)
 func TestDownloadRetriesAResetAndUsesAFreshURL(t *testing.T) {
 	srv, hits, calls := flakyCDN(t, 2, true)
 	res, saveDir := runFlaky(t, srv, 4)
-	if res.Saved != 1 || res.Errors != 0 {
+	if res.Saved != 1 || res.Errors != 0 || res.Buckets.SavedNew != 1 {
 		t.Fatalf("want one clean save after retries, got %+v", res)
 	}
 	if calls.Load() != 3 {
@@ -118,7 +118,7 @@ func TestDownloadStopsAtTheAttemptBound(t *testing.T) {
 	if calls.Load() != 3 {
 		t.Errorf("CDN calls = %d, want exactly 3", calls.Load())
 	}
-	if res.Errors != 1 || res.Saved != 0 {
+	if res.Errors != 1 || res.Buckets.Failed != 1 || res.Saved != 0 {
 		t.Errorf("want one failure, got %+v", res)
 	}
 }
