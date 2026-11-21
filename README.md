@@ -86,7 +86,7 @@ bairn does five jobs:
    from the disk sink, including its video `.xmp` sidecar, so a failed
    or skipped upload is fixed by rerunning `bairn fetch`. The run
    summary counts `saved`, `uploaded`, `uploadDuplicates` and
-   `uploadFailed`; the exit status is 1 while any upload failed. A 401 or 403 from
+   `uploadFailed`. A 401 or 403 from
    Immich, or five failed uploads in a row, stops uploads for the rest
    of the run: the remaining assets are still saved to disk and counted
    in `uploadFailed`, and a rerun uploads them. State
@@ -191,6 +191,13 @@ Optional Immich sink (uploads alongside disk save):
 require them are not supported. It is verified against the
 `IMMICH_VERSION` pin in the Makefile (albums and key permissions
 included) through `make pre-tag-check`.
+
+Exit codes for `bairn fetch`: 0 means the run finished with nothing
+left over. 1 means the run ended but something failed (an item that
+could not be downloaded or saved, an upload that failed, or an album
+operation that failed), or a runtime error stopped it; rerun to retry.
+2 means a usage or configuration error. A scheduler's last-success
+marker should advance only on 0.
 
 CLI flag overrides for `bairn fetch`:
 

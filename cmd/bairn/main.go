@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"os/signal"
@@ -231,15 +232,28 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	_ = enc.Encode(res)
+	return fetchExitCode(res, os.Stderr)
+}
+
+// fetchExitCode reports the run summary problems to w and returns the
+// fetch exit status: 1 when any item failed to download or save, any
+// upload failed or any album operation failed, so a scheduler never
+// records a partial run as a success.
+func fetchExitCode(res sync.Result, w io.Writer) int {
+	code := 0
+	if res.Errors > 0 {
+		fmt.Fprintf(w, "fetch: %d item(s) failed to download or save; rerun to retry\n", res.Errors)
+		code = 1
+	}
 	if res.UploadFailed > 0 {
-		fmt.Fprintf(os.Stderr, "fetch: %d asset(s) saved to disk but not uploaded to Immich; rerun to retry\n", res.UploadFailed)
-		return 1
+		fmt.Fprintf(w, "fetch: %d asset(s) saved to disk but not uploaded to Immich; rerun to retry\n", res.UploadFailed)
+		code = 1
 	}
 	if res.AlbumErrors > 0 {
-		fmt.Fprintf(os.Stderr, "fetch: %d Immich album operation(s) failed; the assets are uploaded but not filed (check the API key has album.read, album.create and albumAsset.create)\n", res.AlbumErrors)
-		return 1
+		fmt.Fprintf(w, "fetch: %d Immich album operation(s) failed; the assets are uploaded but not filed (check the API key has album.read, album.create and albumAsset.create)\n", res.AlbumErrors)
+		code = 1
 	}
-	return 0
+	return code
 }
 
 // runStatus implements the status subcommand.

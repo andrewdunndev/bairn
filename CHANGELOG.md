@@ -14,6 +14,12 @@ additions.
 
 ## [Unreleased]
 
+### Fixed
+
+- `bairn fetch` exits 1 when any item failed to download or save
+  (for example a full disk), so a scheduler no longer records a
+  partial run as a success. Exit codes are documented in the README.
+
 ## [0.6.1] - 2026-11-21
 
 ### Removed
