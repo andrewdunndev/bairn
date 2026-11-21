@@ -140,6 +140,11 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		return 2
 	}
 
+	if err := checkStateGuard(cfg.StatePath, *saveDir, *allowMissingState); err != nil {
+		fmt.Fprintln(os.Stderr, "fetch:", err)
+		return 2
+	}
+
 	var immichSink *sink.Immich
 	var filer *albums.Filer
 	if !*noImmich && cfg.ImmichBaseURL != "" && cfg.ImmichAPIKey != "" {
@@ -152,12 +157,6 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		}
 		if acfg.Enabled() {
 			filer = albums.New(ic, acfg, logger)
-		}
-		if !*dryRun {
-			if err := checkStateGuard(cfg.StatePath, *saveDir, *allowMissingState); err != nil {
-				fmt.Fprintln(os.Stderr, "fetch:", err)
-				return 2
-			}
 		}
 	}
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -55,8 +56,12 @@ func checkStateGuard(statePath, saveDir string, allow bool) error {
 	if allow {
 		return nil
 	}
-	if _, err := os.Stat(statePath); err == nil || !os.IsNotExist(err) {
+	_, err := os.Stat(statePath)
+	if err == nil {
 		return nil
+	}
+	if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("cannot check state file %s: %w; fix the path or permissions, or pass --allow-missing-state", statePath, err)
 	}
 	found := ""
 	_ = filepath.WalkDir(saveDir, func(p string, d fs.DirEntry, err error) error {
