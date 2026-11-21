@@ -4,11 +4,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"gitlab.com/dunn.dev/bairn/internal/retry"
 )
 
 // The album surface bairn uses, with the API-key permission each call
@@ -46,9 +49,17 @@ func (c *Client) FindOwnedAlbum(ctx context.Context, name string) (string, error
 	return "", nil
 }
 
+// createAttempts bounds how often CreateAlbum posts.
+const createAttempts = 3
+
 // CreateAlbum creates an album named name, shared with userIDs as
-// editors, and returns its ID. It is not retried: a repeat of a create
-// that did land would make a second album.
+// editors, and returns its ID.
+//
+// The POST itself is never blindly repeated: a lost response may hide
+// a create that landed, and a second POST would make an unshared twin.
+// After a transport error or a 5xx the album is looked up again by
+// exact owned name; it is created again only while still absent, for
+// at most createAttempts posts. A 4xx is final and returned at once.
 func (c *Client) CreateAlbum(ctx context.Context, name string, userIDs []string) (string, error) {
 	type albumUser struct {
 		UserID string `json:"userId"`
@@ -62,16 +73,55 @@ func (c *Client) CreateAlbum(ctx context.Context, name string, userIDs []string)
 		AlbumName  string      `json:"albumName"`
 		AlbumUsers []albumUser `json:"albumUsers,omitempty"`
 	}{name, users}
-	var out struct {
-		ID string `json:"id"`
+
+	wait := c.retry.Initial
+	var lastErr error
+	for attempt := 1; attempt <= createAttempts; attempt++ {
+		var out struct {
+			ID string `json:"id"`
+		}
+		err := c.doJSON(ctx, http.MethodPost, "/albums", in, &out, false)
+		if err == nil {
+			if out.ID == "" {
+				return "", fmt.Errorf("immich: create album: response carried no id")
+			}
+			return out.ID, nil
+		}
+		if !ambiguousCreate(ctx, err) {
+			return "", err
+		}
+		lastErr = err
+		c.logger.Warn("immich: create album did not confirm; checking whether it landed", "attempt", attempt, "err", err)
+		sleep := c.retry.Sleep
+		if sleep == nil {
+			sleep = retry.Sleep
+		}
+		if err := sleep(ctx, wait); err != nil {
+			return "", err
+		}
+		wait *= 2
+		id, ferr := c.FindOwnedAlbum(ctx, name)
+		if ferr != nil {
+			return "", fmt.Errorf("immich: create album %w; lookup before retry also failed: %v", lastErr, ferr)
+		}
+		if id != "" {
+			return id, nil
+		}
 	}
-	if err := c.doJSON(ctx, http.MethodPost, "/albums", in, &out, false); err != nil {
-		return "", err
+	return "", lastErr
+}
+
+// ambiguousCreate reports whether err leaves it unknown whether the
+// album was created: a transport error, an undecodable reply or a 5xx.
+func ambiguousCreate(ctx context.Context, err error) bool {
+	if ctx.Err() != nil || errors.Is(err, ErrUnauthorized) {
+		return false
 	}
-	if out.ID == "" {
-		return "", fmt.Errorf("immich: create album: response carried no id")
+	var se *StatusError
+	if errors.As(err, &se) {
+		return se.Status >= 500
 	}
-	return out.ID, nil
+	return true
 }
 
 // AddAssetsToAlbum adds assets to an album and returns the assets
@@ -117,6 +167,17 @@ func (c *Client) AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs 
 	return refused, nil
 }
 
+// StatusError is a non-2xx answer from Immich.
+type StatusError struct {
+	Method, Path string
+	Status       int
+	Body         string
+}
+
+func (e *StatusError) Error() string {
+	return fmt.Sprintf("immich: %s %s: HTTP %d: %s", e.Method, e.Path, e.Status, e.Body)
+}
+
 // doJSON sends one JSON request and decodes a 2xx JSON response into
 // out. With retry, the shared policy applies; without, one attempt.
 func (c *Client) doJSON(ctx context.Context, method, path string, in, out any, retry bool) error {
@@ -155,7 +216,7 @@ func (c *Client) doJSON(ctx context.Context, method, path string, in, out any, r
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		buf, _ := io.ReadAll(io.LimitReader(resp.Body, 1024))
-		return fmt.Errorf("immich: %s %s: HTTP %d: %s", method, strings.SplitN(path, "?", 2)[0], resp.StatusCode, strings.TrimSpace(string(buf)))
+		return &StatusError{Method: method, Path: strings.SplitN(path, "?", 2)[0], Status: resp.StatusCode, Body: strings.TrimSpace(string(buf))}
 	}
 	if out == nil {
 		return nil

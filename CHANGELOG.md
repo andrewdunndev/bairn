@@ -28,6 +28,11 @@ additions.
   system temp dir, so large videos no longer fill a small tmpfs and the
   move into place is a same-filesystem rename. The missing-state guard
   ignores these files.
+- Creating an Immich album survives a lost response. After a transport
+  error or a 5xx from the create, bairn looks the album up again by
+  exact owned name and only creates it again while it is still absent
+  (at most three attempts), so a create that landed no longer fails the
+  run or leaves an unshared duplicate.
 
 ## [0.6.1] - 2026-11-21
 
