@@ -223,3 +223,19 @@ func TestSessionUnseededIgnoresStaleEnvAndFileToken(t *testing.T) {
 		t.Fatalf("seeded: tok=%q logins=%d, want the env token without login", tok, logins.Load())
 	}
 }
+
+// A rejected env token with credentials set: the re-login serves this
+// run but the file never gains a token while FAMLY_ACCESS_TOKEN is set.
+func TestSessionStaleEnvTokenReloginIsNotPersisted(t *testing.T) {
+	var logins atomic.Int32
+	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL)
+	cfg.FamlyAccessToken = "stale-env"
+	src := sessionTokenSource(cfg, false, true, quiet)
+	src.Invalidate()
+	if tok, err := src.Token(context.Background()); err != nil || tok != minted {
+		t.Fatalf("relogin: %q %v", tok, err)
+	}
+	if b, err := os.ReadFile(cfg.SessionPath); err == nil && strings.Contains(string(b), minted) {
+		t.Errorf("minted token written while FAMLY_ACCESS_TOKEN is set: %s", b)
+	}
+}

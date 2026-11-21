@@ -42,6 +42,8 @@ additions.
   partial run as a success. Exit codes are documented in the README.
 - `bairn drift` with Famly credentials logs in fresh again instead of
   probing with a stale `FAMLY_ACCESS_TOKEN` or cached session token.
+- The session file gains no token while `FAMLY_ACCESS_TOKEN` is set,
+  even after a re-login.
 - `bairn fetch` also exits 1 when the state file could not be written
   while recording progress (`stateErrors` in the summary). EXIF
   reinjection failures remain warnings and exit 0.

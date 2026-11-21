@@ -174,7 +174,8 @@ the stored token and logs in with your password only when Famly
 rejects it, so Famly's "new log-in activity" e-mail is not sent every
 run. A token pasted in `FAMLY_ACCESS_TOKEN` wins over the stored one
 for `fetch`, even when credentials are also set; if Famly rejects it,
-bairn logs in with the credentials. `bairn drift` with credentials
+bairn logs in with the credentials for that run only and writes no
+token to the file while the variable is set. `bairn drift` with credentials
 always logs in fresh and ignores both. `--dry-run` and `bairn drift`
 never write the file. Delete the file to force a fresh login;
 back it up like a credential, not like the archive.

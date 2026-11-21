@@ -25,8 +25,8 @@ within thirty days, whichever you and I agree is appropriate.
 
 bairn writes one credential file: `session.json` next to the state
 file, holding a Famly device id and the last session access token. It
-is created `0600`, replaced atomically, never logged, and never holds a
-token supplied through `FAMLY_ACCESS_TOKEN`. The password is never
+is created `0600`, replaced atomically, never logged, and never receives a
+token while `FAMLY_ACCESS_TOKEN` is set. The password is never
 written. Anyone who can read the file can act as the Famly session
 until it expires or you change your password; treat it like a
 credential, and delete it to force a fresh login. The Immich key is

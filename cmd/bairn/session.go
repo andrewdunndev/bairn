@@ -12,7 +12,8 @@ import (
 // sessionTokenSource builds the credential-backed token source with
 // session reuse: it is seeded with the token from FAMLY_ACCESS_TOKEN,
 // else from the session file, and every token it mints is written back
-// to the session file. The env token is never written. readOnly (dry
+// to the session file, except while FAMLY_ACCESS_TOKEN is set, when no
+// token is written at all. readOnly (dry
 // runs, drift) reuses the file but never writes it; any failure to read
 // or write it is logged and the run carries on with a password login.
 // seed false skips the seeding: the first Token call logs in fresh, for
@@ -31,11 +32,22 @@ func sessionTokenSource(cfg *config.Config, readOnly, seed bool, logger *slog.Lo
 			if err != nil {
 				return "", err
 			}
-			cur.AccessToken = cred.AccessToken
+			// While FAMLY_ACCESS_TOKEN is set the file stays out of the
+			// token business: a token minted after the env one was
+			// rejected is used for this run only.
+			saveToken := cfg.FamlyAccessToken == ""
+			if saveToken {
+				cur.AccessToken = cred.AccessToken
+			}
 			// Famly may report the id it registered; keep that one,
 			// unless the operator pinned one with FAMLY_DEVICE_ID.
+			idChanged := false
 			if cfg.FamlyDeviceID == "" && famly.ValidDeviceID(cred.DeviceID) && cred.DeviceID != deviceID {
 				deviceID, cur.DeviceID = cred.DeviceID, cred.DeviceID
+				idChanged = true
+			}
+			if !saveToken && !idChanged {
+				return cred.AccessToken, nil
 			}
 			if err := store.Save(cur); err != nil {
 				logger.Warn("could not save famly session; the next run will log in again", "err", err)
