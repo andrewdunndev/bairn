@@ -179,6 +179,10 @@ Optional Immich sink (uploads alongside disk save):
 |---|---|---|
 | `IMMICH_BASE_URL` | Immich API URL, ending in `/api`, e.g. `https://photos.example.com/api` | unset |
 | `IMMICH_API_KEY` | Immich API key (User Settings → API Keys) | unset |
+| `BAIRN_ALBUMS` | `1` files uploads into month and year albums with the default patterns | off |
+| `BAIRN_ALBUM_MONTH` | Month album name pattern (`%Y %m %B %b`); setting it enables that album | unset (`EDC %B %Y` with `BAIRN_ALBUMS`) |
+| `BAIRN_ALBUM_YEAR` | Year album name pattern; setting it enables that album | unset (`EDC %Y` with `BAIRN_ALBUMS`) |
+| `BAIRN_ALBUM_SHARE` | Comma-separated Immich user UUIDs a new album is shared with as editors | unset |
 
 **Immich version requirement: v3.0.2 or later.** bairn targets the
 Immich 3.x `/assets` upload contract, which no longer takes

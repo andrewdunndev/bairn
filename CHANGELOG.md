@@ -24,10 +24,15 @@ changes; patch bumps within `0.x.y` are bug fixes only.
   reruns never make a second album. Adds are batched per album and
   idempotent. bairn only ever adds: it never removes an asset from an
   album, deletes an album, or trashes anything. The key needs
-  `album.read`, `album.create` and `albumAsset.create`.
+  `album.read`, `album.create` and `albumAsset.create`. The state file
+  records `postedAt` and `albumsFiledAt` per asset, so an asset whose
+  filing failed or was interrupted is filed on the next run; entries
+  written before these fields existed are not back-filed.
 - `--allow-missing-state`: `bairn fetch` now refuses to upload to Immich
   when the state file is absent but the save dir already holds media
-  (every file would look new); the flag overrides the refusal.
+  (every file would look new); the flag overrides the refusal. The check
+  runs for every fetch, dry runs included, and a dry run no longer
+  records assets in the state file.
 - `--tz` / `BAIRN_TZ` set the fallback zone for video dates. `--max-pages
   0` (unlimited) is documented and tested as the way to walk a full
   history.
