@@ -54,6 +54,10 @@ type Tagger struct {
 	pending []string
 	tagged  []string          // asset IDs added since the last TakeTagged
 	refused map[string]string // asset ID -> reason Immich refused it
+	// failed is set by a failed flush: Add then stops flushing early, so
+	// a key without the tag scopes costs one failed call per run, not one
+	// per batch. The final Flush still tries once more.
+	failed bool
 }
 
 // New returns a Tagger for the tag name. A nil logger uses slog.Default.
@@ -68,13 +72,13 @@ func New(api API, name string, logger *slog.Logger) *Tagger {
 func (t *Tagger) Name() string { return t.name }
 
 // Add queues assetID and flushes when the queue is full. On a flush
-// error the assets stay queued for the next flush.
+// error the assets stay queued for the final Flush.
 func (t *Tagger) Add(ctx context.Context, assetID string) error {
 	if assetID == "" {
 		return errors.New("tags: empty asset id")
 	}
 	t.pending = append(t.pending, assetID)
-	if len(t.pending) >= flushAt {
+	if len(t.pending) >= flushAt && !t.failed {
 		return t.Flush(ctx)
 	}
 	return nil
@@ -106,6 +110,7 @@ func (t *Tagger) Flush(ctx context.Context) error {
 	if t.tagID == "" {
 		id, err := t.api.UpsertTag(ctx, t.name)
 		if err != nil {
+			t.failed = true
 			return fmt.Errorf("tag %q: %w", t.name, err)
 		}
 		t.tagID = id
@@ -114,8 +119,10 @@ func (t *Tagger) Flush(ctx context.Context) error {
 	assets := t.pending
 	refused, err := t.api.TagAssets(ctx, t.tagID, assets)
 	if err != nil {
+		t.failed = true
 		return fmt.Errorf("tag %q: %w", t.name, err)
 	}
+	t.failed = false
 	t.pending = nil
 	for _, a := range assets {
 		if reason, ok := refused[a]; ok {

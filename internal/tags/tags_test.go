@@ -121,3 +121,27 @@ func TestValidateName(t *testing.T) {
 		}
 	}
 }
+
+func TestFailedFlushStopsEarlyFlushesUntilTheFinalOne(t *testing.T) {
+	api := &fakeAPI{failTag: 1}
+	tg := New(api, "bairn", nil)
+	ctx := context.Background()
+	var firstErr error
+	for i := range 350 {
+		if err := tg.Add(ctx, fmt.Sprintf("a-%d", i)); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	if firstErr == nil {
+		t.Fatal("the first full batch should have failed")
+	}
+	if len(api.batches) != 0 {
+		t.Errorf("batches sent after the failure: %d", len(api.batches))
+	}
+	if err := tg.Flush(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := tg.TakeTagged(); len(got) != 350 {
+		t.Errorf("final flush tagged %d, want all 350 still queued", len(got))
+	}
+}
