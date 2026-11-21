@@ -201,7 +201,29 @@ CLI flag overrides for `bairn fetch`:
 --include-system-posts   include automated check-in/sign-out posts
                          (off by default; their templated text isn't great
                          photo caption material)
+--albums                 file Immich uploads into month and year albums,
+                         using the default patterns below (BAIRN_ALBUMS=1)
+--album-month PAT        month album name; setting it enables that album
+                         (BAIRN_ALBUM_MONTH; with --albums: "EDC %B %Y",
+                         e.g. "EDC November 2026")
+--album-year PAT         year album name (BAIRN_ALBUM_YEAR; with --albums:
+                         "EDC %Y")
+--album-share IDS        comma-separated Immich user IDs (UUIDs) a newly
+                         created album is shared with as editors
+                         (BAIRN_ALBUM_SHARE)
+--allow-missing-state    upload even though the state file is missing and the
+                         save dir already holds media (refused by default)
 ```
+
+Albums are off unless `--albums` or a pattern is set. Patterns take
+`%Y %m %B %b`, read in the run's zone at the post date. An album is
+found by exact name among the albums the API key's owner owns and is
+created only if absent, so reruns add to the same album. bairn only
+adds assets to albums; it never removes an asset, deletes an album or
+trashes anything. The Immich API key needs these permissions:
+`asset.upload`, and for albums `album.read`, `album.create` and
+`albumAsset.create` (checked against Immich v3.4.2). Share with user
+IDs rather than emails so the key needs no `user.read`.
 
 ## Filename layout
 
