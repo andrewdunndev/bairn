@@ -14,6 +14,8 @@ additions.
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-11-21
+
 ### Added
 
 - Famly session reuse. bairn keeps the last access token (and the
@@ -529,7 +531,8 @@ If you upgraded to v0.4.3, downgrade to v0.4.5 or later.
   provenance, GitLab Release with all artifacts linked, OCI
   container image.
 
-[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.6.1...main
+[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.6.2...main
+[0.6.2]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.2
 [0.6.1]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.1
 [0.6.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.0
 [0.5.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.5.0
