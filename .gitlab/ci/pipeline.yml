@@ -22,8 +22,8 @@ audit:
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_COMMIT_TAG'
 
-# test uses the catalog's pinned ci-go image. Pinning to v2.0.0
-# matches the catalog tag bairn pins; keeps tooling deliberate.
+# test uses the catalog's pinned ci-go image. Using the
+# same pinned image as drift-gate keeps tooling deliberate.
 #
 # rules: same job-set-parity fix as lint/audit above -- this local job
 # had no rules block, which meant the implicit only:[branches,tags]

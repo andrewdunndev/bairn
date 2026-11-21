@@ -1,4 +1,4 @@
-# Thin runtime layer for bairn. Pairs with the v2.0.0 catalog's
+# Thin runtime layer for bairn. Pairs with the catalog's
 # container-image template in `from_artifacts: true` mode: the
 # go-release-binary job builds + cosign-signs the binary, this
 # Containerfile COPYs it onto ci-runtime-go (UBI micro). The

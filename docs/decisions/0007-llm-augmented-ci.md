@@ -172,7 +172,7 @@ explicit invitation.
 Before tagging:
 
 1. Refresh `discovery/baselines/main/` locally if needed:
-   `bairn drift --out-dir discovery/baselines/main`. Inspect the
+   `bairn drift --anonymize --out-dir discovery/baselines/main`. Inspect the
    `.shape` files; commit if changed.
 2. Push the tag. The drift-gate job fires; the maintainer watches
    the pipeline.
@@ -181,7 +181,9 @@ Before tagging:
    the manifest if the surface has moved cleanly), update the
    baseline, push a new commit, and re-tag.
 
-## Pending follow-on
+## Not planned
+
+None of these is scheduled; each would need a new ADR.
 
 - **Anything beyond the weekly read** (more endpoints, higher
   frequency) waits for Famly to invite scheduled monitoring.

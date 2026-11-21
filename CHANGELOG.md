@@ -34,6 +34,15 @@ additions.
   pipeline now fails if the linux-amd64 binary is not stamped clean.
 - `bairn status` reports `albumsFiled`, `albumsUnfiled` and
   `albumsRefused`.
+- Documentation now matches the code: no configuration file, no
+  `--state-path` flag, Go 1.26+, one Immich version story (3.0.2 floor,
+  verified against the `IMMICH_VERSION` pin), the add-only and
+  state-file-tombstone rules and the API key ceiling written down, the
+  committed discovery manifest and `main` baseline explained, release
+  gates and the exiftool and Immich-only-local checks stated, and the
+  `--filename-pattern` help default no longer shows a doubled prefix.
+  The `make smoke` target, which re-ran the unit tests, is removed, and
+  `make pre-tag-check` now fails when `exiftool` is missing.
 - `bairn version`, `bairn --version` and `-V` print the version, and
   `bairn --help` no longer creates the data and state directories. A
   build without a stamped version reports the module version or the

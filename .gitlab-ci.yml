@@ -1,7 +1,7 @@
 default:
   interruptible: true
 
-# v2.0.0 catalog: auto-cancel build/test on superseded MR pushes;
+# Catalog: auto-cancel build/test on superseded MR pushes;
 # release-stage jobs (template-side interruptible: false) continue.
 # on_job_failure: all stops the pipeline the moment a release-blocking
 # job fails so we don't keep signing/uploading after a fail.
@@ -122,11 +122,9 @@ include:
   # between the binary verifiable via cosign verify-blob and the
   # one running inside the container.
   #
-  # multi_arch: false in v0.5.0 (storr runner's qemu-user-static
-  # support is unverified; flipping to true in v0.5.1 after confirming).
-  # Apple Silicon / Graviton users can still run via emulation
-  # against the amd64 image; flipping to multi_arch: true means
-  # native-arch images, no emulation overhead.
+  # multi_arch: false is a standing choice: the image is amd64 only,
+  # and arm64 hosts take the signed arm64 binary (or run the image
+  # under emulation).
   #
   # sign_image: true cosign-signs the pushed image by digest.
   - component: gitlab.com/dunn.dev/pipeline/container-image@4

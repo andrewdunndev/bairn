@@ -1,4 +1,4 @@
-.PHONY: build build-linux build-darwin build-all test smoke lint clean tidy gen gen-famly refresh-immich-validator smoke-immich pre-tag-check
+.PHONY: build build-linux build-darwin build-all test lint clean tidy gen gen-famly refresh-immich-validator smoke-immich pre-tag-check require-exiftool
 
 # The Immich release bairn is verified against via `make pre-tag-check`.
 # Renovate tracks it (automerge off). A bump MR means: upgrade the
@@ -64,9 +64,6 @@ build-all: build-linux build-darwin
 test:
 	go test -race ./...
 
-smoke:
-	go test -tags=smoke ./internal/...
-
 # Pre-tag gate. Runs lint, the unit test suite, and the live
 # Immich round-trip smoke against IMMICH_VERSION. Treat this as the contract before
 # `git tag`: don't cut a release that doesn't pass all three. The
@@ -76,10 +73,13 @@ smoke:
 # Requires golangci-lint on PATH (mise: `mise install golangci-lint`).
 # Requires IMMICH_BAIRN_HOST/USER/PASSWORD (or IMMICH_BASE_URL/
 # IMMICH_API_KEY) so the smoke can reach an Immich.
-pre-tag-check: lint test smoke-immich
+pre-tag-check: require-exiftool lint test smoke-immich
 	@echo
 	@echo "✓ lint + unit tests + live Immich smoke passed."
 	@echo "  Safe to git tag."
+
+require-exiftool:
+	@command -v exiftool >/dev/null || { echo "exiftool is required: the metadata round-trip test skips without it"; exit 1; }
 
 lint:
 	golangci-lint run

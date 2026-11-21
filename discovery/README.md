@@ -6,7 +6,9 @@ The tooling here is deliberately generic: they take a base URL, an
 auth header, and an endpoint manifest, then emit shape signatures
 that can be diffed against a baseline. Vendor-specific endpoint
 manifests, captured baselines, and per-session walks are gitignored
-and live on the operator's machine only.
+and live on the operator's machine only. The exception is bairn's
+canonical manifest and anonymized `baselines/main/`, committed for the
+drift gate.
 
 Three modes:
 
@@ -33,5 +35,7 @@ Outputs in this tree are NOT to be committed:
 The protocol details live with the operator's private campaign
 documentation, not in this repository. `bairn drift` works against any
 JSON-over-HTTP surface; what's omitted is the vendor-specific endpoint
-manifest. Copy `probe/manifest.example.toml` to `probe/manifest.toml`
-(gitignored) and fill in your own.
+manifest. Copy `probe/manifest.example.toml` to
+`probe/manifest.local.toml` (gitignored) and fill in your own; the
+committed `probe/manifest.toml` is bairn's own, read by the CI drift
+gate.
