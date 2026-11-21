@@ -58,3 +58,34 @@ func TestReadOnlyStoreNeverWrites(t *testing.T) {
 		t.Error("read-only save created the directory")
 	}
 }
+
+// A planted symlink at the path is replaced by Save, never written
+// through, and Load refuses to read through it.
+func TestSymlinkAtPathIsReplacedAndNotFollowed(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "target")
+	if err := os.WriteFile(target, []byte("untouched"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, FileName)
+	if err := os.Symlink(target, p); err != nil {
+		t.Fatal(err)
+	}
+	s := Open(p, false)
+	if got, err := s.Load(); err == nil || got != (Session{}) {
+		t.Fatalf("Load through symlink: %+v %v, want refusal", got, err)
+	}
+	want := Session{DeviceID: "d", AccessToken: "t"}
+	if err := s.Save(want); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(target); string(b) != "untouched" {
+		t.Errorf("symlink target was written: %q", b)
+	}
+	if fi, _ := os.Lstat(p); fi.Mode()&os.ModeSymlink != 0 {
+		t.Error("symlink was not replaced by a regular file")
+	}
+	if got, err := s.Load(); err != nil || got != want {
+		t.Fatalf("reload = %+v %v", got, err)
+	}
+}

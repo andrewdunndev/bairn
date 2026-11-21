@@ -169,14 +169,17 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		}
 	}
 
-	tokenSrc := buildTokenSource(cfg, *dryRun, true, logger)
-	fc := famly.New(tokenSrc, famlyOpts(cfg)...)
 	st, err := state.Open(ctx, cfg.StatePath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "state:", err)
 		return 1
 	}
 	defer st.Close()
+
+	// Built after state.Open so the session write sits under the state
+	// lock: two runs cannot race over the file.
+	tokenSrc := buildTokenSource(cfg, *dryRun, true, logger)
+	fc := famly.New(tokenSrc, famlyOpts(cfg)...)
 
 	logins := map[string]struct{}{}
 	children := map[string]struct{}{}

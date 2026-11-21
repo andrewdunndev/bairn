@@ -41,6 +41,9 @@ func Open(path string, readOnly bool) *Store { return &Store{path: path, readOnl
 // with the error, so the caller can warn and carry on with a fresh
 // login. The error never carries file content.
 func (s *Store) Load() (Session, error) {
+	if fi, err := os.Lstat(s.path); err == nil && fi.Mode()&fs.ModeSymlink != 0 {
+		return Session{}, fmt.Errorf("session file %s is a symlink; refusing to follow it (delete it to log in afresh)", s.path)
+	}
 	b, err := os.ReadFile(s.path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return Session{}, nil
