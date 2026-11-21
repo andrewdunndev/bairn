@@ -14,6 +14,17 @@ additions.
 
 ## [Unreleased]
 
+### Added
+
+- Famly session reuse. bairn keeps the last access token (and the
+  device id) in `session.json` next to the state file (0600, written
+  atomically) and starts from it, so a run logs in with the password
+  only when the token has expired. This stops Famly's "new log-in
+  activity" e-mail on every scheduled run. `FAMLY_ACCESS_TOKEN` still
+  wins when set and is never written to the file; dry runs and
+  `bairn drift` reuse the file but never write it. Delete the file to
+  force a fresh login.
+
 ### Fixed
 
 - `bairn fetch` exits 1 when any item failed to download or save

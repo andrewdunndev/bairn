@@ -72,9 +72,10 @@ var ErrTokenExpired = errors.New(
 // caches a session token in memory and refreshes via the
 // Authenticate GraphQL mutation when invalidated.
 //
-// The newly minted token is never persisted to disk; cron runs are
-// short, and persisting a refreshed token introduces a stale-cache
-// failure mode that costs more than it saves.
+// The type itself never touches disk. A caller that persists sessions
+// seeds it with Seed and records tokens in the login callback; a
+// stale seed is harmless, since a 401 invalidates it and the next
+// Token call logs in afresh.
 type RefreshingToken struct {
 	email    string
 	password string
@@ -95,6 +96,17 @@ func NewRefreshingToken(email, password, deviceID string, login func(ctx context
 		deviceID: deviceID,
 		login:    login,
 	}
+}
+
+// Seed sets the cached token, for a token kept from an earlier run. An
+// empty token is ignored.
+func (r *RefreshingToken) Seed(token string) {
+	if token == "" {
+		return
+	}
+	r.mu.Lock()
+	r.cached = token
+	r.mu.Unlock()
 }
 
 // Token returns a cached token, refreshing if absent.

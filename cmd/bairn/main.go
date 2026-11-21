@@ -169,7 +169,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		}
 	}
 
-	tokenSrc := buildTokenSource(cfg)
+	tokenSrc := buildTokenSource(cfg, *dryRun, logger)
 	fc := famly.New(tokenSrc, famlyOpts(cfg)...)
 	st, err := state.Open(ctx, cfg.StatePath)
 	if err != nil {
@@ -323,7 +323,7 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	// os.Getenv(m.AuthEnv).
 	var token string
 	if m.AuthEnv == "FAMLY_ACCESS_TOKEN" {
-		tokenSrc := buildTokenSource(cfg)
+		tokenSrc := buildTokenSource(cfg, true, logger)
 		token, err = tokenSrc.Token(ctx)
 		if err != nil {
 			logger.Error("drift", "phase", "token", "err", err)
@@ -430,11 +430,13 @@ func runDrift(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	return 0
 }
 
-func buildTokenSource(cfg *config.Config) famly.TokenSource {
-	// Prefer credentials when present for self-healing cron.
-	// Otherwise fall back to the static token.
+// buildTokenSource prefers credentials when present for self-healing
+// cron (reusing the stored session so it logs in only when the token
+// expires); otherwise it falls back to the static token. readOnly keeps
+// the session file from being written.
+func buildTokenSource(cfg *config.Config, readOnly bool, logger *slog.Logger) famly.TokenSource {
 	if cfg.FamlyEmail != "" && cfg.FamlyPassword != "" {
-		return famly.NewRefreshingTokenFromCredentials(cfg.FamlyBaseURL, cfg.FamlyEmail, cfg.FamlyPassword, cfg.FamlyDeviceID)
+		return sessionTokenSource(cfg, readOnly, logger)
 	}
 	return famly.NewStaticToken(cfg.FamlyAccessToken)
 }

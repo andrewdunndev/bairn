@@ -11,6 +11,7 @@ import (
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/internal/privdir"
+	"gitlab.com/dunn.dev/bairn/internal/session"
 )
 
 // Config is the application-level configuration. Populated by Load.
@@ -51,6 +52,10 @@ type Config struct {
 	// SaveDir is the root for saved photos and videos.
 	// Default: $XDG_DATA_HOME/bairn/assets
 	SaveDir string
+
+	// SessionPath is the Famly session file (device id and last
+	// access token), always next to the state file.
+	SessionPath string
 
 	// StatePath is the JSON state file path.
 	// Default: $XDG_STATE_HOME/bairn/state.json
@@ -111,6 +116,7 @@ func Load() (*Config, error) {
 		}
 		c.StatePath = filepath.Join(dir, "state.json")
 	}
+	c.SessionPath = filepath.Join(filepath.Dir(c.StatePath), session.FileName)
 	return c, nil
 }
 
