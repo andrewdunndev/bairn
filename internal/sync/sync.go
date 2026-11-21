@@ -86,6 +86,10 @@ type Options struct {
 	// items. The walk jumps to the newest of their dates and stops past
 	// the oldest; Source and IncludeSystemPosts do not apply.
 	RetryFailed bool
+
+	// ProgressEvery logs a progress line every this many pages walked.
+	// 0 turns the lines off.
+	ProgressEvery int
 }
 
 // Deps are the wired-in collaborators. Disk is required; Immich
@@ -283,6 +287,9 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 				processItem(ctx, deps, opts, item, &res, logger)
 			}
 		}
+		if opts.ProgressEvery > 0 && res.PagesWalked%opts.ProgressEvery == 0 {
+			logProgress(logger, res, page)
+		}
 		if plan != nil && plan.finished(page) {
 			break
 		}
@@ -318,6 +325,19 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			"hint", "--max-pages caps the walk; if the matching images are deeper in the feed try --max-pages 0, or widen with --source=all to verify the household context resolves")
 	}
 	return res, nil
+}
+
+// logProgress writes the periodic progress line: how far the walk has
+// got (pages and the date of the last post read) and the run's tallies.
+func logProgress(logger *slog.Logger, res Result, page famly.FeedPage) {
+	attrs := []any{"pages", res.PagesWalked}
+	if n := len(page.FeedItems); n > 0 {
+		attrs = append(attrs, "postDate", page.FeedItems[n-1].CreatedDate.UTC().Format(time.RFC3339))
+	}
+	logger.Info("progress", append(attrs,
+		"discovered", res.Discovered, "saved", res.Saved, "uploaded", res.Uploaded,
+		"skipped", res.Skipped, "errors", res.Errors,
+		"elapsed", time.Since(res.StartedAt).Round(time.Second))...)
 }
 
 // processItem walks one feed item's images and videos, applies the

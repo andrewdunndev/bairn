@@ -120,8 +120,13 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	albumYear := fs.String("album-year", cfg.AlbumYear, "year album name pattern; setting it enables that album. With --albums: \""+albums.DefaultYearPattern+"\"")
 	albumShare := fs.String("album-share", cfg.AlbumShare, "comma-separated Immich user IDs (UUIDs) to share a newly created album with as editors")
 	allowMissingState := fs.Bool("allow-missing-state", false, "upload even though the state file is absent and the save dir already holds media (every file would be treated as new)")
+	progressEvery := fs.Int("progress-every", cfg.ProgressEvery, "log a progress line every N feed pages (0 = off); BAIRN_PROGRESS_EVERY sets the default")
 	retryFailed := fs.Bool("retry-failed", false, "revisit only state entries that failed to download or save, without walking the whole feed; the walk jumps to each entry's post date and stops after the oldest. --max-pages 0 unless set; works with --dry-run")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *progressEvery < 0 {
+		fmt.Fprintln(os.Stderr, "fetch: --progress-every must be 0 or more")
 		return 2
 	}
 	set := map[string]bool{}
@@ -248,6 +253,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		Software:           software(Version),
 		IncludeSystemPosts: *includeSystem,
 		RetryFailed:        *retryFailed,
+		ProgressEvery:      *progressEvery,
 	})
 	if err != nil {
 		logger.Error("fetch", "err", err)

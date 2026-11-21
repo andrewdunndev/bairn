@@ -7,12 +7,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/internal/privdir"
 	"gitlab.com/dunn.dev/bairn/internal/session"
 )
+
+// DefaultProgressEvery is the page interval between progress lines.
+const DefaultProgressEvery = 10
 
 // Config is the application-level configuration. Populated by Load.
 type Config struct {
@@ -50,6 +54,10 @@ type Config struct {
 	AlbumMonth string
 	AlbumYear  string
 	AlbumShare string
+
+	// ProgressEvery (BAIRN_PROGRESS_EVERY) is how many feed pages pass
+	// between progress log lines; 0 turns them off. Default 10.
+	ProgressEvery int
 
 	// SaveDir is the root for saved photos and videos.
 	// Default: $XDG_DATA_HOME/bairn/assets
@@ -95,6 +103,14 @@ func Load() (*Config, error) {
 	}
 	if c.LogFormat == "" {
 		c.LogFormat = "json"
+	}
+	c.ProgressEvery = DefaultProgressEvery
+	if v := os.Getenv("BAIRN_PROGRESS_EVERY"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 0 {
+			return nil, fmt.Errorf("config: BAIRN_PROGRESS_EVERY %q must be a whole number of pages, 0 or more", v)
+		}
+		c.ProgressEvery = n
 	}
 	if c.SaveDir == "" {
 		dir, err := dataDir()
