@@ -24,14 +24,18 @@ additions.
   touched.
 - One asset Immich refuses for an album (for example one deleted or
   trashed in Immich since upload) no longer blocks the rest of its
-  batch or fails every run. It is recorded as `albumsRefused` in the
+  batch or fails every run. Only the final reasons `no_permission` and
+  `not_found` count: the item is recorded as `albumsRefused` in the
   state file, logged once as a warning, never retried and not counted
   toward a non-zero exit; bairn still never removes anything. A
-  whole-call failure (HTTP error, bad key) stays a retryable error.
+  whole-call failure (HTTP error, bad key) or any other per-item reason
+  (such as `unknown`) stays a retryable error.
 - Release binaries are no longer stamped `+dirty`: the CI build's module
   and build caches sat untracked inside the checkout, and Go's VCS
   stamp counts untracked files. Both directories are ignored, and a tag
-  pipeline now fails if the linux-amd64 binary is not stamped clean.
+  pipeline job flags the linux-amd64 binary if it is not stamped clean.
+  The job runs after the catalog has published the release, so a red
+  `stamp-check` means yank the release and re-tag.
 - `bairn status` reports `albumsFiled`, `albumsUnfiled` and
   `albumsRefused`.
 - Documentation now matches the code: no configuration file, no

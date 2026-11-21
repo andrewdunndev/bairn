@@ -38,7 +38,9 @@ A tag is cut only on a commit whose main pipeline is green.
 change cannot block a release; `osv-verdict` is the blocking
 dependency gate on main. `osv-verdict`, `reference-check` and the site
 build do not run on tag pipelines, and `drift-gate` runs only on tags
-and the weekly schedule. Nothing in CI reaches Immich.
+and the weekly schedule. Nothing in CI reaches Immich. `stamp-check` (tag only) flags a
+`+dirty` binary stamp after the release is published, so a red run
+means yank the release and re-tag.
 
 `make pre-tag-check` on a machine with `exiftool` installed is the
 only place the reader-side metadata round trip and the live Immich

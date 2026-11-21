@@ -41,8 +41,10 @@ test:
 
 # Tag-only: a release binary must carry a clean VCS stamp. Go stamps
 # +dirty when `git status` shows any change, untracked cache
-# directories included, so this fails the pipeline before the release
-# links a binary that claims to be modified.
+# directories included. The catalog package job signs and publishes the
+# binary and release-create does not wait on this job, so it flags a bad
+# stamp after publish rather than gating it: on failure, yank the
+# release and re-tag.
 stamp-check:
   stage: package
   image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.16.1@sha256:9afb9e31503434d060511b987ec6e704c5cd71e79ef5525421321c36f6866f80
