@@ -16,6 +16,24 @@ additions.
 
 ### Fixed
 
+- Uploads recorded before 0.6.0 (no post date) are now filed into the
+  month and year albums, once. Their post date is the `downloadedAt`
+  already in the state file, which has always held the item's
+  creation time. This reverses the 0.6.0 note that such entries are
+  not back-filled; entries without an Immich asset id are still never
+  touched.
+- One asset Immich refuses for an album (for example one deleted or
+  trashed in Immich since upload) no longer blocks the rest of its
+  batch or fails every run. It is recorded as `albumsRefused` in the
+  state file, logged once as a warning, never retried and not counted
+  toward a non-zero exit; bairn still never removes anything. A
+  whole-call failure (HTTP error, bad key) stays a retryable error.
+- Release binaries are no longer stamped `+dirty`: the CI build's module
+  and build caches sat untracked inside the checkout, and Go's VCS
+  stamp counts untracked files. Both directories are ignored, and a tag
+  pipeline now fails if the linux-amd64 binary is not stamped clean.
+- `bairn status` reports `albumsFiled`, `albumsUnfiled` and
+  `albumsRefused`.
 - `bairn version`, `bairn --version` and `-V` print the version, and
   `bairn --help` no longer creates the data and state directories. A
   build without a stamped version reports the module version or the

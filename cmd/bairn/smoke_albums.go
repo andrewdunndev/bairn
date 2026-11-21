@@ -295,6 +295,22 @@ func runSmokeImmichAlbums(ctx context.Context, client *http.Client, host, token,
 		}
 	}
 
+	// leg3: an asset Immich cannot add (here an id that names no asset)
+	// must come back as a per-item refusal with a reason, not fail the
+	// call; this is the shape the filer records for a deleted upload.
+	ghost := albums.New(ic, cfg, logger)
+	const ghostID = "00000000-0000-4000-8000-000000000000"
+	gerr := ghost.Add(ctx, ghostID, now)
+	if gerr == nil {
+		gerr = ghost.Flush(ctx)
+	}
+	cs.check("leg3 refused asset is not a call failure", gerr == nil, fmt.Sprint(gerr))
+	if gerr == nil {
+		reason := ghost.TakeRefused()[ghostID]
+		cs.check("leg3 refusal carries a reason", reason != "", "no per-item error returned")
+		logger.Info("smoke", "phase", "leg3", "refusal_reason", reason)
+	}
+
 	if cs.failed > 0 {
 		fmt.Fprintf(os.Stderr, "smoke immich: %d album assertion(s) failed\n", cs.failed)
 		return 1

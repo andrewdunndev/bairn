@@ -325,3 +325,83 @@ func TestOpenLeavesUserDirMode(t *testing.T) {
 		t.Errorf("mode = %o, want 755 untouched", fi.Mode().Perm())
 	}
 }
+
+// legacyStore opens a state file shaped like one written before post
+// dates and album filing were tracked.
+func legacyStore(t *testing.T) *Store {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "state.json")
+	const legacy = `{
+  "old-1": {"source":"feed-image","discoveredAt":"2026-01-02T00:00:00Z","downloadedAt":"2026-01-31T23:30:00Z","uploadedAt":"2026-02-01T08:00:00Z","immichAssetId":"im-1"},
+  "old-noid": {"source":"feed-image","discoveredAt":"2026-01-02T00:00:00Z","downloadedAt":"2026-01-05T10:00:00Z","uploadedAt":"2026-02-01T08:00:00Z"},
+  "old-nodate": {"source":"feed-image","discoveredAt":"2026-01-02T00:00:00Z","uploadedAt":"2026-02-01T08:00:00Z","immichAssetId":"im-3"},
+  "not-uploaded": {"source":"feed-image","discoveredAt":"2026-01-02T00:00:00Z","downloadedAt":"2026-01-05T10:00:00Z","immichAssetId":"im-4"}
+}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Close() })
+	return s
+}
+
+func TestUnfiledFallsBackToDownloadedAtForLegacyEntries(t *testing.T) {
+	s := legacyStore(t)
+	got := s.Unfiled()
+	if len(got) != 1 || got[0].ID != "old-1" || got[0].ImmichAssetID != "im-1" {
+		t.Fatalf("Unfiled = %+v, want only old-1", got)
+	}
+	want := time.Date(2026, 1, 31, 23, 30, 0, 0, time.UTC)
+	if !got[0].PostedAt.Equal(want) {
+		t.Errorf("PostedAt = %v, want DownloadedAt %v", got[0].PostedAt, want)
+	}
+	// Month boundary: UTC January 31 is already February in a zone east of UTC.
+	if m := got[0].PostedAt.In(time.FixedZone("e", 2*3600)).Month(); m != time.February {
+		t.Errorf("month in +02:00 = %v, want February", m)
+	}
+}
+
+func TestLegacyEntryIsFiledOnceAndNeverRelisted(t *testing.T) {
+	s := legacyStore(t)
+	ctx := context.Background()
+	u := s.Unfiled()[0]
+	must(t, s.MarkPosted(ctx, u.ID, u.PostedAt))
+	must(t, s.MarkAlbumsFiled(ctx, u.ID, time.Now()))
+	if got := s.Unfiled(); len(got) != 0 {
+		t.Fatalf("after filing, Unfiled = %+v, want none", got)
+	}
+	a, _ := s.Get(ctx, "old-noid")
+	if !a.PostedAt.IsZero() || a.ImmichAssetID != "" {
+		t.Errorf("entry without an Immich asset id was touched: %+v", a)
+	}
+}
+
+func TestRefusedAssetIsNeverRelisted(t *testing.T) {
+	s := legacyStore(t)
+	ctx := context.Background()
+	must(t, s.MarkAlbumsRefused(ctx, "old-1", "no_permission"))
+	if got := s.Unfiled(); len(got) != 0 {
+		t.Fatalf("Unfiled = %+v, want none after refusal", got)
+	}
+	sm, _ := s.Stats(ctx)
+	if sm.AlbumsRefused != 1 || sm.AlbumsUnfiled != 0 || sm.AlbumsFiled != 0 {
+		t.Errorf("summary = %+v", sm)
+	}
+}
+
+func TestStatsCountsAlbumState(t *testing.T) {
+	s := legacyStore(t)
+	ctx := context.Background()
+	sm, _ := s.Stats(ctx)
+	if sm.AlbumsUnfiled != 1 || sm.AlbumsFiled != 0 {
+		t.Fatalf("before: %+v", sm)
+	}
+	must(t, s.MarkAlbumsFiled(ctx, "old-1", time.Now()))
+	sm, _ = s.Stats(ctx)
+	if sm.AlbumsUnfiled != 0 || sm.AlbumsFiled != 1 {
+		t.Errorf("after: %+v", sm)
+	}
+}

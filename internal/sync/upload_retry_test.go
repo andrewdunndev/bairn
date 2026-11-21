@@ -254,6 +254,8 @@ func TestUploadsStopAtOnceOnForbidden(t *testing.T) {
 // albumImmich is a stateful fake of the Immich album surface.
 type albumImmich struct {
 	failAdds atomic.Bool
+	refuse   map[string]string // asset ID -> per-item error
+	puts     atomic.Int32
 	created  []string
 	added    map[string][]string
 }
@@ -293,13 +295,21 @@ func newAlbumImmich(t *testing.T) (*httptest.Server, *albumImmich) {
 		}
 		var in struct{ IDs []string }
 		_ = json.NewDecoder(r.Body).Decode(&in)
-		dupe := len(a.added[r.PathValue("id")]) > 0
-		a.added[r.PathValue("id")] = append(a.added[r.PathValue("id")], in.IDs...)
-		if dupe {
-			_, _ = w.Write([]byte(`[{"id":"asset-1","success":false,"error":"duplicate"}]`))
-			return
+		a.puts.Add(1)
+		var results []string
+		for _, id := range in.IDs {
+			switch {
+			case a.refuse[id] != "":
+				results = append(results, fmt.Sprintf(`{"id":%q,"success":false,"error":%q}`, id, a.refuse[id]))
+			case slices.Contains(a.added[r.PathValue("id")], id):
+				a.added[r.PathValue("id")] = append(a.added[r.PathValue("id")], id)
+				results = append(results, fmt.Sprintf(`{"id":%q,"success":false,"error":"duplicate"}`, id))
+			default:
+				a.added[r.PathValue("id")] = append(a.added[r.PathValue("id")], id)
+				results = append(results, fmt.Sprintf(`{"id":%q,"success":true}`, id))
+			}
 		}
-		_, _ = w.Write([]byte(`[{"id":"asset-1","success":true}]`))
+		_, _ = w.Write([]byte("[" + strings.Join(results, ",") + "]"))
 	})
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)
@@ -433,6 +443,75 @@ func TestEntriesWithoutPostDateAreNeverRequeued(t *testing.T) {
 	a, _ := st.Get(ctx, "old-1")
 	if !a.PostedAt.IsZero() || !a.AlbumsFiledAt.IsZero() {
 		t.Errorf("old entry modified: %+v", a)
+	}
+}
+
+func TestLegacyEntryIsFiledFromDownloadedAt(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	srv, fake := newAlbumImmich(t)
+	ic := immich.New(srv.URL, "k")
+	st := openTestStore(t)
+	ctx := context.Background()
+	posted := time.Date(2025, 12, 31, 23, 30, 0, 0, time.UTC)
+	if err := st.Discover(ctx, "legacy-1", state.Asset{Source: "feed-image", DiscoveredAt: time.Now(), DownloadedAt: posted}); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.MarkUploaded(ctx, "legacy-1", "legacy-immich", "created", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if res := albumRun(t, famlySrv, ic, st); res.AlbumErrors != 0 {
+		t.Fatalf("AlbumErrors = %d", res.AlbumErrors)
+	}
+	if !slices.Contains(fake.added["al-EDC December 2025"], "legacy-immich") || !slices.Contains(fake.added["al-EDC 2025"], "legacy-immich") {
+		t.Errorf("legacy asset not filed under its post date: %v", fake.added)
+	}
+	a, _ := st.Get(ctx, "legacy-1")
+	if !a.PostedAt.Equal(posted) || a.AlbumsFiledAt.IsZero() {
+		t.Errorf("legacy entry not backfilled: %+v", a)
+	}
+	puts := fake.puts.Load()
+	albumRun(t, famlySrv, ic, st)
+	if fake.puts.Load() != puts {
+		t.Error("second run re-sent the legacy asset")
+	}
+}
+
+func TestRefusedAssetIsRecordedAndNotRetried(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	srv, fake := newAlbumImmich(t)
+	fake.refuse = map[string]string{"gone-immich": "no_permission"}
+	ic := immich.New(srv.URL, "k")
+	st := openTestStore(t)
+	ctx := context.Background()
+	posted := time.Date(2025, 12, 31, 23, 30, 0, 0, time.UTC)
+	for _, id := range []string{"gone-1", "kept-1"} {
+		if err := st.Discover(ctx, id, state.Asset{Source: "feed-image", DiscoveredAt: time.Now(), DownloadedAt: posted}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	_ = st.MarkUploaded(ctx, "gone-1", "gone-immich", "created", time.Now())
+	_ = st.MarkUploaded(ctx, "kept-1", "kept-immich", "created", time.Now())
+
+	res := albumRun(t, famlySrv, ic, st)
+	if res.AlbumErrors != 0 || res.AlbumsRefused != 1 {
+		t.Fatalf("AlbumErrors=%d AlbumsRefused=%d, want 0 and 1", res.AlbumErrors, res.AlbumsRefused)
+	}
+	gone, _ := st.Get(ctx, "gone-1")
+	kept, _ := st.Get(ctx, "kept-1")
+	if gone.AlbumsRefused != "no_permission" || !gone.AlbumsFiledAt.IsZero() {
+		t.Errorf("refused entry = %+v", gone)
+	}
+	if kept.AlbumsFiledAt.IsZero() {
+		t.Errorf("accepted entry not filed: %+v", kept)
+	}
+	puts := fake.puts.Load()
+	if res := albumRun(t, famlySrv, ic, st); res.AlbumErrors != 0 || res.AlbumsRefused != 0 {
+		t.Errorf("rerun: %+v", res)
+	}
+	if fake.puts.Load() != puts {
+		t.Error("rerun sent the refused or filed assets again")
 	}
 }
 

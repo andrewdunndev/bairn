@@ -126,6 +126,10 @@ func newSmokeFake(t *testing.T) (*httptest.Server, *smokeFake) {
 		a := f.albums[r.PathValue("id")]
 		res := []map[string]any{}
 		for _, id := range in.IDs {
+			if id == "00000000-0000-4000-8000-000000000000" {
+				res = append(res, map[string]any{"id": id, "success": false, "error": "no_permission"})
+				continue
+			}
 			if slices.Contains(f.members[a.ID], id) {
 				res = append(res, map[string]any{"id": id, "error": "duplicate"})
 				continue

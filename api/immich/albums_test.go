@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -90,19 +89,31 @@ func TestAddAssetsToAlbumTreatsDuplicateAsSuccess(t *testing.T) {
 		_, _ = w.Write([]byte(`[{"id":"a","success":true},{"id":"b","success":false,"error":"duplicate"}]`))
 	}))
 	defer srv.Close()
-	if err := New(srv.URL, "k", fastRetry()).AddAssetsToAlbum(context.Background(), "al-1", []string{"a", "b"}); err != nil {
-		t.Errorf("duplicate must not be an error: %v", err)
+	refused, err := New(srv.URL, "k", fastRetry()).AddAssetsToAlbum(context.Background(), "al-1", []string{"a", "b"})
+	if err != nil || len(refused) != 0 {
+		t.Errorf("duplicate must count as added: refused=%v err=%v", refused, err)
 	}
 }
 
-func TestAddAssetsToAlbumReportsOtherRefusals(t *testing.T) {
+func TestAddAssetsToAlbumReturnsRefusalsPerAsset(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`[{"id":"a","success":false,"error":"no_permission"}]`))
+		_, _ = w.Write([]byte(`[{"id":"a","success":true},{"id":"b","success":false,"error":"no_permission"},{"id":"c","success":false,"error":"duplicate"}]`))
 	}))
 	defer srv.Close()
-	err := New(srv.URL, "k", fastRetry()).AddAssetsToAlbum(context.Background(), "al-1", []string{"a"})
-	if err == nil || !strings.Contains(err.Error(), "no_permission") {
-		t.Errorf("err = %v", err)
+	refused, err := New(srv.URL, "k", fastRetry()).AddAssetsToAlbum(context.Background(), "al-1", []string{"a", "b", "c"})
+	if err != nil {
+		t.Fatalf("per-item refusal must not fail the call: %v", err)
+	}
+	if len(refused) != 1 || refused["b"] != "no_permission" {
+		t.Errorf("refused = %v, want only b: no_permission", refused)
+	}
+}
+
+func TestAddAssetsToAlbumWholeCallFailureIsAnError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(400) }))
+	defer srv.Close()
+	if _, err := New(srv.URL, "k", fastRetry()).AddAssetsToAlbum(context.Background(), "al-1", []string{"a"}); err == nil {
+		t.Error("HTTP 400 must be an error")
 	}
 }
 

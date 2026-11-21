@@ -32,7 +32,7 @@ const flushAt = 100
 type API interface {
 	FindOwnedAlbum(ctx context.Context, name string) (string, error)
 	CreateAlbum(ctx context.Context, name string, userIDs []string) (string, error)
-	AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs []string) error
+	AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs []string) (refused map[string]string, err error)
 }
 
 // Config selects the albums. Zone is the zone the post date is read
@@ -57,6 +57,7 @@ type Filer struct {
 	pending map[string][]string // album name -> asset IDs
 	waiting map[string]int      // asset ID -> album adds still outstanding
 	filed   []string            // asset IDs whose every album add succeeded
+	refused map[string]string   // asset ID -> reason Immich refused it
 }
 
 // New returns a Filer. A nil logger uses slog.Default.
@@ -68,7 +69,8 @@ func New(api API, cfg Config, logger *slog.Logger) *Filer {
 		cfg.Zone = time.Local
 	}
 	return &Filer{api: api, cfg: cfg, logger: logger,
-		ids: map[string]string{}, pending: map[string][]string{}, waiting: map[string]int{}}
+		ids: map[string]string{}, pending: map[string][]string{}, waiting: map[string]int{},
+		refused: map[string]string{}}
 }
 
 // Names renders the album names for a post date, month first. Empty
@@ -122,6 +124,16 @@ func (f *Filer) TakeFiled() []string {
 	return out
 }
 
+// TakeRefused returns, and forgets, the assets Immich refused, mapped
+// to its reason. A refused asset is final for the filer: it is never
+// reported as filed and not retried (an asset deleted or trashed in
+// Immich stays refused; bairn does not undo that).
+func (f *Filer) TakeRefused() map[string]string {
+	out := f.refused
+	f.refused = map[string]string{}
+	return out
+}
+
 // Flush adds every queued asset to its album.
 func (f *Filer) Flush(ctx context.Context) error {
 	var errs []error
@@ -142,17 +154,26 @@ func (f *Filer) flushOne(ctx context.Context, name string) error {
 	if err != nil {
 		return fmt.Errorf("album %q: %w", name, err)
 	}
-	if err := f.api.AddAssetsToAlbum(ctx, id, assets); err != nil {
+	refused, err := f.api.AddAssetsToAlbum(ctx, id, assets)
+	if err != nil {
 		return fmt.Errorf("album %q: %w", name, err)
 	}
 	delete(f.pending, name)
 	for _, a := range assets {
+		if reason, ok := refused[a]; ok {
+			f.refused[a] = reason
+			delete(f.waiting, a)
+			continue
+		}
+		if _, gone := f.refused[a]; gone {
+			continue
+		}
 		if f.waiting[a]--; f.waiting[a] <= 0 {
 			delete(f.waiting, a)
 			f.filed = append(f.filed, a)
 		}
 	}
-	f.logger.Info("album updated", "album", name, "assets", len(assets))
+	f.logger.Info("album updated", "album", name, "assets", len(assets), "refused", len(refused))
 	return nil
 }
 

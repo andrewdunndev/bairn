@@ -40,8 +40,12 @@ type Asset struct {
 	ImmichStatus  string    `json:"immichStatus,omitempty"`
 	PostedAt      time.Time `json:"postedAt,omitempty"`
 	AlbumsFiledAt time.Time `json:"albumsFiledAt,omitempty"`
-	LastError     string    `json:"lastError,omitempty"`
-	Retries       int       `json:"retries,omitempty"`
+	// AlbumsRefused holds Immich's reason when it refused to add the
+	// asset to an album (an asset deleted or trashed since upload).
+	// It is terminal: the asset is never queued for albums again.
+	AlbumsRefused string `json:"albumsRefused,omitempty"`
+	LastError     string `json:"lastError,omitempty"`
+	Retries       int    `json:"retries,omitempty"`
 }
 
 // Store owns the in-memory map and the file lock. Open it once per
@@ -241,6 +245,12 @@ func (s *Store) MarkAlbumsFiled(ctx context.Context, id string, at time.Time) er
 	return s.update(id, func(a *Asset) { a.AlbumsFiledAt = at.UTC() })
 }
 
+// MarkAlbumsRefused records that Immich refused the asset for an
+// album, with its reason. The asset is not queued for albums again.
+func (s *Store) MarkAlbumsRefused(ctx context.Context, id, reason string) error {
+	return s.update(id, func(a *Asset) { a.AlbumsRefused = reason })
+}
+
 // UnfiledAsset is an uploaded asset still owed its albums.
 type UnfiledAsset struct {
 	ID            string
@@ -248,16 +258,32 @@ type UnfiledAsset struct {
 	PostedAt      time.Time
 }
 
-// Unfiled lists assets that are uploaded and have a post date but no
-// albums-filed mark, ordered by ID. Records without PostedAt, written
-// before filing was tracked, are never listed.
+// owedAlbums returns the date an asset is to be filed under and
+// whether it is owed albums: uploaded, with an Immich asset ID, not
+// yet filed and not refused. Entries written before PostedAt existed
+// fall back to DownloadedAt, which has always held the item's
+// fileCreatedAt, the same value the live path records as PostedAt.
+func owedAlbums(a *Asset) (time.Time, bool) {
+	if a.UploadedAt.IsZero() || a.ImmichAssetID == "" || !a.AlbumsFiledAt.IsZero() || a.AlbumsRefused != "" {
+		return time.Time{}, false
+	}
+	at := a.PostedAt
+	if at.IsZero() {
+		at = a.DownloadedAt
+	}
+	return at, !at.IsZero()
+}
+
+// Unfiled lists assets owed their albums (see owedAlbums), ordered by
+// ID. Filing writes PostedAt and AlbumsFiledAt, so an entry from before
+// filing was tracked is listed once and then never again.
 func (s *Store) Unfiled() []UnfiledAsset {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []UnfiledAsset
 	for id, a := range s.data {
-		if !a.UploadedAt.IsZero() && a.ImmichAssetID != "" && !a.PostedAt.IsZero() && a.AlbumsFiledAt.IsZero() {
-			out = append(out, UnfiledAsset{ID: id, ImmichAssetID: a.ImmichAssetID, PostedAt: a.PostedAt})
+		if at, ok := owedAlbums(a); ok {
+			out = append(out, UnfiledAsset{ID: id, ImmichAssetID: a.ImmichAssetID, PostedAt: at})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
@@ -322,14 +348,19 @@ func (s *Store) IsUploaded(ctx context.Context, id string) (bool, error) {
 // Summary aggregates the store into a small report. Used by
 // "bairn status".
 type Summary struct {
-	Total      int       `json:"total"`
-	Discovered int       `json:"discovered"`
-	Downloaded int       `json:"downloaded"`
-	Saved      int       `json:"saved"`
-	Uploaded   int       `json:"uploaded"`
-	WithErrors int       `json:"withErrors"`
-	LastSave   time.Time `json:"lastSave,omitzero"`
-	LastUpload time.Time `json:"lastUpload,omitzero"`
+	Total      int `json:"total"`
+	Discovered int `json:"discovered"`
+	Downloaded int `json:"downloaded"`
+	Saved      int `json:"saved"`
+	Uploaded   int `json:"uploaded"`
+	WithErrors int `json:"withErrors"`
+	// AlbumsFiled, AlbumsUnfiled and AlbumsRefused count uploads by
+	// album state; Unfiled is what a run with albums on still owes.
+	AlbumsFiled   int       `json:"albumsFiled"`
+	AlbumsUnfiled int       `json:"albumsUnfiled"`
+	AlbumsRefused int       `json:"albumsRefused"`
+	LastSave      time.Time `json:"lastSave,omitzero"`
+	LastUpload    time.Time `json:"lastUpload,omitzero"`
 }
 
 // Stats returns a Summary. Cheap; an in-memory pass over the map.
@@ -348,6 +379,16 @@ func (s *Store) Stats(ctx context.Context) (Summary, error) {
 			sm.Downloaded++
 		default:
 			sm.Discovered++
+		}
+		switch {
+		case !a.AlbumsFiledAt.IsZero():
+			sm.AlbumsFiled++
+		case a.AlbumsRefused != "":
+			sm.AlbumsRefused++
+		default:
+			if _, ok := owedAlbums(a); ok {
+				sm.AlbumsUnfiled++
+			}
 		}
 		if a.LastError != "" {
 			sm.WithErrors++
