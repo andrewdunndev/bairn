@@ -39,16 +39,25 @@ subcommands:
   login    authenticate against Famly with email and password
   fetch    pull new photos and videos to disk (and Immich, if configured)
   status   summarise the most recent fetch
+  version  print the bairn version
   drift    check the vendor surface for schema drift
   smoke    non-destructive contract probe of a sink's live validator
 
-run "bairn <sub> -h" for subcommand flags.
+run "bairn <sub> -h" for subcommand flags; "bairn --version" prints the version.
 `
 
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
+	}
+	switch os.Args[1] {
+	case "version", "--version", "-V":
+		fmt.Println(versionLine())
+		return
+	case "-h", "--help", "help":
+		fmt.Print(usage)
+		return
 	}
 	ctx, cancel := signalContext()
 	defer cancel()
@@ -72,8 +81,6 @@ func main() {
 		os.Exit(runDrift(ctx, cfg, logger, os.Args[2:]))
 	case "smoke":
 		os.Exit(runSmoke(ctx, cfg, logger, os.Args[2:]))
-	case "-h", "--help", "help":
-		fmt.Print(usage)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown subcommand: %s\n\n%s", os.Args[1], usage)
 		os.Exit(2)

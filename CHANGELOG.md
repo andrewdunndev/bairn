@@ -6,12 +6,20 @@ The format is based on [Keep a Changelog][kac], and this project
 adheres to [Semantic Versioning][semver]. Pre-1.0 releases (`0.x`)
 treat the **minor** position as the breaking-change marker: bumps
 from `0.4.x` to `0.5.0` may include user-visible behavior or flag
-changes; patch bumps within `0.x.y` are bug fixes only.
+changes; patch bumps within `0.x.y` are fixes and small non-breaking
+additions.
 
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
+
+### Fixed
+
+- `bairn version`, `bairn --version` and `-V` print the version, and
+  `bairn --help` no longer creates the data and state directories. A
+  build without a stamped version reports the module version or the
+  commit it was built from.
 
 ## [0.6.0] - 2026-11-21
 

@@ -128,6 +128,7 @@ export FAMLY_PASSWORD=<your-password>
 bairn fetch --max-pages 1
 bairn status
 ls $XDG_DATA_HOME/bairn/assets/                # date subfolder; full-res JPEGs
+bairn --version                                # also: bairn version
 ```
 
 For unattended cron, put the env vars in a shell-init file (mode
