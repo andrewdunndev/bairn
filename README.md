@@ -338,10 +338,12 @@ The flag cannot be combined with `--source`, `--include-system-posts`
 or `--allow-missing-state`, works with `--dry-run`, and skips the album
 and tag back-fill. The run summary gains a `retry` block: `failed`
 (entries revisited), `retried` (found in the feed and run again),
-`fixed` (now saved), `stillFailing` (everything not fixed) and
-`notFound` (the post is gone, the video is still transcoding, or
+`fixed` (now saved and, with Immich on, uploaded), `uploadFailed`
+(saved, but the upload failed; the next fetch uploads it),
+`stillFailing` (not saved: failed again or not found) and `notFound` (the post is gone, the video is still transcoding, or
 `--max-pages` ended the walk first). A new failure exits 1; an entry
-that is simply not found does not.
+that is simply not found does not. Under `--dry-run` only `failed`,
+`retried` and `notFound` are reported.
 
 ### Run summary
 

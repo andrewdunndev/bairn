@@ -235,8 +235,8 @@ func TestRetryFailedDryRunChangesNothing(t *testing.T) {
 	e := newRetryEnv(t, feed)
 	seedFailed(t, e.st, true, 30)
 	res := e.run(t, true)
-	if r := res.Retry; r.Retried != 1 || r.Fixed != 0 {
-		t.Errorf("summary = %+v, want 1 would-retry, 0 fixed", r)
+	if r := res.Retry; r.Retried != 1 || r.Fixed != 0 || r.StillFailing != 0 || r.NotFound != 0 {
+		t.Errorf("summary = %+v, want 1 would-retry and no fixed/stillFailing", r)
 	}
 	if ok, _ := e.st.IsSaved(context.Background(), "img-30"); ok {
 		t.Error("dry run saved an asset")
@@ -308,5 +308,28 @@ func TestRetryModeMakesNoTagCalls(t *testing.T) {
 	tagRun(t, famlySrv, ic, st, true, Options{RetryFailed: true})
 	if ti.upserts.Load() != 0 || ti.tagCalls.Load() != 0 {
 		t.Errorf("--retry-failed made tag calls: %d/%d", ti.upserts.Load(), ti.tagCalls.Load())
+	}
+}
+
+func TestRetrySummaryAddsUpAndSeparatesUploadFailures(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+	for _, id := range []string{"fixed", "upfail", "still", "gone"} {
+		_ = st.Discover(ctx, id, state.Asset{Source: "feed-image"})
+		_ = st.MarkError(ctx, id, "x")
+	}
+	p := newRetryPlan(st.Failed())
+	for _, id := range []string{"fixed", "upfail", "still"} {
+		p.attempted[id] = struct{}{}
+	}
+	_ = st.MarkSaved(ctx, "fixed", "/p", time.Now())
+	_ = st.MarkSaved(ctx, "upfail", "/p", time.Now())
+	_ = st.MarkError(ctx, "upfail", "upload: boom") // saved, then the upload failed
+	s := p.summary(ctx, st, false)
+	if s.Fixed != 1 || s.UploadFailed != 1 || s.StillFailing != 2 || s.NotFound != 1 {
+		t.Fatalf("summary = %+v", s)
+	}
+	if s.Failed != s.Fixed+s.UploadFailed+s.StillFailing {
+		t.Errorf("failed %d != fixed+uploadFailed+stillFailing", s.Failed)
 	}
 }

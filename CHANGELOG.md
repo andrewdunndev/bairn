@@ -28,7 +28,8 @@ additions.
   oldest, instead of walking the whole feed. The state file now
   records `feedItemAt` for each discovered item; entries without it
   are located from their discovery time. The summary gains a `retry`
-  block (`failed`, `retried`, `fixed`, `stillFailing`, `notFound`).
+  block (`failed`, `retried`, `fixed`, `uploadFailed`, `stillFailing`,
+  `notFound`; dry-run reports only the first, second and last).
   Not combinable with `--source`, `--include-system-posts` or
   `--allow-missing-state`; works with `--dry-run`.
 - Progress log lines every N feed pages (`--progress-every`,

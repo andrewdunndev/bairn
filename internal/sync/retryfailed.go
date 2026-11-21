@@ -18,10 +18,17 @@ type RetrySummary struct {
 	// Retried is how many of them the feed walk found and ran through
 	// the pipeline again (with DryRun, how many it would).
 	Retried int `json:"retried"`
-	// Fixed is how many of those are now saved.
+	// Fixed is how many of those are now saved and, with Immich on,
+	// uploaded. Always 0 under DryRun.
 	Fixed int `json:"fixed"`
-	// StillFailing is every entry not fixed: those that failed again
-	// plus those the walk never found (NotFound).
+	// UploadFailed is how many were saved this run but failed to upload;
+	// they are no longer "failed" (the file is on disk) and the next
+	// normal fetch uploads them. Not counted as fixed or still failing.
+	UploadFailed int `json:"uploadFailed,omitempty"`
+	// StillFailing is every entry not saved: those that failed again
+	// plus those the walk never found (NotFound). Under DryRun nothing
+	// is run, so only NotFound is known and it is left out here;
+	// Failed == Fixed + UploadFailed + StillFailing holds for real runs.
 	StillFailing int `json:"stillFailing"`
 	// NotFound is how many entries the feed walk did not turn up: the
 	// post is gone, the video is still transcoding, or --max-pages
@@ -116,14 +123,18 @@ func processRetryItem(ctx context.Context, deps Deps, opts Options, p *retryPlan
 func (p *retryPlan) summary(ctx context.Context, st *state.Store, dryRun bool) *RetrySummary {
 	s := &RetrySummary{Failed: len(p.targets), Retried: len(p.attempted), Undated: p.undated}
 	s.NotFound = s.Failed - s.Retried
-	s.StillFailing = s.NotFound
 	if dryRun {
 		return s
 	}
+	s.StillFailing = s.NotFound
 	for id := range p.attempted {
-		if ok, _ := st.IsSaved(ctx, id); ok {
+		a, err := st.Get(ctx, id)
+		switch {
+		case err == nil && !a.SavedAt.IsZero() && a.LastError != "":
+			s.UploadFailed++
+		case err == nil && !a.SavedAt.IsZero():
 			s.Fixed++
-		} else {
+		default:
 			s.StillFailing++
 		}
 	}
