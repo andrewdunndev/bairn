@@ -19,6 +19,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/internal/albums"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/drift"
+	"gitlab.com/dunn.dev/bairn/internal/safehttp"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 	"gitlab.com/dunn.dev/bairn/internal/sync"
@@ -215,6 +216,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 
 	res, err := sync.Run(ctx, sync.Deps{
 		Famly: fc, Disk: disk, Immich: immichSink, Albums: filer, State: st, Logger: logger,
+		HTTP: safehttp.NewDownloadClient(),
 	}, sync.Options{
 		MaxPages:           *maxPages,
 		DryRun:             *dryRun,
