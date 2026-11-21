@@ -341,7 +341,7 @@ func smokeTagLeg(ctx context.Context, client *http.Client, host, token string, i
 			return
 		}
 		for _, tg := range all {
-			if !strings.HasPrefix(tg.Value, "bairn-smoke-") {
+			if tg.Value != tagName { // only this run's tag, never a concurrent run's
 				continue
 			}
 			if err := contract.ImmichSessionJSON(c, client, host, token, http.MethodDelete, "/api/tags/"+url.PathEscape(tg.ID), nil, nil); err != nil {
