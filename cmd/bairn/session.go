@@ -21,7 +21,7 @@ func sessionTokenSource(cfg *config.Config, readOnly bool, logger *slog.Logger) 
 	if err != nil {
 		logger.Warn("famly session file ignored", "err", err)
 	}
-	deviceID := cfg.FamlyDeviceID
+	deviceID := resolveDeviceID(cfg, store, &cur, logger)
 	rt := famly.NewRefreshingToken(cfg.FamlyEmail, cfg.FamlyPassword, deviceID,
 		func(ctx context.Context, email, password, _ string) (string, error) {
 			cred, err := famly.LoginDevice(ctx, cfg.FamlyBaseURL, email, password, deviceID)
@@ -29,6 +29,11 @@ func sessionTokenSource(cfg *config.Config, readOnly bool, logger *slog.Logger) 
 				return "", err
 			}
 			cur.AccessToken = cred.AccessToken
+			// Famly may report the id it registered; keep that one,
+			// unless the operator pinned one with FAMLY_DEVICE_ID.
+			if cfg.FamlyDeviceID == "" && famly.ValidDeviceID(cred.DeviceID) && cred.DeviceID != deviceID {
+				deviceID, cur.DeviceID = cred.DeviceID, cred.DeviceID
+			}
 			if err := store.Save(cur); err != nil {
 				logger.Warn("could not save famly session; the next run will log in again", "err", err)
 			}
@@ -40,4 +45,29 @@ func sessionTokenSource(cfg *config.Config, readOnly bool, logger *slog.Logger) 
 		rt.Seed(cur.AccessToken)
 	}
 	return rt
+}
+
+// resolveDeviceID picks the device id sent to Famly: FAMLY_DEVICE_ID,
+// else the one in the session file, else a new random UUID that is
+// stored at once so every later run sends the same one. A pinned env id
+// is never written to the file. A failure to store only costs a
+// new-device notice next run, so it is logged, not fatal.
+func resolveDeviceID(cfg *config.Config, store *session.Store, cur *session.Session, logger *slog.Logger) string {
+	if cfg.FamlyDeviceID != "" {
+		return cfg.FamlyDeviceID
+	}
+	if famly.ValidDeviceID(cur.DeviceID) {
+		return cur.DeviceID
+	}
+	id, err := famly.NewDeviceID()
+	if err != nil {
+		// crypto/rand failed; nothing sensible to send but a fixed shape.
+		logger.Error("device id", "err", err)
+		return "00000000-0000-4000-8000-000000000000"
+	}
+	cur.DeviceID = id
+	if err := store.Save(*cur); err != nil {
+		logger.Warn("could not store the generated device id; Famly may report a new device next run", "err", err)
+	}
+	return id
 }

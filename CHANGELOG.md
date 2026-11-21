@@ -25,6 +25,16 @@ additions.
   `bairn drift` reuse the file but never write it. Delete the file to
   force a fresh login.
 
+### Changed
+
+- The Famly device id is stable per install. Precedence is
+  `FAMLY_DEVICE_ID`, then the id stored in `session.json`, then a
+  random UUIDv4 generated once and stored. The MAC-derived default is
+  gone: containers and CI get a different MAC every run, so Famly saw a
+  new device each time. A device id Famly returns from login is stored.
+  `FAMLY_DEVICE_ID` must be a UUID. `bairn login` now sends the same
+  resolved id.
+
 ### Fixed
 
 - `bairn fetch` exits 1 when any item failed to download or save

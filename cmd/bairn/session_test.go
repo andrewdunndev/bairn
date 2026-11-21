@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
@@ -12,18 +13,43 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/session"
 )
 
+const (
+	pinnedID = "11111111-1111-4111-8111-111111111111"
+	fileID   = "22222222-2222-4222-8222-222222222222"
+)
+
 const minted = "minted-token-for-test"
+
+// sentDevice records the deviceId of the last Authenticate request.
+var sentDevice atomic.Value
+
+// replyDevice is the deviceId the fake Famly answers with.
+var replyDevice atomic.Value
 
 func fakeFamlyLogin(t *testing.T, logins *atomic.Int32) *httptest.Server {
 	t.Helper()
+	sentDevice.Store("")
+	replyDevice.Store("")
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		logins.Add(1)
+		var req struct {
+			Variables struct {
+				DeviceID string `json:"deviceId"`
+			} `json:"variables"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		sentDevice.Store(req.Variables.DeviceID)
+		dev := replyDevice.Load().(string)
+		if dev == "" {
+			dev = req.Variables.DeviceID
+		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"data":{"me":{"authenticateWithPassword":{"__typename":"AuthenticationSucceeded","status":"Succeeded","accessToken":"`+minted+`","deviceId":"d-1"}}}}`)
+		_, _ = io.WriteString(w, `{"data":{"me":{"authenticateWithPassword":{"__typename":"AuthenticationSucceeded","status":"Succeeded","accessToken":"`+minted+`","deviceId":"`+dev+`"}}}}`)
 	}))
 	t.Cleanup(srv.Close)
 	return srv
@@ -32,7 +58,7 @@ func fakeFamlyLogin(t *testing.T, logins *atomic.Int32) *httptest.Server {
 func sessCfg(t *testing.T, base string) *config.Config {
 	return &config.Config{
 		FamlyEmail: "a@example.com", FamlyPassword: "pw", FamlyBaseURL: base,
-		FamlyDeviceID: "d-1", SessionPath: filepath.Join(t.TempDir(), "state", session.FileName),
+		FamlyDeviceID: pinnedID, SessionPath: filepath.Join(t.TempDir(), "state", session.FileName),
 	}
 }
 
@@ -115,5 +141,64 @@ func TestSessionUnwritablePathDoesNotFailRun(t *testing.T) {
 	cfg.SessionPath = filepath.Join(blocker, "sub", session.FileName) // parent is a file
 	if tok, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil || tok != minted {
 		t.Fatalf("%q %v", tok, err)
+	}
+}
+
+func TestDeviceIDGeneratedOnceStoredAndSent(t *testing.T) {
+	var logins atomic.Int32
+	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL)
+	cfg.FamlyDeviceID = ""
+	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := sentDevice.Load().(string)
+	stored, _ := session.Open(cfg.SessionPath, true).Load()
+	if !famly.ValidDeviceID(first) || stored.DeviceID != first {
+		t.Fatalf("sent %q, stored %q; want one stored valid id", first, stored.DeviceID)
+	}
+	// A later run with an expired token sends the same id.
+	_ = session.Open(cfg.SessionPath, false).Save(session.Session{DeviceID: first})
+	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := sentDevice.Load().(string); again != first {
+		t.Errorf("second run sent %q, want the stored %q", again, first)
+	}
+}
+
+func TestDeviceIDPrecedenceEnvOverFile(t *testing.T) {
+	var logins atomic.Int32
+	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL) // env = pinnedID
+	_ = session.Open(cfg.SessionPath, false).Save(session.Session{DeviceID: fileID})
+	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := sentDevice.Load().(string); got != pinnedID {
+		t.Errorf("sent %q, want env id", got)
+	}
+	if st, _ := session.Open(cfg.SessionPath, true).Load(); st.DeviceID != fileID {
+		t.Errorf("env id overwrote the stored one: %q", st.DeviceID)
+	}
+	// With no env, the file id is sent.
+	cfg.FamlyDeviceID = ""
+	_ = session.Open(cfg.SessionPath, false).Save(session.Session{DeviceID: fileID})
+	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := sentDevice.Load().(string); got != fileID {
+		t.Errorf("sent %q, want file id", got)
+	}
+}
+
+func TestDeviceIDFromAuthenticateReplyIsStored(t *testing.T) {
+	var logins atomic.Int32
+	cfg := sessCfg(t, fakeFamlyLogin(t, &logins).URL)
+	cfg.FamlyDeviceID = ""
+	replyDevice.Store(fileID)
+	if _, err := sessionTokenSource(cfg, false, quiet).Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if st, _ := session.Open(cfg.SessionPath, true).Load(); st.DeviceID != fileID {
+		t.Errorf("stored %q, want the id Famly returned", st.DeviceID)
 	}
 }

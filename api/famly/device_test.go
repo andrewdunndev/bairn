@@ -1,23 +1,30 @@
 package famly
 
-import (
-	"regexp"
-	"testing"
-)
+import "testing"
 
-var uuidShape = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
-
-func TestDeriveDeviceIDUUIDShape(t *testing.T) {
-	id := DeriveDeviceID()
-	if !uuidShape.MatchString(id) {
-		t.Errorf("DeriveDeviceID() = %q, expected UUID 8-4-4-4-12 hex", id)
+func TestNewDeviceIDIsUUIDv4AndDistinct(t *testing.T) {
+	a, err := NewDeviceID()
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := NewDeviceID()
+	if !ValidDeviceID(a) || a[14] != '4' || (a[19] != '8' && a[19] != '9' && a[19] != 'a' && a[19] != 'b') {
+		t.Errorf("NewDeviceID() = %q, want a UUIDv4", a)
+	}
+	if a == b {
+		t.Errorf("two ids equal: %q", a)
 	}
 }
 
-func TestDeriveDeviceIDStable(t *testing.T) {
-	a := DeriveDeviceID()
-	b := DeriveDeviceID()
-	if a != b {
-		t.Errorf("DeriveDeviceID is not stable across calls: %q vs %q", a, b)
+func TestValidDeviceID(t *testing.T) {
+	for s, want := range map[string]bool{
+		"0b6f3c1e-9d2a-4c1b-8f3e-1a2b3c4d5e6f": true,
+		"bairn-default-device":                 false,
+		"":                                     false,
+		"0b6f3c1e9d2a4c1b8f3e1a2b3c4d5e6f":     false,
+	} {
+		if got := ValidDeviceID(s); got != want {
+			t.Errorf("ValidDeviceID(%q) = %v, want %v", s, got, want)
+		}
 	}
 }
