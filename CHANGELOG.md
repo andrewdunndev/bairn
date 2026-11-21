@@ -13,6 +13,8 @@ changes; patch bumps within `0.x.y` are bug fixes only.
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-21
+
 ### Added
 
 - Immich albums: with `--albums` (or `--album-month` / `--album-year`),
@@ -428,7 +430,8 @@ If you upgraded to v0.4.3, downgrade to v0.4.5 or later.
   provenance, GitLab Release with all artifacts linked, OCI
   container image.
 
-[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.5.0...main
+[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.6.0...main
+[0.6.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.0
 [0.5.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.5.0
 [0.4.6]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.4.6
 [0.4.5]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.4.5
