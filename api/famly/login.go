@@ -66,14 +66,5 @@ func LoginDevice(ctx context.Context, baseURL, email, password, deviceID string)
 	}
 }
 
-// NewRefreshingTokenFromCredentials constructs a RefreshingToken
-// that authenticates against the production Famly endpoint via
-// Login. baseURL may be empty for the production default.
-func NewRefreshingTokenFromCredentials(baseURL, email, password, deviceID string) *RefreshingToken {
-	return NewRefreshingToken(email, password, deviceID, func(ctx context.Context, e, p, d string) (string, error) {
-		return Login(ctx, baseURL, e, p, d)
-	})
-}
-
 // loginHTTPClient carries the password, so it gets the redirect policy.
 func loginHTTPClient() *http.Client { return safehttp.NewClient(30 * time.Second) }
