@@ -109,6 +109,20 @@ func TestAddAssetsToAlbumReturnsRefusalsPerAsset(t *testing.T) {
 	}
 }
 
+func TestAddAssetsToAlbumUnknownReasonIsRetryable(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`[{"id":"a","success":true},{"id":"b","success":false,"error":"unknown"},{"id":"c","success":false,"error":"no_permission"}]`))
+	}))
+	defer srv.Close()
+	refused, err := New(srv.URL, "k", fastRetry()).AddAssetsToAlbum(context.Background(), "al-1", []string{"a", "b", "c"})
+	if err == nil {
+		t.Fatalf("unknown reason must be a retryable error, got refused=%v", refused)
+	}
+	if refused != nil {
+		t.Errorf("nothing may be marked refused on a retryable batch: %v", refused)
+	}
+}
+
 func TestAddAssetsToAlbumWholeCallFailureIsAnError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(400) }))
 	defer srv.Close()

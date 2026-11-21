@@ -78,8 +78,11 @@ func (c *Client) CreateAlbum(ctx context.Context, name string, userIDs []string)
 // Immich refused, mapped to its per-item reason (for example
 // "no_permission" for an asset deleted or trashed since upload). An
 // asset already in the album is reported as "duplicate" and counts as
-// added. The error is non-nil only when the call as a whole failed, so
-// a retry is meaningful.
+// added. Only "no_permission" and "not_found" are final; any other
+// reason (for example "unknown") may be transient and is returned as an
+// error so the whole batch is retried (assets already added then read
+// as duplicates). The error is non-nil when the call failed, so a retry
+// is meaningful.
 func (c *Client) AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs []string) (map[string]string, error) {
 	if len(assetIDs) == 0 {
 		return nil, nil
@@ -95,13 +98,21 @@ func (c *Client) AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs 
 		return nil, err
 	}
 	var refused map[string]string
+	var transient []string
 	for _, r := range out {
-		if r.Error != "" && r.Error != "duplicate" {
+		switch r.Error {
+		case "", "duplicate":
+		case "no_permission", "not_found":
 			if refused == nil {
 				refused = map[string]string{}
 			}
 			refused[r.ID] = r.Error
+		default:
+			transient = append(transient, r.Error)
 		}
+	}
+	if len(transient) > 0 {
+		return nil, fmt.Errorf("immich: add assets to album: %d assets failed with a non-final reason (%s)", len(transient), transient[0])
 	}
 	return refused, nil
 }
