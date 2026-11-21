@@ -3,7 +3,7 @@
 # bairn
 
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-![Go](https://img.shields.io/badge/lang-Go_1.25+-00ADD8?logo=go&logoColor=white)
+![Go](https://img.shields.io/badge/lang-Go_1.26+-00ADD8?logo=go&logoColor=white)
 [![release](https://gitlab.com/dunn.dev/bairn/-/badges/release.svg)](https://gitlab.com/dunn.dev/bairn/-/releases)
 ![Built with GitLab](https://img.shields.io/badge/built_with-GitLab-FC6D26?logo=gitlab)
 
@@ -105,7 +105,7 @@ bairn does five jobs:
 What you'll need:
 
 - A [Famly][famly] account (your normal parent login).
-- A laptop or small server that can run a Go 1.25+ binary.
+- A laptop or small server that can run a Go 1.26+ binary.
 - Under ten minutes for first-time setup. Subsequent runs are
   `bairn fetch`.
 
@@ -128,15 +128,16 @@ export FAMLY_PASSWORD=<your-password>
 bairn fetch --max-pages 1
 bairn status
 ls $XDG_DATA_HOME/bairn/assets/                # date subfolder; full-res JPEGs
+bairn --version                                # also: bairn version
 ```
 
-For unattended cron, put the env vars in a shell-init file (mode
-0600) and source it from your crontab or systemd unit. Anonymous
-inline, this is one line of crontab.
+For unattended runs, put the env vars in a file (mode 0600) and
+source it from your crontab or systemd unit.
 
 ### Or run the container
 
-Each tagged release ships a distroless OCI image at
+Each tagged release ships a minimal runtime OCI image (amd64; arm64 hosts use the signed
+binary) at
 `registry.gitlab.com/dunn.dev/bairn/cli` (`:latest` and `:vX.Y.Z`):
 
 ```
@@ -184,10 +185,12 @@ Optional Immich sink (uploads alongside disk save):
 | `BAIRN_ALBUM_YEAR` | Year album name pattern; setting it enables that album | unset (`EDC %Y` with `BAIRN_ALBUMS`) |
 | `BAIRN_ALBUM_SHARE` | Comma-separated Immich user UUIDs a new album is shared with as editors | unset |
 
-**Immich version requirement: v3.0.2 or later.** bairn targets the
-Immich 3.x `/assets` upload contract, which no longer takes
-`deviceId` / `deviceAssetId`; bairn does not send them, and 2.x
-servers that still require them are not supported.
+**Immich version: v3.0.2 or later.** bairn targets the Immich 3.x
+`/assets` upload contract, which no longer takes `deviceId` /
+`deviceAssetId`; bairn does not send them, and 2.x servers that still
+require them are not supported. It is verified against the
+`IMMICH_VERSION` pin in the Makefile (albums and key permissions
+included) through `make pre-tag-check`.
 
 CLI flag overrides for `bairn fetch`:
 
@@ -196,6 +199,7 @@ CLI flag overrides for `bairn fetch`:
 --tz ZONE                zone for videos in posts with no zoned image
                          (default: the machine's local zone)
 --dry-run                enumerate without fetching or saving
+--no-immich              save to disk only; skip Immich even when configured
 --source MODE            feed filter: all (default; every image and video),
                          tagged (only images tagged with one of your children),
                          or liked (only images liked by a household login)
@@ -224,10 +228,21 @@ Albums are off unless `--albums` or a pattern is set. Patterns take
 found by exact name among the albums the API key's owner owns and is
 created only if absent, so reruns add to the same album. bairn only
 adds assets to albums; it never removes an asset, deletes an album or
-trashes anything. The Immich API key needs these permissions:
-`asset.upload`, and for albums `album.read`, `album.create` and
-`albumAsset.create` (checked against Immich v3.4.2). Share with user
-IDs rather than emails so the key needs no `user.read`.
+trashes anything. The Immich API key needs exactly these permissions
+and no more: `asset.upload`, and for albums `album.read`,
+`album.create` and `albumAsset.create` (checked against Immich
+v3.4.2). Share with user IDs rather than emails so the key needs no
+`user.read`.
+
+The state file is the tombstone. An asset it records as uploaded is
+never uploaded again, even if you later delete it in Immich, so back
+the state file up with the archive. An asset Immich refuses for an
+album (for example one deleted since upload) is recorded as refused
+and skipped from then on. Uploads from before 0.6.0, which carry no
+post date, are filed once from the creation time already in the
+state file. `bairn status` shows `albumsFiled`, `albumsUnfiled` and
+`albumsRefused`. `bairn smoke immich` deletes only its own test
+asset, albums and key, through a login session on the smoke account.
 
 ## Filename layout
 
@@ -275,7 +290,6 @@ operator supplies coordinates explicitly.
 ```
 make gen           regenerate api/famly/gen.go
 make test          go test -race ./...
-make smoke         run the longer-running fixture tests
 make smoke-immich  live round-trip against the operator's Immich
 make pre-tag-check lint + test + smoke-immich (run before git tag)
 make lint          golangci-lint run
@@ -317,25 +331,19 @@ the albums, asset and key with the login session, even on failure.
 
 `IMMICH_VERSION` in the Makefile is the Immich release bairn is
 verified against via `make pre-tag-check`. Renovate proposes bumps
-(automerge off); a bump MR means: upgrade the home Immich, recapture
-`api/immich/required-fields.json` with `make refresh-immich-validator`,
-then run `make pre-tag-check`.
+(automerge off); a bump MR means: upgrade the home Immich, then run
+`make pre-tag-check`.
 
-For the no-write case (auditing a server you can't upload to),
-`bairn smoke immich --probe-only` sends a deliberately incomplete
-POST and parses the validator's rejection. `--capture <path>`
-writes the captured required-field set as a static manifest.
-
-`make gen` requires a populated `discovery/baselines/__schema.json`
-for Famly. The schema dump is gitignored; each operator runs
-discovery (`discovery/probe/introspect.py`) on their own credentials.
-`api/famly/schema.graphql` is the hand-curated SDL bairn validates
-operations against.
+`make gen` reads `api/famly/schema.graphql`, the hand-curated SDL
+bairn validates operations against. Introspection
+(`discovery/probe/introspect.py`) is an optional discovery aid.
 
 `make test` includes a metadata round-trip test that uses
 `exiftool -j` to read back what bairn wrote and assert it matches
 intent. The test is skipped automatically when `exiftool` isn't on
-PATH, so a bare CI without it stays green; install with
+PATH, so a bare CI without it stays green; `make pre-tag-check` is
+the only place that round trip and the live Immich contract run, so
+it fails when `exiftool` is missing. Install with
 `brew install exiftool` (mac) or
 `apt install libimage-exiftool-perl` (debian).
 
@@ -354,20 +362,21 @@ modes:
 - **Schema introspection**: when a vendor exposes GraphQL with
   introspection enabled, dump the schema for typed code gen.
 
-Outputs (manifests, baselines, schema dumps, captured HARs) are
-gitignored on purpose. The methodology is shared; the vendor-specific
-artefacts are operator-only.
+Captures, HARs, schema dumps and local manifests stay untracked on
+purpose. The canonical `discovery/probe/manifest.toml` and the
+anonymized `discovery/baselines/main/` shapes are the exception: they
+are committed because the CI drift gate reads them.
 
 ## Privacy posture
 
-Discovery captures, HAR files, schema dumps, the per-operator
-endpoint manifest, and the generated state file are gitignored.
-The committed source tree carries the methodology; vendor-specific
-outputs stay on the operator's machine.
+Discovery captures, HAR files, schema dumps, local manifests and the
+generated state file are gitignored. The committed source tree
+carries the methodology, plus the canonical endpoint manifest and
+the anonymized `main` baseline, which the CI drift gate needs.
 
 The [discovery toolkit](./discovery/) is generic. Operators provide
 their own manifest (copy from `discovery/probe/manifest.example.toml`
-to `discovery/probe/manifest.toml`) and run probes against their own
+to the ignored `discovery/probe/manifest.local.toml`) and run probes against their own
 credentials.
 
 Files saved by bairn default to mode `0600` because the photos and
@@ -381,9 +390,10 @@ moves it is the operator's call.
 The disk-first save path is validated against the maintainer's Famly
 account, with full EXIF and XMP embedded and reruns idempotent; other
 accounts are not yet covered. The Immich path is live-tested against
-Immich 3.0.2 (the floor) through `make pre-tag-check` before each tag.
-A weekly drift check compares Famly's response shapes against
-committed baselines.
+the `IMMICH_VERSION` pin through `make pre-tag-check` before each
+tag. A weekly drift check compares Famly's response shapes against
+committed baselines. GitHub releases on the mirror carry notes only;
+signed binaries, SBOMs and provenance live on the GitLab release.
 
 ## Architecture
 
@@ -392,7 +402,7 @@ The non-obvious design decisions are written up under
 supplementary file beyond this README, make it
 [ARCHITECTURE.md](./ARCHITECTURE.md).
 
-The seven ADRs as of v0.1.0:
+The seven ADRs:
 
 - [0001](./docs/decisions/0001-spec-first-clients.md) spec-first typed clients via codegen
 - [0002](./docs/decisions/0002-typestate-asset-lifecycle.md) typestate for the asset lifecycle
@@ -400,7 +410,7 @@ The seven ADRs as of v0.1.0:
 - [0004](./docs/decisions/0004-state-as-json-file.md) state as a JSON file with file lock
 - [0005](./docs/decisions/0005-archival-posture.md) archival posture, in-file metadata (video XMP sidecar only)
 - [0006](./docs/decisions/0006-sink-abstraction.md) sink abstraction (disk + Immich + future)
-- [0007](./docs/decisions/0007-llm-augmented-ci.md) LLM-augmented CI (deferred)
+- [0007](./docs/decisions/0007-llm-augmented-ci.md) drift gate in CI (LLM triage removed)
 
 ## Prior art
 

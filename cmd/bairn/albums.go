@@ -78,6 +78,6 @@ func checkStateGuard(statePath, saveDir string, allow bool) error {
 		return nil
 	}
 	return fmt.Errorf("state file %s is missing but save dir %s already holds media (e.g. %s); "+
-		"uploading now would treat every file as new. Restore the state file (check --state-path / BAIRN_STATE_PATH), "+
+		"uploading now would treat every file as new. Restore the state file (check BAIRN_STATE_PATH), "+
 		"or pass --allow-missing-state to upload anyway", statePath, saveDir, found)
 }

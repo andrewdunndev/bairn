@@ -16,6 +16,7 @@ type fakeAPI struct {
 	findErr  error
 	finds    int
 	addErr   error
+	refuse   map[string]string
 }
 
 func (f *fakeAPI) FindOwnedAlbum(_ context.Context, name string) (string, error) {
@@ -29,12 +30,21 @@ func (f *fakeAPI) CreateAlbum(_ context.Context, name string, users []string) (s
 	f.existing[name] = id
 	return id, nil
 }
-func (f *fakeAPI) AddAssetsToAlbum(_ context.Context, id string, assets []string) error {
+func (f *fakeAPI) AddAssetsToAlbum(_ context.Context, id string, assets []string) (map[string]string, error) {
 	if f.addErr != nil {
-		return f.addErr
+		return nil, f.addErr
 	}
 	f.added[id] = append(f.added[id], assets...)
-	return nil
+	var refused map[string]string
+	for _, a := range assets {
+		if r, ok := f.refuse[a]; ok {
+			if refused == nil {
+				refused = map[string]string{}
+			}
+			refused[a] = r
+		}
+	}
+	return refused, nil
 }
 
 func newFake() *fakeAPI { return &fakeAPI{existing: map[string]string{}, added: map[string][]string{}} }
@@ -186,5 +196,30 @@ func TestFailedLookupKeepsAssetsQueued(t *testing.T) {
 	}
 	if n := len(api.added["id-Y "+time.Now().Format("2006")]); n != 1 {
 		t.Errorf("adds after retry = %d, want 1", n)
+	}
+}
+
+func TestMixedBatchSplitsFiledAndRefused(t *testing.T) {
+	api := newFake()
+	api.refuse = map[string]string{"gone": "no_permission"}
+	f := New(api, Config{MonthPattern: "M %m", YearPattern: "Y %Y", Zone: time.UTC}, nil)
+	at := time.Date(2026, 5, 6, 0, 0, 0, 0, time.UTC)
+	for _, id := range []string{"ok", "dup", "gone"} {
+		_ = f.Add(context.Background(), id, at)
+	}
+	if err := f.Flush(context.Background()); err != nil {
+		t.Fatalf("refusal must not be a flush error: %v", err)
+	}
+	filed := f.TakeFiled()
+	slices.Sort(filed)
+	if !slices.Equal(filed, []string{"dup", "ok"}) {
+		t.Errorf("filed = %v, want [dup ok]", filed)
+	}
+	refused := f.TakeRefused()
+	if len(refused) != 1 || refused["gone"] != "no_permission" {
+		t.Errorf("refused = %v", refused)
+	}
+	if len(f.TakeRefused()) != 0 || len(f.TakeFiled()) != 0 {
+		t.Error("Take must forget what it returned")
 	}
 }

@@ -97,7 +97,7 @@ type Deps struct {
 
 	gate   *uploadGate         // set by Run
 	owners map[string][]string // Immich asset ID -> state IDs queued for albums; set by Run
-	marked func(ctx context.Context, filed []string, logger *slog.Logger)
+	marked func(ctx context.Context, filed []string, refused map[string]string, logger *slog.Logger)
 }
 
 // maxUploadFailures is how many uploads in a row may fail before the
@@ -149,6 +149,10 @@ type Result struct {
 	// AlbumErrors counts album operations that failed; the assets stay
 	// uploaded but unfiled. The CLI exits non-zero while any remain.
 	AlbumErrors int `json:"albumErrors,omitempty"`
+	// AlbumsRefused counts assets Immich refused for an album (deleted
+	// or trashed since upload). They are recorded and not retried, and
+	// they do not fail the run.
+	AlbumsRefused int `json:"albumsRefused,omitempty"`
 	// UploadFailed counts assets on disk but not confirmed in Immich.
 	// A rerun retries them; the CLI exits non-zero while any remain.
 	UploadFailed int `json:"uploadFailed"`
@@ -184,7 +188,18 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 	res := Result{StartedAt: time.Now().UTC()}
 	deps.gate = &uploadGate{}
 	deps.owners = map[string][]string{}
-	deps.marked = func(ctx context.Context, filed []string, logger *slog.Logger) {
+	deps.marked = func(ctx context.Context, filed []string, refused map[string]string, logger *slog.Logger) {
+		for immichID, reason := range refused {
+			for _, id := range deps.owners[immichID] {
+				if err := deps.State.MarkAlbumsRefused(ctx, id, reason); err != nil {
+					logger.Error("albums: record refusal", "id", id, "err", err)
+					continue
+				}
+				res.AlbumsRefused++
+				logger.Warn("albums: Immich refused the asset; it will not be filed again", "id", id, "reason", reason)
+			}
+			delete(deps.owners, immichID)
+		}
 		for _, immichID := range filed {
 			for _, id := range deps.owners[immichID] {
 				if err := deps.State.MarkAlbumsFiled(ctx, id, time.Now()); err != nil {
@@ -206,7 +221,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			res.AlbumErrors++
 			logger.Error("albums", "err", err)
 		}
-		deps.marked(fctx, deps.Albums.TakeFiled(), logger)
+		deps.marked(fctx, deps.Albums.TakeFiled(), deps.Albums.TakeRefused(), logger)
 	}
 
 	if deps.Albums != nil && !opts.DryRun {
@@ -495,7 +510,7 @@ func fileInAlbums(ctx context.Context, deps Deps, id, immichID string, postedAt 
 		deps.owners[immichID] = append(deps.owners[immichID], id)
 	}
 	err := deps.Albums.Add(ctx, immichID, postedAt)
-	deps.marked(ctx, deps.Albums.TakeFiled(), logger)
+	deps.marked(ctx, deps.Albums.TakeFiled(), deps.Albums.TakeRefused(), logger)
 	if err != nil {
 		res.AlbumErrors++
 		logger.Error("albums", "immich_id", immichID, "err", err)

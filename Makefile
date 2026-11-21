@@ -1,9 +1,8 @@
-.PHONY: build build-linux build-darwin build-all test smoke lint clean tidy gen gen-famly refresh-immich-validator smoke-immich pre-tag-check
+.PHONY: build build-linux build-darwin build-all test lint clean tidy gen gen-famly smoke-immich pre-tag-check require-exiftool
 
 # The Immich release bairn is verified against via `make pre-tag-check`.
 # Renovate tracks it (automerge off). A bump MR means: upgrade the
-# home Immich to the new release, recapture api/immich/required-fields.json
-# with `make refresh-immich-validator`, then run `make pre-tag-check`.
+# home Immich to the new release, then run `make pre-tag-check`.
 # renovate: datasource=github-releases depName=immich-app/immich
 IMMICH_VERSION := 3.4.2
 
@@ -28,16 +27,6 @@ gen-famly:
 # IMMICH_BASE_URL + IMMICH_API_KEY.
 smoke-immich: build
 	$(BINARY) smoke immich
-
-# Validator-probe-only mode (no upload). Captures the required-
-# field set into a JSON manifest. For diagnostics or for capturing
-# a static record when the live server doesn't permit writes
-# (public demos, audit modes). Not the gate; smoke-immich is.
-refresh-immich-validator: build
-	$(BINARY) smoke immich --probe-only --capture api/immich/required-fields.json
-	@echo
-	@echo "Captured required-field set. Review with:"
-	@echo "  git diff api/immich/required-fields.json"
 
 # Stamped into main.Version; "dev" when built without these targets.
 VERSION ?= $(or $(shell git describe --tags --always --dirty 2>/dev/null),dev)
@@ -64,9 +53,6 @@ build-all: build-linux build-darwin
 test:
 	go test -race ./...
 
-smoke:
-	go test -tags=smoke ./internal/...
-
 # Pre-tag gate. Runs lint, the unit test suite, and the live
 # Immich round-trip smoke against IMMICH_VERSION. Treat this as the contract before
 # `git tag`: don't cut a release that doesn't pass all three. The
@@ -76,10 +62,13 @@ smoke:
 # Requires golangci-lint on PATH (mise: `mise install golangci-lint`).
 # Requires IMMICH_BAIRN_HOST/USER/PASSWORD (or IMMICH_BASE_URL/
 # IMMICH_API_KEY) so the smoke can reach an Immich.
-pre-tag-check: lint test smoke-immich
+pre-tag-check: require-exiftool lint test smoke-immich
 	@echo
 	@echo "✓ lint + unit tests + live Immich smoke passed."
 	@echo "  Safe to git tag."
+
+require-exiftool:
+	@command -v exiftool >/dev/null || { echo "exiftool is required: the metadata round-trip test skips without it"; exit 1; }
 
 lint:
 	golangci-lint run

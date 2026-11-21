@@ -6,12 +6,59 @@ The format is based on [Keep a Changelog][kac], and this project
 adheres to [Semantic Versioning][semver]. Pre-1.0 releases (`0.x`)
 treat the **minor** position as the breaking-change marker: bumps
 from `0.4.x` to `0.5.0` may include user-visible behavior or flag
-changes; patch bumps within `0.x.y` are bug fixes only.
+changes; patch bumps within `0.x.y` are fixes and small non-breaking
+additions.
 
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
 ## [Unreleased]
+
+### Removed
+
+- The Immich required-fields manifest machinery: `bairn smoke immich
+  --probe-only` and `--capture`, `make refresh-immich-validator` and
+  the `TestUploadEmitsAllRequiredFields` test. The manifest was never
+  committed, so the test skipped on every run; the live
+  `make smoke-immich` is the gate.
+
+### Fixed
+
+- Uploads recorded before 0.6.0 (no post date) are now filed into the
+  month and year albums, once. Their post date is the `downloadedAt`
+  already in the state file, which has always held the item's
+  creation time. This reverses the 0.6.0 note that such entries are
+  not back-filled; entries without an Immich asset id are still never
+  touched.
+- One asset Immich refuses for an album (for example one deleted or
+  trashed in Immich since upload) no longer blocks the rest of its
+  batch or fails every run. Only the final reasons `no_permission` and
+  `not_found` count: the item is recorded as `albumsRefused` in the
+  state file, logged once as a warning, never retried and not counted
+  toward a non-zero exit; bairn still never removes anything. A
+  whole-call failure (HTTP error, bad key) or any other per-item reason
+  (such as `unknown`) stays a retryable error.
+- Release binaries are no longer stamped `+dirty`: the CI build's module
+  and build caches sat untracked inside the checkout, and Go's VCS
+  stamp counts untracked files. Both directories are ignored, and a tag
+  pipeline job flags the linux-amd64 binary if it is not stamped clean.
+  The job runs after the catalog has published the release, so a red
+  `stamp-check` means yank the release and re-tag.
+- `bairn status` reports `albumsFiled`, `albumsUnfiled` and
+  `albumsRefused`.
+- Documentation now matches the code: no configuration file, no
+  `--state-path` flag, Go 1.26+, one Immich version story (3.0.2 floor,
+  verified against the `IMMICH_VERSION` pin), the add-only and
+  state-file-tombstone rules and the API key ceiling written down, the
+  committed discovery manifest and `main` baseline explained, release
+  gates and the exiftool and Immich-only-local checks stated, and the
+  `--filename-pattern` help default no longer shows a doubled prefix.
+  The `make smoke` target, which re-ran the unit tests, is removed, and
+  `make pre-tag-check` now fails when `exiftool` is missing.
+- `bairn version`, `bairn --version` and `-V` print the version, and
+  `bairn --help` no longer creates the data and state directories. A
+  build without a stamped version reports the module version or the
+  commit it was built from.
 
 ## [0.6.0] - 2026-11-21
 

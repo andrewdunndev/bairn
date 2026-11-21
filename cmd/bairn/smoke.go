@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -22,15 +21,10 @@ import (
 // the immich target is supported; the same shape applies to any
 // future sink whose contract isn't fully captured by a static spec.
 //
-// Default mode does a real round-trip (upload + delete) against a
+// It does a real round-trip (upload + delete) against a
 // quota-limited test user. Catches wire format issues, controller-
 // layer enforcement, and persistence-path behavior that no static
 // spec can model.
-//
-// --probe-only sends a deliberately-incomplete request and parses
-// the validator's rejection. Non-destructive. Used when the live
-// server doesn't permit writes (public demos, audit modes) or when
-// capturing the required-field set for a static manifest.
 func runSmoke(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
 	if len(args) < 1 {
 		fmt.Fprintln(os.Stderr, "smoke: target required (only \"immich\" supported)")
@@ -85,8 +79,6 @@ func runSmokeImmich(ctx context.Context, cfg *config.Config, logger *slog.Logger
 	userFlag := fs.String("user", "", "Immich account email for login flow (default: $IMMICH_BAIRN_USER)")
 	passwordFlag := fs.String("password", "", "Immich account password (default: $IMMICH_BAIRN_PASSWORD)")
 	apiKeyFlag := fs.String("api-key", "", "Immich API key (default: $IMMICH_API_KEY); ignored when user+password are set")
-	probeOnly := fs.Bool("probe-only", false, "validator probe only (no upload). Use when the live server doesn't permit writes or for manifest capture")
-	capturePath := fs.String("capture", "", "with --probe-only, write the captured required-field manifest to this path")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -101,80 +93,23 @@ func runSmokeImmich(ctx context.Context, cfg *config.Config, logger *slog.Logger
 		return 2
 	}
 
-	logger.Info("smoke", "target", "immich", "host", sc.host, "mode", smokeMode(*probeOnly))
+	logger.Info("smoke", "target", "immich", "host", sc.host, "mode", "round-trip")
 
 	httpClient := smokeHTTPClient()
 
 	// Authenticate. With user+password the round trip is the album
 	// leg: it mints a key holding only fetch's album scopes and cleans
-	// up with the login session. Probe-only mints an upload-only key.
-	// With an apiKey alone, use it directly for the plain round trip.
-	apiKey := sc.apiKey
-	var minted *contract.ImmichAPIKey
-	var token string
+	// up with the login session. With an apiKey alone, use it directly for the plain round trip.
 	if sc.user != "" && sc.password != "" {
-		var err error
-		token, err = contract.ImmichLogin(ctx, httpClient, sc.host, sc.user, sc.password)
+		token, err := contract.ImmichLogin(ctx, httpClient, sc.host, sc.user, sc.password)
 		if err != nil {
 			logger.Error("smoke", "phase", "login", "err", err)
 			return 1
 		}
-		if !*probeOnly {
-			return runSmokeImmichAlbums(ctx, httpClient, sc.host, token, os.Getenv("SMOKE_SHARE_USER_EMAIL"), logger)
-		}
-		minted, err = contract.MintImmichAPIKey(ctx, httpClient, sc.host, token, fmt.Sprintf("bairn-smoke-%d", time.Now().Unix()), []string{"asset.upload"})
-		if err != nil {
-			logger.Error("smoke", "phase", "mint-api-key", "err", err)
-			return 1
-		}
-		apiKey = minted.Secret
-		defer func() {
-			if err := contract.DeleteImmichAPIKey(context.Background(), httpClient, sc.host, token, minted.ID); err != nil {
-				logger.Warn("smoke", "phase", "cleanup-api-key", "key_id", minted.ID, "err", err)
-			} else {
-				logger.Info("smoke", "phase", "cleanup-api-key", "key_id", minted.ID, "result", "deleted")
-			}
-		}()
+		return runSmokeImmichAlbums(ctx, httpClient, sc.host, token, os.Getenv("SMOKE_SHARE_USER_EMAIL"), logger)
 	}
 
-	if *probeOnly {
-		return runSmokeImmichProbe(ctx, httpClient, sc.host, apiKey, *capturePath, logger)
-	}
-	return runSmokeImmichRoundTrip(ctx, httpClient, sc.host, apiKey, logger)
-}
-
-func smokeMode(probeOnly bool) string {
-	if probeOnly {
-		return "probe-only"
-	}
-	return "round-trip"
-}
-
-// runSmokeImmichProbe is the non-destructive validator probe.
-// Optionally writes the captured manifest to a path.
-func runSmokeImmichProbe(ctx context.Context, client *http.Client, host, apiKey, capturePath string, logger *slog.Logger) int {
-	manifest, err := contract.ProbeImmichUploadRequiredFields(ctx, client, host, apiKey)
-	if err != nil {
-		logger.Error("smoke", "phase", "probe", "err", err)
-		return 1
-	}
-	body, err := json.MarshalIndent(manifest, "", "  ")
-	if err != nil {
-		logger.Error("smoke", "phase", "marshal", "err", err)
-		return 1
-	}
-	body = append(body, '\n')
-
-	if capturePath == "" {
-		_, _ = os.Stdout.Write(body)
-		return 0
-	}
-	if err := os.WriteFile(capturePath, body, 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "smoke: write:", err)
-		return 1
-	}
-	fmt.Fprintf(os.Stderr, "wrote %s\n", capturePath)
-	return 0
+	return runSmokeImmichRoundTrip(ctx, httpClient, sc.host, sc.apiKey, logger)
 }
 
 // runSmokeImmichRoundTrip uploads a tiny test asset via bairn's

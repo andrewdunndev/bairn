@@ -5,7 +5,7 @@ but the bar is "does this make my own cron run more reliably."
 
 ## Development environment
 
-- Go 1.25 or newer
+- Go 1.26 or newer
 - Optional: a Famly account for live testing
 - Optional: an Immich instance for end-to-end runs
 
@@ -15,24 +15,39 @@ Tests run without either, against fixture servers.
 
 ```
 make gen        regenerate api/famly/gen.go
-make test       go test -short ./... (recommended for fast iteration)
-make smoke      go test -tags=smoke ./internal/... (longer-running)
+make test       go test -race ./...
 make lint       golangci-lint run
 make build      bin/bairn for the host
 make build-linux bin/bairn-linux-amd64 for headless deploy
 ```
 
-`make gen` requires a populated `discovery/baselines/__schema.json`
-for Famly. To produce one, point `discovery/probe/introspect.py` at
-the vendor with a valid token. The schema dump is gitignored; each
-operator runs discovery on their own credentials. `api/famly/schema.graphql`
-is the hand-curated SDL bairn actually validates operations against.
+`make gen` reads `api/famly/schema.graphql`, the hand-curated SDL
+bairn validates operations against; introspection
+(`discovery/probe/introspect.py`) is an optional discovery aid.
 
 The Immich client in `api/immich` is hand-written. `IMMICH_VERSION`
 in the Makefile is the Immich release it is verified against via
 `make pre-tag-check`; Renovate bumps it, and a bump MR means upgrade
-the home Immich, run `make refresh-immich-validator`, then
-`make pre-tag-check`.
+the home Immich, then run `make pre-tag-check`.
+
+## Release gates
+
+A tag is cut only on a commit whose main pipeline is green.
+`govulncheck` (`audit`) is advisory, so a vulnerability-database
+change cannot block a release; `osv-verdict` is the blocking
+dependency gate on main. `osv-verdict`, `reference-check` and the site
+build do not run on tag pipelines, and `drift-gate` runs only on tags
+and the weekly schedule. Nothing in CI reaches Immich. `stamp-check` (tag only) flags a
+`+dirty` binary stamp after the release is published, so a red run
+means yank the release and re-tag.
+
+`make pre-tag-check` on a machine with `exiftool` installed is the
+only place the reader-side metadata round trip and the live Immich
+contract are exercised; CI covers neither.
+
+The EXIF and GraphQL libraries are feature-complete upstream and
+flagged abandoned by Renovate; they are kept because the exiftool
+round-trip test pins their behaviour.
 
 ## Code conventions
 
@@ -66,8 +81,11 @@ is the generic-by-construction implementation. Run modes:
    GraphQL with introspection enabled, dump the schema for
    reference and codegen.
 
-Outputs (manifests, baselines, schema dumps, HARs) stay local.
-Scripts and protocol are committed.
+Captures, HARs, schema dumps and local manifests stay untracked
+(`manifest.local.toml` is the ignored name). The canonical
+`discovery/probe/manifest.toml` and the anonymized
+`discovery/baselines/main/` shapes are committed on purpose, because
+the CI drift gate reads them. Scripts and protocol are committed.
 
 ## Design principles
 

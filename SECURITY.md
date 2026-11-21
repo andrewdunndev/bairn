@@ -27,7 +27,7 @@ within thirty days, whichever you and I agree is appropriate.
   embedded in saved photos.
 - Authentication bypass against the Famly client.
 - Code execution via crafted Famly responses, photo bytes, or
-  configuration files.
+  the drift manifest.
 - Race conditions or file-locking flaws that could corrupt the
   state file.
 - Pipeline / supply chain issues that would let a malicious build
@@ -46,9 +46,11 @@ within thirty days, whichever you and I agree is appropriate.
 
 Each tagged release ships, per binary:
 
-- A SHA-256 entry in `checksums.txt`.
+- A SHA-256 file (`<binary>.sha256`).
 - A keyless cosign signature bundle (`<binary>.bundle`) in the
-  generic package registry.
+  generic package registry, at
+  `https://gitlab.com/api/v4/projects/dunn.dev%2Fbairn/packages/generic/bairn/<tag>/<binary>.bundle`
+  (it is not linked from the Release page).
 - A CycloneDX SBOM (`<binary>.sbom.json`) linked from the Release
   page.
 - A SLSA v1.0 provenance attestation
@@ -58,7 +60,7 @@ Verify the binary signature:
 
     cosign verify-blob \
       --bundle bairn-linux-amd64.bundle \
-      --certificate-identity-regexp '^https://gitlab.com/dunn.dev/bairn/.*//\.gitlab-ci\.yml@refs/tags/.+$' \
+      --certificate-identity-regexp '^https://gitlab.com/dunn.dev/bairn//\.gitlab-ci\.yml@refs/tags/.+$' \
       --certificate-oidc-issuer https://gitlab.com \
       bairn-linux-amd64
 
@@ -67,14 +69,13 @@ Verify the SLSA provenance:
     cosign verify-blob-attestation \
       --bundle bairn-linux-amd64.sigstore.json \
       --type slsaprovenance1 \
-      --certificate-identity-regexp '^https://gitlab.com/dunn.dev/bairn/.*//\.gitlab-ci\.yml@refs/tags/.+$' \
+      --certificate-identity-regexp '^https://gitlab.com/dunn.dev/bairn//\.gitlab-ci\.yml@refs/tags/.+$' \
       --certificate-oidc-issuer https://gitlab.com \
       bairn-linux-amd64
 
-If a verification fails, do not run the binary. Open an issue.
+If a verification fails, do not run the binary. Open an issue on GitLab (issues are
+disabled on the GitHub mirror).
 
-Build details, including the catalog components that produce
-these artifacts, are in
-[`docs/decisions/0007-llm-augmented-ci.md`](docs/decisions/0007-llm-augmented-ci.md)
-and in the catalog at
+Build details are in [`.gitlab-ci.yml`](.gitlab-ci.yml) and in the
+catalog components it includes, at
 [`gitlab.com/dunn.dev/pipeline`](https://gitlab.com/dunn.dev/pipeline).

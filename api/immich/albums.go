@@ -74,12 +74,18 @@ func (c *Client) CreateAlbum(ctx context.Context, name string, userIDs []string)
 	return out.ID, nil
 }
 
-// AddAssetsToAlbum adds assets to an album. An asset already in the
-// album is reported by Immich as a per-item "duplicate" and is not an
-// error; it adds nothing. Any other per-item failure is returned.
-func (c *Client) AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs []string) error {
+// AddAssetsToAlbum adds assets to an album and returns the assets
+// Immich refused, mapped to its per-item reason (for example
+// "no_permission" for an asset deleted or trashed since upload). An
+// asset already in the album is reported as "duplicate" and counts as
+// added. Only "no_permission" and "not_found" are final; any other
+// reason (for example "unknown") may be transient and is returned as an
+// error so the whole batch is retried (assets already added then read
+// as duplicates). The error is non-nil when the call failed, so a retry
+// is meaningful.
+func (c *Client) AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs []string) (map[string]string, error) {
 	if len(assetIDs) == 0 {
-		return nil
+		return nil, nil
 	}
 	in := struct {
 		IDs []string `json:"ids"`
@@ -89,18 +95,26 @@ func (c *Client) AddAssetsToAlbum(ctx context.Context, albumID string, assetIDs 
 		Error string `json:"error"`
 	}
 	if err := c.doJSON(ctx, http.MethodPut, "/albums/"+url.PathEscape(albumID)+"/assets", in, &out, true); err != nil {
-		return err
+		return nil, err
 	}
-	var bad []string
+	var refused map[string]string
+	var transient []string
 	for _, r := range out {
-		if r.Error != "" && r.Error != "duplicate" {
-			bad = append(bad, r.Error)
+		switch r.Error {
+		case "", "duplicate":
+		case "no_permission", "not_found":
+			if refused == nil {
+				refused = map[string]string{}
+			}
+			refused[r.ID] = r.Error
+		default:
+			transient = append(transient, r.Error)
 		}
 	}
-	if len(bad) > 0 {
-		return fmt.Errorf("immich: add assets to album: %d of %d refused (%s)", len(bad), len(assetIDs), strings.Join(bad, ", "))
+	if len(transient) > 0 {
+		return nil, fmt.Errorf("immich: add assets to album: %d assets failed with a non-final reason (%s)", len(transient), transient[0])
 	}
-	return nil
+	return refused, nil
 }
 
 // doJSON sends one JSON request and decodes a 2xx JSON response into
