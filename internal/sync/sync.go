@@ -14,6 +14,7 @@ import (
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
+	"gitlab.com/dunn.dev/bairn/internal/albums"
 	"gitlab.com/dunn.dev/bairn/internal/asset"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
@@ -90,6 +91,10 @@ type Deps struct {
 	Logger *slog.Logger
 	HTTP   *http.Client
 
+	// Albums files each uploaded asset into its month and year
+	// albums. Optional; nil = no albums. Run flushes it at the end.
+	Albums *albums.Filer
+
 	gate *uploadGate // set by Run
 }
 
@@ -139,6 +144,9 @@ type Result struct {
 	// UploadDuplicates counts Immich uploads the server answered with
 	// "duplicate"; they are confirmed, like a fresh upload.
 	UploadDuplicates int `json:"uploadDuplicates"`
+	// AlbumErrors counts album operations that failed; the assets stay
+	// uploaded but unfiled. The CLI exits non-zero while any remain.
+	AlbumErrors int `json:"albumErrors,omitempty"`
 	// UploadFailed counts assets on disk but not confirmed in Immich.
 	// A rerun retries them; the CLI exits non-zero while any remain.
 	UploadFailed int `json:"uploadFailed"`
@@ -174,8 +182,22 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 	res := Result{StartedAt: time.Now().UTC()}
 	deps.gate = &uploadGate{}
 
+	flushAlbums := func() {
+		if deps.Albums == nil {
+			return
+		}
+		// A fresh context: an interrupt must not strand queued adds.
+		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Minute)
+		defer cancel()
+		if err := deps.Albums.Flush(fctx); err != nil {
+			res.AlbumErrors++
+			logger.Error("albums", "err", err)
+		}
+	}
+
 	for page, err := range deps.Famly.Pages(ctx) {
 		if err != nil {
+			flushAlbums()
 			res.FinishedAt = time.Now().UTC()
 			res.Errors++
 			return res, err
@@ -189,6 +211,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			break
 		}
 	}
+	flushAlbums()
 	res.FinishedAt = time.Now().UTC()
 	logger.Info("fetch complete",
 		"pages", res.PagesWalked,
@@ -401,6 +424,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 
 	deps.gate.succeeded()
 	countUpload(res, up.ImmichStatus())
+	fileInAlbums(ctx, deps, up.ImmichAssetID(), disc.FileCreatedAt(), res, logger)
 	logger.Info("complete",
 		"id", id, "path", saved.FinalPath(),
 		"immich_id", up.ImmichAssetID(), "immich_status", up.ImmichStatus())
@@ -430,4 +454,22 @@ func uploadSaved(ctx context.Context, deps Deps, id string, res *Result, logger 
 	deps.gate.succeeded()
 	countUpload(res, status)
 	logger.Info("uploaded from disk", "id", id, "immich_status", status)
+	if deps.Albums != nil {
+		if a, err := deps.State.Get(ctx, id); err == nil {
+			fileInAlbums(ctx, deps, a.ImmichAssetID, a.DownloadedAt, res, logger)
+		}
+	}
+}
+
+// fileInAlbums queues an uploaded asset (created or duplicate) for its
+// month and year albums. A failure costs the asset its album, never
+// its upload.
+func fileInAlbums(ctx context.Context, deps Deps, immichID string, postedAt time.Time, res *Result, logger *slog.Logger) {
+	if deps.Albums == nil {
+		return
+	}
+	if err := deps.Albums.Add(ctx, immichID, postedAt); err != nil {
+		res.AlbumErrors++
+		logger.Error("albums", "immich_id", immichID, "err", err)
+	}
 }

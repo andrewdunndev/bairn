@@ -1,7 +1,7 @@
 // Package immich is bairn's typed client for Immich's asset upload
-// surface.
+// and album surfaces.
 //
-// The client is hand-written for the one endpoint bairn uses, the
+// The client is hand-written for the endpoints bairn uses: the
 // multipart asset upload, including SHA1-based dedup via the
 // x-immich-checksum header that modern Immich expects. It is
 // verified against the release pinned as IMMICH_VERSION in the

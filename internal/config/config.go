@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/internal/privdir"
@@ -35,6 +36,16 @@ type Config struct {
 
 	// ImmichAPIKey is the x-api-key header value.
 	ImmichAPIKey string
+
+	// Albums turns on Immich albums with the default name patterns
+	// (BAIRN_ALBUMS=1). AlbumMonth and AlbumYear (BAIRN_ALBUM_MONTH,
+	// BAIRN_ALBUM_YEAR) set a pattern and enable that album on their
+	// own; AlbumShare (BAIRN_ALBUM_SHARE) is a comma-separated list of
+	// Immich user IDs a new album is shared with as editors.
+	Albums     bool
+	AlbumMonth string
+	AlbumYear  string
+	AlbumShare string
 
 	// SaveDir is the root for saved photos and videos.
 	// Default: $XDG_DATA_HOME/bairn/assets
@@ -65,6 +76,10 @@ func Load() (*Config, error) {
 		FamlyBaseURL:     os.Getenv("FAMLY_BASE_URL"),
 		ImmichBaseURL:    os.Getenv("IMMICH_BASE_URL"),
 		ImmichAPIKey:     os.Getenv("IMMICH_API_KEY"),
+		Albums:           envBool("BAIRN_ALBUMS"),
+		AlbumMonth:       os.Getenv("BAIRN_ALBUM_MONTH"),
+		AlbumYear:        os.Getenv("BAIRN_ALBUM_YEAR"),
+		AlbumShare:       os.Getenv("BAIRN_ALBUM_SHARE"),
 		SaveDir:          os.Getenv("BAIRN_SAVE_DIR"),
 		StatePath:        os.Getenv("BAIRN_STATE_PATH"),
 		Zone:             os.Getenv("BAIRN_TZ"),
@@ -125,6 +140,15 @@ func (c *Config) Validate(mode string) error {
 		// other vendors flow through Probe's env-fallback.
 	}
 	return nil
+}
+
+// envBool reports whether name is set to 1, true, yes or on.
+func envBool(name string) bool {
+	switch strings.ToLower(os.Getenv(name)) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
 }
 
 // stateDir returns $XDG_STATE_HOME/bairn or its fallback.

@@ -2,15 +2,19 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/api/immich"
+	"gitlab.com/dunn.dev/bairn/internal/albums"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 )
@@ -243,5 +247,84 @@ func TestUploadsStopAtOnceOnForbidden(t *testing.T) {
 	r := runWith(t, famlySrv, disk, sink.NewImmich(immich.New(imSrv.URL, "k")), st)
 	if hits.Load() != 1 || r.UploadFailed != 4 || r.Saved != 4 {
 		t.Fatalf("hits=%d failed=%d saved=%d, want 1/4/4", hits.Load(), r.UploadFailed, r.Saved)
+	}
+}
+
+// albumImmich is a stateful fake of the Immich album surface.
+type albumImmich struct {
+	created []string
+	added   map[string][]string
+}
+
+func newAlbumImmich(t *testing.T) (*httptest.Server, *albumImmich) {
+	t.Helper()
+	a := &albumImmich{added: map[string][]string{}}
+	names := map[string]string{}
+	uploads := 0
+	mux := http.NewServeMux()
+	mux.HandleFunc("/assets", func(w http.ResponseWriter, r *http.Request) {
+		status := "created"
+		if uploads++; uploads > 1 {
+			status = "duplicate"
+		}
+		_, _ = fmt.Fprintf(w, `{"id":"asset-1","status":%q}`, status)
+	})
+	mux.HandleFunc("GET /albums", func(w http.ResponseWriter, r *http.Request) {
+		n := r.URL.Query().Get("name")
+		if id, ok := names[n]; ok {
+			_, _ = fmt.Fprintf(w, `[{"id":%q,"albumName":%q}]`, id, n)
+			return
+		}
+		_, _ = w.Write([]byte(`[]`))
+	})
+	mux.HandleFunc("POST /albums", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ AlbumName string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		a.created = append(a.created, in.AlbumName)
+		names[in.AlbumName] = "al-" + in.AlbumName
+		_, _ = fmt.Fprintf(w, `{"id":%q}`, names[in.AlbumName])
+	})
+	mux.HandleFunc("PUT /albums/{id}/assets", func(w http.ResponseWriter, r *http.Request) {
+		var in struct{ IDs []string }
+		_ = json.NewDecoder(r.Body).Decode(&in)
+		dupe := len(a.added[r.PathValue("id")]) > 0
+		a.added[r.PathValue("id")] = append(a.added[r.PathValue("id")], in.IDs...)
+		if dupe {
+			_, _ = w.Write([]byte(`[{"id":"asset-1","success":false,"error":"duplicate"}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`[{"id":"asset-1","success":true}]`))
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	return srv, a
+}
+
+func TestUploadsAreFiledInMonthAndYearAlbumsIdempotently(t *testing.T) {
+	famlySrv := fakeFamlyServer(t)
+	t.Cleanup(famlySrv.Close)
+	srv, fake := newAlbumImmich(t)
+	ic := immich.New(srv.URL, "k")
+	for run := range 2 {
+		disk, _ := sink.NewDisk(t.TempDir(), "", "")
+		fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(famlySrv.URL), famly.WithPageDelay(0))
+		filer := albums.New(ic, albums.Config{MonthPattern: "EDC %B %Y", YearPattern: "EDC %Y", Zone: time.UTC}, nil)
+		// A fresh state each run models a lost state file: the asset
+		// uploads again, Immich answers duplicate, albums stay put.
+		res, err := Run(context.Background(), Deps{Famly: fc, Disk: disk, Immich: sink.NewImmich(ic), Albums: filer, State: openTestStore(t)},
+			Options{MaxPages: 2, Source: SourceAll})
+		if err != nil {
+			t.Fatalf("run %d: %v", run, err)
+		}
+		if res.AlbumErrors != 0 {
+			t.Errorf("run %d: AlbumErrors = %d, want 0", run, res.AlbumErrors)
+		}
+	}
+	slices.Sort(fake.created)
+	if !slices.Equal(fake.created, []string{"EDC 2026", "EDC May 2026"}) {
+		t.Errorf("created = %v, want each album exactly once", fake.created)
+	}
+	if len(fake.added["al-EDC May 2026"]) != 2 {
+		t.Errorf("month adds = %v, want one per run", fake.added)
 	}
 }
