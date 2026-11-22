@@ -1,6 +1,7 @@
 package state
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -490,4 +491,69 @@ func TestUploadSHA1FlushRoundTrip(t *testing.T) {
 	if a, _ := s2.Get(ctx, "y"); a.UploadSHA1 != "abc123" {
 		t.Errorf("UploadSHA1 = %q after reload, want abc123", a.UploadSHA1)
 	}
+}
+
+func TestStampDefersItsFlushToCloseAndKeepsDates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	ctx := context.Background()
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.flushEvery = 2
+	at := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	ids := []string{"a", "b", "c", "d"} // more than flushEvery
+	for _, id := range ids {
+		must(t, s.Discover(ctx, id, Asset{Source: "feed-image"}))
+	}
+	must(t, s.Flush())
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		must(t, s.Discover(ctx, id, Asset{FeedItemAt: at}))
+	}
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, want) {
+		t.Fatal("stamps rewrote the file before Close")
+	}
+	must(t, s.Close())
+	r, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	for _, id := range ids {
+		if got, _ := r.Get(ctx, id); !got.FeedItemAt.Equal(at) {
+			t.Fatalf("%s FeedItemAt after reopen = %v, want %v", id, got.FeedItemAt, at)
+		}
+	}
+}
+
+func TestDiscoverKeepsExistingFeedItemAt(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	ctx := context.Background()
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.flushEvery = 1
+	first := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	must(t, s.Discover(ctx, "a", Asset{FeedItemAt: first}))
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dirty := s.dirty
+	must(t, s.Discover(ctx, "a", Asset{FeedItemAt: first.AddDate(0, 1, 0)}))
+	if got, _ := s.Get(ctx, "a"); !got.FeedItemAt.Equal(first) {
+		t.Fatalf("FeedItemAt = %v, want unchanged %v", got.FeedItemAt, first)
+	}
+	if s.dirty != dirty {
+		t.Fatalf("dirty = %d, want %d", s.dirty, dirty)
+	}
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, want) {
+		t.Fatal("Discover on a dated entry wrote the file")
+	}
+	must(t, s.Close())
 }

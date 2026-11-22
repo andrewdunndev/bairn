@@ -215,10 +215,13 @@ func (s *Store) Discover(ctx context.Context, id string, a Asset) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if cur, exists := s.data[id]; exists {
-		// Entries written before FeedItemAt existed gain it here.
+		// Entries written before FeedItemAt existed gain it here. The
+		// stamp is non-critical (re-derived from the feed on any later
+		// run), so it only marks the store dirty: it rides the next
+		// critical write or Close instead of rewriting the file itself.
 		if cur.FeedItemAt.IsZero() && !a.FeedItemAt.IsZero() {
 			cur.FeedItemAt = a.FeedItemAt.UTC()
-			return s.changedLocked()
+			s.dirty++
 		}
 		return nil
 	}
