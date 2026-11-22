@@ -405,3 +405,44 @@ func TestStatsCountsAlbumState(t *testing.T) {
 		t.Errorf("after: %+v", sm)
 	}
 }
+
+func TestUntaggedListsUploadsOwedTheTagOnce(t *testing.T) {
+	ctx := context.Background()
+	st, err := Open(ctx, filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	now := time.Now()
+	for _, id := range []string{"old", "new", "refused", "saved-only", "noid"} {
+		_ = st.Discover(ctx, id, Asset{Source: "feed-image"})
+	}
+	_ = st.MarkSaved(ctx, "saved-only", "/p", now)
+	for _, id := range []string{"old", "new", "refused"} {
+		_ = st.MarkUploaded(ctx, id, "imm-"+id, "created", now)
+	}
+	_ = st.MarkUploaded(ctx, "noid", "", "created", now)
+	_ = st.MarkTagged(ctx, "new", now)
+	_ = st.MarkTagRefused(ctx, "refused", "no_permission")
+
+	got := st.Untagged()
+	if len(got) != 1 || got[0].ID != "old" || got[0].ImmichAssetID != "imm-old" {
+		t.Fatalf("Untagged = %+v, want only old", got)
+	}
+	sm, _ := st.Stats(ctx)
+	if sm.TagsApplied != 1 || sm.TagsOwed != 1 || sm.TagsRefused != 1 {
+		t.Errorf("stats = %+v", sm)
+	}
+}
+
+func TestFailedExcludesAnEntryThatWasSaved(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+	_ = s.Discover(ctx, "a", Asset{Source: "feed-image"})
+	_ = s.MarkSaved(ctx, "a", "/p", time.Now())
+	// Saved, then the upload failed: LastError and SavedAt both set.
+	_ = s.MarkError(ctx, "a", "upload: boom")
+	if got := s.Failed(); len(got) != 0 {
+		t.Errorf("Failed() = %+v, want a saved entry left out (--retry-failed is for unsaved ones)", got)
+	}
+}

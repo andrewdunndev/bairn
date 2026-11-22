@@ -40,6 +40,7 @@ type Discovered struct {
 	famlyImageID  string
 	source        Source
 	feedItemID    string
+	feedItemAt    time.Time
 	url           string
 	filename      string
 	fileCreatedAt time.Time
@@ -52,6 +53,7 @@ type Discovered struct {
 func (d Discovered) FamlyImageID() string     { return d.famlyImageID }
 func (d Discovered) Source() Source           { return d.source }
 func (d Discovered) FeedItemID() string       { return d.feedItemID }
+func (d Discovered) FeedItemAt() time.Time    { return d.feedItemAt }
 func (d Discovered) URL() string              { return d.url }
 func (d Discovered) Filename() string         { return d.filename }
 func (d Discovered) FileCreatedAt() time.Time { return d.fileCreatedAt }
@@ -124,6 +126,7 @@ func DiscoverImage(img famly.Image, item famly.FeedItem, zone *time.Location) Di
 		famlyImageID:  img.ImageID,
 		source:        SourceFeedImage,
 		feedItemID:    item.FeedItemID,
+		feedItemAt:    item.CreatedDate.Time,
 		url:           img.BestURL(),
 		filename:      img.ImageID + ".jpg", // initial; Save may rewrite the extension from Content-Type
 		fileCreatedAt: at,
@@ -142,6 +145,7 @@ func DiscoverVideo(vid famly.Video, item famly.FeedItem, zone *time.Location) Di
 		famlyImageID:  vid.VideoID,
 		source:        SourceFeedVideo,
 		feedItemID:    item.FeedItemID,
+		feedItemAt:    item.CreatedDate.Time,
 		url:           vid.URL,
 		filename:      vid.VideoID + ".mp4",
 		fileCreatedAt: item.CreatedDate.Time,
@@ -149,6 +153,32 @@ func DiscoverVideo(vid famly.Video, item famly.FeedItem, zone *time.Location) Di
 		body:          pickBody(item),
 		senderName:    item.SenderName(),
 	}
+}
+
+// WithFreshURL returns d with the signed download URL taken from item,
+// a re-read of the feed item d came from. ok is false when item does
+// not carry the asset (or no URL for it), and d is returned unchanged.
+func (d Discovered) WithFreshURL(item famly.FeedItem) (Discovered, bool) {
+	url := ""
+	switch d.source {
+	case SourceFeedImage:
+		for _, img := range item.Images {
+			if img.ImageID == d.famlyImageID {
+				url = img.BestURL()
+			}
+		}
+	case SourceFeedVideo:
+		for _, vid := range item.Videos {
+			if vid.VideoID == d.famlyImageID && !vid.Transcoding {
+				url = vid.URL
+			}
+		}
+	}
+	if url == "" {
+		return d, false
+	}
+	d.url = url
+	return d, true
 }
 
 // Downloaded is the post-fetch phase: the bytes are on disk in a

@@ -17,8 +17,9 @@ gen-famly:
 
 # Run the full Immich smoke locally: login + mint an ephemeral API key
 # holding only fetch's scopes (asset.upload, album.read, album.create,
-# albumAsset.create) + upload a tiny JPEG and file it into unique
-# month/year albums twice + assert + clean up with the login session.
+# albumAsset.create, tag.create, tag.asset) + upload a tiny JPEG, file it
+# into unique month/year albums and tag it, twice + assert + clean up
+# (asset, albums, tag, key) with the login session.
 # SMOKE_SHARE_USER_EMAIL names the user the albums are shared with.
 # Useful before tagging if you touched anything in api/immich/ or
 # internal/sink/immich. Run it against Immich $(IMMICH_VERSION).

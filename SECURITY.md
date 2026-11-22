@@ -30,8 +30,8 @@ token while `FAMLY_ACCESS_TOKEN` is set. The password is never
 written. Anyone who can read the file can act as the Famly session
 until it expires or you change your password; treat it like a
 credential, and delete it to force a fresh login. The Immich key is
-never stored by bairn; its scope stays `asset.upload`, `album.read`,
-`album.create` and `albumAsset.create`.
+never stored by bairn; its scope is exactly `asset.upload`, `album.read`,
+`album.create`, `albumAsset.create`, `tag.create` and `tag.asset`.
 
 ## In scope
 

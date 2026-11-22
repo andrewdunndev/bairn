@@ -2,6 +2,7 @@ package main
 
 import (
 	"io"
+	"strings"
 	"testing"
 
 	"gitlab.com/dunn.dev/bairn/internal/sync"
@@ -20,10 +21,22 @@ func TestFetchExitCode(t *testing.T) {
 		{"exif error is warn-only", sync.Result{ExifErrors: 1}, 0},
 		{"state error", sync.Result{StateErrors: 1}, 1},
 		{"album error", sync.Result{AlbumErrors: 1}, 1},
+		{"tag error", sync.Result{TagErrors: 1}, 1},
+		{"tag refused is not a failure", sync.Result{TagsRefused: 2}, 0},
 	}
 	for _, c := range cases {
 		if got := fetchExitCode(c.res, io.Discard); got != c.want {
 			t.Errorf("%s: exit %d, want %d", c.name, got, c.want)
 		}
+	}
+}
+
+func TestRetryFailedRefusesFilterFlags(t *testing.T) {
+	if err := checkRetryFailed(map[string]bool{"dry-run": true, "max-pages": true}); err != nil {
+		t.Errorf("compatible flags refused: %v", err)
+	}
+	err := checkRetryFailed(map[string]bool{"source": true, "include-system-posts": true})
+	if err == nil || !strings.Contains(err.Error(), "--include-system-posts, --source") {
+		t.Errorf("err = %v, want both incompatible flags named", err)
 	}
 }

@@ -65,3 +65,37 @@ func TestValidateRejectsNonUUIDDeviceID(t *testing.T) {
 		t.Errorf("valid id: %v", err)
 	}
 }
+
+func TestProgressEveryDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("BAIRN_PROGRESS_EVERY", "")
+	c, err := Load()
+	if err != nil || c.ProgressEvery != DefaultProgressEvery {
+		t.Fatalf("default: %v %v", c, err)
+	}
+	t.Setenv("BAIRN_PROGRESS_EVERY", "0")
+	if c, err = Load(); err != nil || c.ProgressEvery != 0 {
+		t.Errorf("0 should turn progress off: %v %v", c, err)
+	}
+	t.Setenv("BAIRN_PROGRESS_EVERY", "many")
+	if _, err = Load(); err == nil {
+		t.Error("a non-number must be refused")
+	}
+}
+
+func TestTagDefaultsAndOverrides(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	t.Setenv("XDG_DATA_HOME", t.TempDir())
+	t.Setenv("BAIRN_TAG", "")
+	t.Setenv("BAIRN_NO_TAG", "")
+	c, err := Load()
+	if err != nil || c.Tag != "bairn" || c.NoTag {
+		t.Fatalf("default: %+v %v", c, err)
+	}
+	t.Setenv("BAIRN_TAG", "family")
+	t.Setenv("BAIRN_NO_TAG", "1")
+	if c, err = Load(); err != nil || c.Tag != "family" || !c.NoTag {
+		t.Errorf("overrides: %+v %v", c, err)
+	}
+}

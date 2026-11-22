@@ -113,3 +113,39 @@ func retryAfter(v string) (time.Duration, bool) {
 	}
 	return 0, false
 }
+
+// DownloadPolicy is the policy for a media download: 4 tries, 2s
+// doubling to a 30s cap. A body that dies mid-stream is not a request
+// Do can replay, so downloads retry through Run.
+func DownloadPolicy() Policy {
+	return Policy{Attempts: 4, Initial: 2 * time.Second, Max: 30 * time.Second, Sleep: Sleep}
+}
+
+// Run calls op until it succeeds, returns an error transient rejects,
+// or the attempts run out. op gets the 1-based attempt number. Between
+// tries it waits a jittered, doubling backoff capped at Max, and calls
+// onRetry (when non-nil) with the failed attempt, its error and the
+// wait. The last error is returned unchanged.
+func (p Policy) Run(ctx context.Context, op func(attempt int) error, transient func(error) bool, onRetry func(attempt int, err error, wait time.Duration)) error {
+	if p.Sleep == nil {
+		p.Sleep = Sleep
+	}
+	wait := p.Initial
+	for attempt := 1; ; attempt++ {
+		err := op(attempt)
+		if err == nil {
+			return nil
+		}
+		if ctx.Err() != nil || attempt >= p.Attempts || !transient(err) {
+			return err
+		}
+		d := min(jitter(wait), p.Max)
+		if onRetry != nil {
+			onRetry(attempt, err, d)
+		}
+		if serr := p.Sleep(ctx, d); serr != nil {
+			return err
+		}
+		wait = min(wait*2, p.Max)
+	}
+}
