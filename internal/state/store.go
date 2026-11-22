@@ -31,12 +31,17 @@ type Asset struct {
 	// FeedItemAt is the creation date of the feed item the asset came
 	// from, the key the feed is ordered by. It lets a retry jump the
 	// feed to the item; entries from before v0.7.0 lack it.
-	FeedItemAt    time.Time `json:"feedItemAt,omitempty"`
-	DiscoveredAt  time.Time `json:"discoveredAt"`
-	DownloadedAt  time.Time `json:"downloadedAt,omitempty"`
-	SavedAt       time.Time `json:"savedAt,omitempty"`
-	SavedPath     string    `json:"savedPath,omitempty"`
-	SHA1          string    `json:"sha1,omitempty"`
+	FeedItemAt   time.Time `json:"feedItemAt,omitempty"`
+	DiscoveredAt time.Time `json:"discoveredAt"`
+	DownloadedAt time.Time `json:"downloadedAt,omitempty"`
+	SavedAt      time.Time `json:"savedAt,omitempty"`
+	SavedPath    string    `json:"savedPath,omitempty"`
+	SHA1         string    `json:"sha1,omitempty"`
+	// UploadSHA1 is the SHA-1 of the bytes handed to Immich, which is
+	// Immich's asset checksum. It differs from SHA1 (taken at download,
+	// before EXIF reinjection) for stamped items. Entries uploaded
+	// before it existed lack it.
+	UploadSHA1    string    `json:"uploadSha1,omitempty"`
 	ExifFixedAt   time.Time `json:"exifFixedAt,omitempty"`
 	ExifError     string    `json:"exifError,omitempty"`
 	UploadedAt    time.Time `json:"uploadedAt,omitempty"`
@@ -251,12 +256,14 @@ func (s *Store) MarkExifFixed(ctx context.Context, id string, at time.Time, errM
 	})
 }
 
-// MarkUploaded sets the Immich receipt fields.
-func (s *Store) MarkUploaded(ctx context.Context, id, immichID, status string, at time.Time) error {
+// MarkUploaded sets the Immich receipt fields and the SHA-1 of the
+// bytes sent, in one update.
+func (s *Store) MarkUploaded(ctx context.Context, id, immichID, status, uploadSHA1 string, at time.Time) error {
 	return s.update(id, func(a *Asset) {
 		a.UploadedAt = at.UTC()
 		a.ImmichAssetID = immichID
 		a.ImmichStatus = status
+		a.UploadSHA1 = uploadSHA1
 	})
 }
 

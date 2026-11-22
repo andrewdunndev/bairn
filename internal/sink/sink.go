@@ -73,6 +73,10 @@ type Receipt struct {
 
 	// Size is the byte count of the asset as the sink saw it.
 	Size int64
+
+	// SHA1 is the hex SHA-1 of the bytes the sink wrote or uploaded.
+	// Only the Immich sink sets it (Immich's asset checksum).
+	SHA1 string
 }
 
 // Sink is the destination interface. Implementations must be safe

@@ -146,11 +146,11 @@ func TestExistingUploadsAreBackFiledOnceFromState(t *testing.T) {
 		id := fmt.Sprintf("old-%d", i)
 		_ = st.Discover(ctx, id, state.Asset{Source: "feed-image"})
 		_ = st.MarkSaved(ctx, id, "/x", time.Now())
-		_ = st.MarkUploaded(ctx, id, fmt.Sprintf("old-asset-%d", i), "created", time.Now())
+		_ = st.MarkUploaded(ctx, id, fmt.Sprintf("old-asset-%d", i), "created", "", time.Now())
 	}
 	// Uploaded without an Immich ID cannot be tagged and is not queued.
 	_ = st.Discover(ctx, "noid", state.Asset{Source: "feed-image"})
-	_ = st.MarkUploaded(ctx, "noid", "", "created", time.Now())
+	_ = st.MarkUploaded(ctx, "noid", "", "created", "", time.Now())
 
 	if n := len(st.Untagged()); n != 3 {
 		t.Fatalf("Untagged = %d, want 3", n)

@@ -220,11 +220,13 @@ type Uploaded struct {
 	saved    Saved
 	immichID string
 	status   string
+	sha1     string // SHA-1 of the uploaded bytes
 }
 
 func (u Uploaded) Saved() Saved          { return u.saved }
 func (u Uploaded) ImmichAssetID() string { return u.immichID }
 func (u Uploaded) ImmichStatus() string  { return u.status }
+func (u Uploaded) UploadSHA1() string    { return u.sha1 }
 
 // Recorded is terminal. Constructable from Saved (skip-Immich) or
 // Uploaded (Immich-enabled).

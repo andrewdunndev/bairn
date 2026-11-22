@@ -312,7 +312,7 @@ func TestRetryModeMakesNoTagCalls(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
 	_ = st.Discover(ctx, "up", state.Asset{Source: "feed-image"})
-	_ = st.MarkUploaded(ctx, "up", "asset-9", "created", time.Now())
+	_ = st.MarkUploaded(ctx, "up", "asset-9", "created", "", time.Now())
 	// A failed entry so the run goes past the nothing-to-retry exit.
 	_ = st.Discover(ctx, "bad", state.Asset{Source: "feed-image", DiscoveredAt: time.Now()})
 	_ = st.MarkError(ctx, "bad", "boom")

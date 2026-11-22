@@ -47,6 +47,7 @@ Format: a flat object keyed by Famly image ID, values are records:
     "savedAt": "...",
     "savedPath": "feed-image-2026-05-06_14-00-00-<id>.jpg",
     "sha1": "...",
+    "uploadSha1": "...",
     "exifFixedAt": "...",
     "exifError": null,
     "uploadedAt": null,

@@ -14,6 +14,13 @@ additions.
 
 ## [Unreleased]
 
+### Added
+
+- State entries gain `uploadSha1`, the SHA-1 of the bytes uploaded to
+  Immich (its asset checksum). `sha1` still holds the download hash,
+  which differs once EXIF is reinjected. Entries uploaded before this
+  release lack the field; it is forward-only.
+
 ## [0.7.0] - 2026-11-21
 
 ### Added
