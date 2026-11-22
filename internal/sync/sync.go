@@ -408,7 +408,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 		plan = newRetryPlan(deps.State.Failed())
 		pages = deps.Famly.PagesFrom(ctx, plan.start)
 		logger.Info("retry-failed: revisiting failed entries", "entries", len(plan.targets),
-			"undated", plan.undated, "jumpTo", plan.start.Format(time.RFC3339), "stopAfter", plan.floor.Format(time.RFC3339))
+			"undated", plan.undated, "jumpTo", timeOrNone(plan.start), "stopAfter", timeOrNone(plan.floor))
 		if len(plan.targets) == 0 {
 			res.Retry = plan.summary(ctx, deps.State, opts.DryRun)
 			res.FinishedAt = time.Now().UTC()

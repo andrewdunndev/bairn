@@ -258,6 +258,20 @@ func TestRetryFailedWithNothingFailedReadsNoFeed(t *testing.T) {
 	}
 }
 
+func TestRetryPlanWithNothingFailedLogsNoneForTimes(t *testing.T) {
+	p := newRetryPlan(nil)
+	if got := timeOrNone(p.start); got != "none" {
+		t.Errorf("jumpTo = %q, want none", got)
+	}
+	if got := timeOrNone(p.floor); got != "none" {
+		t.Errorf("stopAfter = %q, want none", got)
+	}
+	when := time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+	if got := timeOrNone(when); got != "2026-03-04T05:06:07Z" {
+		t.Errorf("timeOrNone(set) = %q", got)
+	}
+}
+
 func TestSavedAssetIsNoLongerFailed(t *testing.T) {
 	st := openTestStore(t)
 	ctx := context.Background()
