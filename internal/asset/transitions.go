@@ -229,11 +229,8 @@ func UploadFromDisk(ctx context.Context, immich *sink.Immich, store *state.Store
 	if err != nil {
 		return "", fmt.Errorf("asset: upload %s: %w", id, err)
 	}
-	if err := store.MarkUploaded(ctx, id, receipt.DestPath, receipt.Status, time.Now()); err != nil {
+	if err := store.MarkUploaded(ctx, id, receipt.DestPath, receipt.Status, receipt.SHA1, time.Now()); err != nil {
 		return "", fmt.Errorf("asset: record (uploaded) %s: %w", id, err)
-	}
-	if err := store.MarkUploadSHA1(ctx, id, receipt.SHA1); err != nil {
-		return "", fmt.Errorf("asset: record (upload sha1) %s: %w", id, err)
 	}
 	return receipt.Status, nil
 }
@@ -268,11 +265,8 @@ func (u Uploaded) Record(ctx context.Context, store *state.Store) (Recorded, err
 	if err := store.MarkExifFixed(ctx, id, now, u.saved.exifError); err != nil {
 		return Recorded{}, fmt.Errorf("asset: record (exif) %s: %w", id, err)
 	}
-	if err := store.MarkUploaded(ctx, id, u.immichID, u.status, now); err != nil {
+	if err := store.MarkUploaded(ctx, id, u.immichID, u.status, u.sha1, now); err != nil {
 		return Recorded{}, fmt.Errorf("asset: record (uploaded) %s: %w", id, err)
-	}
-	if err := store.MarkUploadSHA1(ctx, id, u.sha1); err != nil {
-		return Recorded{}, fmt.Errorf("asset: record (upload sha1) %s: %w", id, err)
 	}
 	return Recorded{saved: u.saved, uploaded: &u, recordedAt: now}, nil
 }

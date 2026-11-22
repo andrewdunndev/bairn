@@ -236,11 +236,6 @@ func (s *Store) MarkDownloaded(ctx context.Context, id, sha1 string, at time.Tim
 	})
 }
 
-// MarkUploadSHA1 records the SHA-1 of the bytes sent to Immich.
-func (s *Store) MarkUploadSHA1(ctx context.Context, id, sum string) error {
-	return s.update(id, func(a *Asset) { a.UploadSHA1 = sum })
-}
-
 // MarkSaved sets SavedAt and SavedPath. This is the durability
 // commit boundary: a record with SavedAt set means a file exists
 // at SavedPath.
@@ -261,12 +256,14 @@ func (s *Store) MarkExifFixed(ctx context.Context, id string, at time.Time, errM
 	})
 }
 
-// MarkUploaded sets the Immich receipt fields.
-func (s *Store) MarkUploaded(ctx context.Context, id, immichID, status string, at time.Time) error {
+// MarkUploaded sets the Immich receipt fields and the SHA-1 of the
+// bytes sent, in one update.
+func (s *Store) MarkUploaded(ctx context.Context, id, immichID, status, uploadSHA1 string, at time.Time) error {
 	return s.update(id, func(a *Asset) {
 		a.UploadedAt = at.UTC()
 		a.ImmichAssetID = immichID
 		a.ImmichStatus = status
+		a.UploadSHA1 = uploadSHA1
 	})
 }
 

@@ -86,6 +86,9 @@ func TestUploadRecordsChecksumOfUploadedBytes(t *testing.T) {
 			if _, err := up.Record(ctx, st); err != nil {
 				t.Fatal(err)
 			}
+			if sumHex(received) == sumHex(jpegBytes) {
+				t.Fatal("received bytes equal the download bytes; the EXIF fixture should change them, so this test cannot tell upload bytes from download bytes")
+			}
 			a, _ := st.Get(ctx, "img-1")
 			if len(received) == 0 || a.UploadSHA1 != sumHex(received) {
 				t.Errorf("UploadSHA1 = %q, want sha1 of received bytes %q", a.UploadSHA1, sumHex(received))

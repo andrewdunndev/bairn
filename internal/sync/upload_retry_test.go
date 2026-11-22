@@ -432,7 +432,7 @@ func TestEntriesWithoutPostDateAreNeverRequeued(t *testing.T) {
 	if err := st.Discover(ctx, "old-1", state.Asset{Source: "feed-image", DiscoveredAt: time.Now()}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.MarkUploaded(ctx, "old-1", "old-immich", "created", time.Now()); err != nil {
+	if err := st.MarkUploaded(ctx, "old-1", "old-immich", "created", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	albumRun(t, famlySrv, ic, st)
@@ -458,7 +458,7 @@ func TestLegacyEntryIsFiledFromDownloadedAt(t *testing.T) {
 	if err := st.Discover(ctx, "legacy-1", state.Asset{Source: "feed-image", DiscoveredAt: time.Now(), DownloadedAt: posted}); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.MarkUploaded(ctx, "legacy-1", "legacy-immich", "created", time.Now()); err != nil {
+	if err := st.MarkUploaded(ctx, "legacy-1", "legacy-immich", "created", "", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	if res := albumRun(t, famlySrv, ic, st); res.AlbumErrors != 0 {
@@ -492,8 +492,8 @@ func TestRefusedAssetIsRecordedAndNotRetried(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	_ = st.MarkUploaded(ctx, "gone-1", "gone-immich", "created", time.Now())
-	_ = st.MarkUploaded(ctx, "kept-1", "kept-immich", "created", time.Now())
+	_ = st.MarkUploaded(ctx, "gone-1", "gone-immich", "created", "", time.Now())
+	_ = st.MarkUploaded(ctx, "kept-1", "kept-immich", "created", "", time.Now())
 
 	res := albumRun(t, famlySrv, ic, st)
 	if res.AlbumErrors != 0 || res.AlbumsRefused != 1 {

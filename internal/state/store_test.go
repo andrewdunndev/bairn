@@ -2,6 +2,7 @@ package state
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -58,7 +59,7 @@ func TestLifecycle(t *testing.T) {
 	must(t, s.MarkDownloaded(ctx, "img-001", "abc123", now))
 	must(t, s.MarkSaved(ctx, "img-001", "feed-image-2026-05-06_14-00-00-img-001.jpg", now))
 	must(t, s.MarkExifFixed(ctx, "img-001", now, ""))
-	must(t, s.MarkUploaded(ctx, "img-001", "asset-001", "created", now))
+	must(t, s.MarkUploaded(ctx, "img-001", "asset-001", "created", "", now))
 
 	got, _ = s.Get(ctx, "img-001")
 	if got.SavedPath == "" {
@@ -166,7 +167,7 @@ func TestStats(t *testing.T) {
 	must(t, s.Discover(ctx, "d", Asset{Source: "feed-image"}))
 	must(t, s.MarkDownloaded(ctx, "d", "shad", now))
 	must(t, s.MarkSaved(ctx, "d", "d.jpg", now))
-	must(t, s.MarkUploaded(ctx, "d", "asset-d", "created", now))
+	must(t, s.MarkUploaded(ctx, "d", "asset-d", "created", "", now))
 
 	sm, err := s.Stats(ctx)
 	if err != nil {
@@ -422,9 +423,9 @@ func TestUntaggedListsUploadsOwedTheTagOnce(t *testing.T) {
 	}
 	_ = st.MarkSaved(ctx, "saved-only", "/p", now)
 	for _, id := range []string{"old", "new", "refused"} {
-		_ = st.MarkUploaded(ctx, id, "imm-"+id, "created", now)
+		_ = st.MarkUploaded(ctx, id, "imm-"+id, "created", "", now)
 	}
-	_ = st.MarkUploaded(ctx, "noid", "", "created", now)
+	_ = st.MarkUploaded(ctx, "noid", "", "created", "", now)
 	_ = st.MarkTagged(ctx, "new", now)
 	_ = st.MarkTagRefused(ctx, "refused", "no_permission")
 
@@ -447,5 +448,46 @@ func TestFailedExcludesAnEntryThatWasSaved(t *testing.T) {
 	_ = s.MarkError(ctx, "a", "upload: boom")
 	if got := s.Failed(); len(got) != 0 {
 		t.Errorf("Failed() = %+v, want a saved entry left out (--retry-failed is for unsaved ones)", got)
+	}
+}
+
+// A legacy entry survives load, flush and reload without gaining an
+// uploadSha1 key; a populated uploadSha1 survives the same trip.
+func TestUploadSHA1FlushRoundTrip(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "state.json")
+	legacy := `{"x":{"source":"feed-image","discoveredAt":"2026-01-01T00:00:00Z","savedAt":"2026-01-01T00:00:00Z","savedPath":"x.jpg"}}`
+	if err := os.WriteFile(path, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	must(t, s.Discover(ctx, "y", Asset{Source: "feed-image"}))
+	must(t, s.MarkUploaded(ctx, "y", "imm-y", "created", "abc123", time.Now()))
+	must(t, s.Close())
+
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := m["x"]["uploadSha1"]; ok {
+		t.Errorf("legacy entry gained an uploadSha1 key: %s", raw)
+	}
+	s2, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s2.Close() })
+	if a, _ := s2.Get(ctx, "x"); a.UploadSHA1 != "" {
+		t.Errorf("legacy UploadSHA1 = %q", a.UploadSHA1)
+	}
+	if a, _ := s2.Get(ctx, "y"); a.UploadSHA1 != "abc123" {
+		t.Errorf("UploadSHA1 = %q after reload, want abc123", a.UploadSHA1)
 	}
 }
