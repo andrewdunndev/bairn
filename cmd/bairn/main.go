@@ -105,7 +105,7 @@ func newLogger(format string) *slog.Logger {
 }
 
 // runFetch implements the fetch subcommand.
-func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
+func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) (code int) {
 	fs := flag.NewFlagSet("fetch", flag.ExitOnError)
 	maxPages := fs.Int("max-pages", 3, "stop after this many feed pages (0 = unlimited)")
 	tz := fs.String("tz", cfg.Zone, "IANA zone for videos in posts with no zoned image (default: the machine's local zone, logged at start)")
@@ -208,7 +208,14 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		fmt.Fprintln(os.Stderr, "state:", err)
 		return 1
 	}
-	defer st.Close()
+	defer func() {
+		if err := st.Close(); err != nil {
+			logger.Error("state close", "err", err)
+			if code == 0 {
+				code = 1
+			}
+		}
+	}()
 
 	// Built after state.Open so the session write sits under the state
 	// lock: two runs cannot race over the file.
