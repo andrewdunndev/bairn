@@ -55,6 +55,14 @@ type retryPlan struct {
 	undated int
 }
 
+// timeOrNone formats t for a log line, "none" when it is the zero time.
+func timeOrNone(t time.Time) string {
+	if t.IsZero() {
+		return "none"
+	}
+	return t.Format(time.RFC3339)
+}
+
 func newRetryPlan(failed []state.FailedAsset) *retryPlan {
 	p := &retryPlan{targets: map[string]state.FailedAsset{}, attempted: map[string]struct{}{}}
 	allDated := true
