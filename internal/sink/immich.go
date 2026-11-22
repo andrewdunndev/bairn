@@ -2,6 +2,8 @@ package sink
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"fmt"
 	"os"
 
@@ -36,6 +38,7 @@ func (i *Immich) Put(ctx context.Context, in PutInput) (Receipt, error) {
 	if err != nil {
 		return Receipt{}, fmt.Errorf("sink: read %s: %w", in.SourcePath, err)
 	}
+	sum := sha1.Sum(data)
 	res, err := i.client.Upload(ctx, immich.UploadInput{
 		Data:           data,
 		Filename:       in.Filename,
@@ -55,5 +58,6 @@ func (i *Immich) Put(ctx context.Context, in PutInput) (Receipt, error) {
 		DestPath: res.ID,
 		Status:   res.Status,
 		Size:     int64(len(data)),
+		SHA1:     hex.EncodeToString(sum[:]),
 	}, nil
 }

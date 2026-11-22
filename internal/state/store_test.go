@@ -276,6 +276,9 @@ func TestLegacyEntryDecodesAsNotUploaded(t *testing.T) {
 	if up, _ := s.IsUploaded(context.Background(), "x"); up {
 		t.Fatal("legacy entry should not count as uploaded")
 	}
+	if a, _ := s.Get(context.Background(), "x"); a.UploadSHA1 != "" {
+		t.Fatalf("legacy entry UploadSHA1 = %q, want empty", a.UploadSHA1)
+	}
 }
 
 // The state file is replaced by rename on every flush; the lock must
