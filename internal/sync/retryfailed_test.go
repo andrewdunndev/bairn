@@ -88,6 +88,7 @@ type retryEnv struct {
 	deps Deps
 	st   *state.Store
 	dir  string
+	path string
 }
 
 // seedFailed records the images as discovered and failed, with the post
@@ -111,13 +112,14 @@ func newRetryEnv(t *testing.T, feed *datedFeed) *retryEnv {
 	t.Helper()
 	dir := t.TempDir()
 	disk, _ := sink.NewDisk(dir, "", "")
-	st, err := state.Open(context.Background(), filepath.Join(t.TempDir(), "state.json"))
+	path := filepath.Join(t.TempDir(), "state.json")
+	st, err := state.Open(context.Background(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
 	fc := famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(feed.URL), famly.WithPageDelay(0))
-	return &retryEnv{feed: feed, st: st, dir: dir,
+	return &retryEnv{feed: feed, st: st, dir: dir, path: path,
 		deps: Deps{Famly: fc, Disk: disk, State: st, DownloadRetry: instantRetry(1)}}
 }
 
@@ -345,5 +347,79 @@ func TestRetrySummaryAddsUpAndSeparatesUploadFailures(t *testing.T) {
 	}
 	if s.Failed != s.Fixed+s.UploadFailed+s.StillFailing {
 		t.Errorf("failed %d != fixed+uploadFailed+stillFailing", s.Failed)
+	}
+}
+
+// seedSavedUndated records images as saved on disk with no post date,
+// as entries written before FeedItemAt existed.
+func seedSavedUndated(t *testing.T, st *state.Store, ids ...int) {
+	t.Helper()
+	ctx := context.Background()
+	for _, i := range ids {
+		id := fmt.Sprintf("img-%d", i)
+		if err := st.Discover(ctx, id, state.Asset{Source: "feed-image", FeedItemID: fmt.Sprintf("post-%d", i), DiscoveredAt: postTime(i).Add(time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := st.MarkSaved(ctx, id, "x/"+id+".jpg", time.Now()); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func (e *retryEnv) fetch(t *testing.T, dry bool, maxPages int) {
+	t.Helper()
+	if _, err := Run(context.Background(), e.deps, Options{Source: SourceAll, DryRun: dry, MaxPages: maxPages}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
+func TestFetchStampsPostDateOnSavedEntries(t *testing.T) {
+	e := newRetryEnv(t, newDatedFeed(t, 30, nil, false))
+	seedSavedUndated(t, e.st, 5, 25)
+	e.fetch(t, false, 0)
+	for _, i := range []int{5, 25} {
+		got, _ := e.st.Get(context.Background(), fmt.Sprintf("img-%d", i))
+		if !got.FeedItemAt.Equal(postTime(i)) {
+			t.Errorf("img-%d FeedItemAt = %v, want %v", i, got.FeedItemAt, postTime(i))
+		}
+	}
+}
+
+func TestFetchDryRunLeavesSavedEntriesUndated(t *testing.T) {
+	e := newRetryEnv(t, newDatedFeed(t, 30, nil, false))
+	seedSavedUndated(t, e.st, 5)
+	e.fetch(t, true, 0)
+	if got, _ := e.st.Get(context.Background(), "img-5"); !got.FeedItemAt.IsZero() {
+		t.Errorf("dry-run stamped FeedItemAt = %v", got.FeedItemAt)
+	}
+}
+
+func TestStampedDatesPersistAndBoundALaterRetry(t *testing.T) {
+	feed := newDatedFeed(t, 100, nil, false)
+	e := newRetryEnv(t, feed)
+	ctx := context.Background()
+	seedSavedUndated(t, e.st, 95)
+	e.fetch(t, false, 1)
+	if err := e.st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	st, err := state.Open(ctx, e.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	if got, _ := st.Get(ctx, "img-95"); !got.FeedItemAt.Equal(postTime(95)) {
+		t.Fatalf("FeedItemAt after reopen = %v, want %v", got.FeedItemAt, postTime(95))
+	}
+
+	// A failed entry now dated: the retry has a floor and jumps.
+	e.st, e.deps.State = st, st
+	seedFailed(t, st, true, 61)
+	if p := newRetryPlan(st.Failed()); p.floor.IsZero() {
+		t.Fatal("retry plan has no floor for a dated failed entry")
+	}
+	feed.pages = 0
+	if res := e.run(t, false); res.Retry.Fixed != 1 || feed.pages != 1 {
+		t.Errorf("retry = %+v pages = %d, want fixed 1 in 1 page", res.Retry, feed.pages)
 	}
 }

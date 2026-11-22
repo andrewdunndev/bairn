@@ -14,6 +14,13 @@ additions.
 
 ## [Unreleased]
 
+### Fixed
+
+- A fetch now stamps the post date (`feedItemAt`) on entries that are
+  already saved but undated, so `--retry-failed` can jump to dated
+  entries instead of walking the whole feed. The stamp is flushed with
+  the next batched write or at exit, not on its own.
+
 ### Added
 
 - State entries gain `uploadSha1`, the SHA-1 of the bytes uploaded to

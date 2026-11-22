@@ -491,3 +491,32 @@ func TestUploadSHA1FlushRoundTrip(t *testing.T) {
 		t.Errorf("UploadSHA1 = %q after reload, want abc123", a.UploadSHA1)
 	}
 }
+
+func TestStampDefersItsFlushToCloseAndKeepsDates(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	ctx := context.Background()
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.flushEvery = 2
+	at := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	must(t, s.Discover(ctx, "a", Asset{Source: "feed-image"}))
+	must(t, s.Flush())
+	before, _ := os.Stat(path)
+	for range 5 {
+		must(t, s.Discover(ctx, "a", Asset{FeedItemAt: at}))
+	}
+	if after, _ := os.Stat(path); after.ModTime() != before.ModTime() || after.Size() != before.Size() {
+		t.Fatal("a stamp rewrote the file by itself")
+	}
+	must(t, s.Close())
+	r, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	if got, _ := r.Get(ctx, "a"); !got.FeedItemAt.Equal(at) {
+		t.Fatalf("FeedItemAt after reopen = %v, want %v", got.FeedItemAt, at)
+	}
+}

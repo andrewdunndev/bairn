@@ -596,6 +596,13 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		logger.Warn("state.IsSaved", "id", id, "err", err)
 	}
 	if already {
+		if !opts.DryRun {
+			// Entries saved before FeedItemAt existed gain it here; Discover
+			// only fills a zero value and defers its flush.
+			if err := deps.State.Discover(ctx, id, state.Asset{FeedItemAt: disc.FeedItemAt()}); err != nil {
+				logger.Warn("state.Discover (stamp)", "id", id, "err", err)
+			}
+		}
 		// On disk but maybe not in Immich: a failed upload, an
 		// Immich outage, or a save-only run. Upload from the disk sink.
 		if deps.Immich != nil {
