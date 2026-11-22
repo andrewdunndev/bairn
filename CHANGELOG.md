@@ -14,6 +14,8 @@ additions.
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-21
+
 ### Added
 
 - In-run download retry. A connection reset, truncated body, timeout
@@ -598,7 +600,8 @@ If you upgraded to v0.4.3, downgrade to v0.4.5 or later.
   provenance, GitLab Release with all artifacts linked, OCI
   container image.
 
-[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.6.2...main
+[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.7.0...main
+[0.7.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.7.0
 [0.6.2]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.2
 [0.6.1]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.1
 [0.6.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.0
