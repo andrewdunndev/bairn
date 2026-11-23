@@ -60,7 +60,11 @@ func (e *pEnv) write(rel, content string) string {
 // whose upload hash is of uploaded, with a sidecar. Immich knows it.
 func (e *pEnv) add(id, content, uploaded string) string {
 	p := e.write("2026/"+id+".jpg", content)
-	e.write("2026/"+id+".jpg.xmp", "xmp-"+id)
+	x := e.write("2026/"+id+".jpg.xmp", "xmp-"+id)
+	old := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
+	if err := os.Chtimes(x, old, old); err != nil {
+		e.t.Fatal(err)
+	}
 	e.entry(id, p, uploaded, pruneAt.Add(-time.Hour), "")
 	e.table[shaOf(uploaded)] = vKnown{id: "imm-" + id}
 	return p
@@ -326,13 +330,13 @@ func TestPruneTombstonesBeforeUnlinkAndMediaBeforeSidecar(t *testing.T) {
 	var order []string
 	old := removeFile
 	t.Cleanup(func() { removeFile = old })
-	removeFile = func(path string) error {
+	removeFile = func(root, path string) error {
 		b, _ := os.ReadFile(e.state)
 		if !strings.Contains(string(b), `"prunedAt"`) {
 			t.Error("unlink before the tombstone reached the state file")
 		}
 		order = append(order, filepath.Base(path))
-		return os.Remove(path)
+		return unlinkContained(root, path)
 	}
 	if _, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply"); code != 0 {
 		t.Fatalf("exit %d", code)
@@ -358,12 +362,12 @@ func TestPruneCrashAfterStampIsFinishedByRerun(t *testing.T) {
 			n := 0
 			old := removeFile
 			t.Cleanup(func() { removeFile = old })
-			removeFile = func(path string) error {
+			removeFile = func(root, path string) error {
 				n++
 				if n == failOn {
 					return errors.New("injected crash")
 				}
-				return os.Remove(path)
+				return unlinkContained(root, path)
 			}
 			sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
 			if code != 1 || sum.Errors != 1 || sum.Pruned != 3 {
@@ -382,7 +386,7 @@ func TestPruneCrashAfterStampIsFinishedByRerun(t *testing.T) {
 			if left == "" {
 				t.Fatal("injected crash left nothing on disk")
 			}
-			removeFile = os.Remove
+			removeFile = unlinkContained
 			calls := f.calls.Load()
 			sum, code = runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
 			if code != 0 || sum.Resumed != 1 || sum.Errors != 0 || sum.Pruned != 0 || sum.Considered != 0 {
@@ -572,5 +576,137 @@ func TestPruneEndToEndNothingBringsItBack(t *testing.T) {
 	a := vGet(t, st, "a")
 	if a.SavedAt.IsZero() || a.SavedPath == "" || a.UploadedAt.IsZero() || a.ImmichAssetID == "" || a.LastError != "" {
 		t.Errorf("tombstone lost fields: %+v", a)
+	}
+}
+
+// A relative save directory gives relative saved paths. The checks and
+// the unlink must act on the same file: CWD-relative, as the disk sink
+// wrote it.
+func TestPruneRelativeSaveDirChecksWhatItDeletes(t *testing.T) {
+	base := t.TempDir()
+	t.Chdir(base)
+	e := newPEnv(t)
+	e.root = "assets"
+	var rel []string
+	for _, id := range []string{"a", "b", "c", "d"} {
+		rel = append(rel, e.add(id, "bytes-"+id, "bytes-"+id))
+	}
+	// Divergence: root/root/ext/x.jpg is a decoy regular file, while
+	// root/ext is a symlinked directory out of the root.
+	outsideDir := t.TempDir()
+	outside := filepath.Join(outsideDir, "x.jpg")
+	if err := os.WriteFile(outside, []byte("bytes-x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideDir, filepath.Join("assets", "ext")); err != nil {
+		t.Fatal(err)
+	}
+	e.write("assets/ext/x.jpg", "bytes-x")
+	e.add("x", "bytes-x", "bytes-x")
+	e.entry("x", filepath.Join("assets", "ext", "x.jpg"), "bytes-x", pruneAt.Add(-time.Hour), "")
+	e.state = filepath.Join(t.TempDir(), "state.json")
+	e.seed()
+	f := e.fake()
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if sum.Pruned != 4 || sum.MissingFile != 0 || sum.Errors != 1 || code != 1 {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+	for _, p := range rel {
+		if exists(p) {
+			t.Errorf("%s not pruned", p)
+		}
+	}
+	if !exists(outside) {
+		t.Error("a file outside the save root was deleted through a symlinked directory")
+	}
+}
+
+// unlinkContained refuses a directory that became a symlink after the
+// containment check.
+func TestUnlinkContainedDoesNotFollowASwappedDirectory(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "assets")
+	outsideDir := t.TempDir()
+	outside := filepath.Join(outsideDir, "x.jpg")
+	if err := os.WriteFile(outside, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outsideDir, filepath.Join(root, "ext")); err != nil {
+		t.Fatal(err)
+	}
+	if err := removeFile(root, filepath.Join(root, "ext", "x.jpg")); err == nil {
+		t.Error("followed a symlinked directory")
+	}
+	if !exists(outside) {
+		t.Error("outside file deleted")
+	}
+	in := filepath.Join(root, "y", "z.jpg")
+	_ = os.MkdirAll(filepath.Dir(in), 0o755)
+	_ = os.WriteFile(in, []byte("z"), 0o600)
+	if err := unlinkContained(root, in); err != nil || exists(in) {
+		t.Errorf("plain unlink: %v exists %v", err, exists(in))
+	}
+	if err := unlinkContained(root, in); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("missing file: %v", err)
+	}
+}
+
+// A tombstoned entry whose files are still on disk: a dry run counts it
+// and deletes nothing; apply finishes it.
+func TestPruneDryRunResumeSweepChangesNothing(t *testing.T) {
+	e := newPEnv(t)
+	for _, id := range []string{"a", "b", "c"} {
+		e.add(id, "bytes-"+id, "bytes-"+id)
+	}
+	p := e.add("t", "bytes-t", "bytes-t")
+	a := e.ents["t"]
+	a.PrunedAt = pruneAt
+	e.ents["t"] = a
+	e.seed()
+	f := e.fake()
+	before := snapshot(t, e.root, filepath.Dir(e.state))
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL))
+	if code != 0 || sum.WouldResume != 1 || sum.Resumed != 0 {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+	if after := snapshot(t, e.root, filepath.Dir(e.state)); !mapsEqual(before, after) {
+		t.Fatalf("dry run changed the tree:\n%v\n%v", keys(before), keys(after))
+	}
+	if sum, _ := runPruneCapture(t, e.cfg(f.srv.URL), "--apply"); sum.Resumed != 1 || exists(p) || exists(p+".xmp") {
+		t.Errorf("apply %+v", sum)
+	}
+}
+
+// A sidecar written after the upload (onto media saved before sidecars
+// existed) was never sent to Immich: it stays, and the dry run does not
+// count it.
+func TestPruneKeepsASidecarNewerThanTheUpload(t *testing.T) {
+	e := newPEnv(t)
+	for _, id := range []string{"a", "b", "c"} {
+		e.add(id, "bytes-"+id, "bytes-"+id)
+	}
+	p := e.add("late", "bytes-late", "bytes-late")
+	if err := os.Chtimes(p+".xmp", pruneAt, pruneAt); err != nil {
+		t.Fatal(err)
+	}
+	e.seed()
+	f := e.fake()
+	dry, _ := runPruneCapture(t, e.cfg(f.srv.URL))
+	want := int64(0)
+	for _, id := range []string{"a", "b", "c"} {
+		want += int64(len("bytes-"+id) + len("xmp-"+id))
+	}
+	want += int64(len("bytes-late"))
+	if dry.WouldFreeBytes != want {
+		t.Errorf("wouldFreeBytes %d, want %d", dry.WouldFreeBytes, want)
+	}
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if code != 0 || sum.Pruned != 4 || sum.BytesFreed != want {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+	if exists(p) || !exists(p+".xmp") {
+		t.Errorf("media exists %v, sidecar exists %v", exists(p), exists(p+".xmp"))
 	}
 }

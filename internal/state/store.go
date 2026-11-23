@@ -468,6 +468,7 @@ type PruneEntry struct {
 	ImmichAssetID    string
 	ImmichVerifiedAt time.Time
 	VerifyResult     string
+	UploadedAt       time.Time
 }
 
 // PruneCandidates lists the entries a prune run considers: uploaded and
@@ -487,7 +488,7 @@ func (s *Store) pruneEntries(pruned bool) []PruneEntry {
 			continue
 		}
 		out = append(out, PruneEntry{ID: id, SavedPath: a.SavedPath, UploadSHA1: a.UploadSHA1,
-			ImmichAssetID: a.ImmichAssetID, ImmichVerifiedAt: a.ImmichVerifiedAt, VerifyResult: a.VerifyResult})
+			ImmichAssetID: a.ImmichAssetID, ImmichVerifiedAt: a.ImmichVerifiedAt, VerifyResult: a.VerifyResult, UploadedAt: a.UploadedAt})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out

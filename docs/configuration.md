@@ -322,9 +322,12 @@ An entry is deleted only when all of these hold in this run:
    after upload (new EXIF bytes Immich lacks) is kept;
 4. the entry is not already pruned.
 
-The path deleted is `savedPath` resolved under the save directory. A
+The path deleted is `savedPath` made absolute against the working directory,
+as the sink wrote it; the same resolved path is checked, hashed and unlinked. A
 path outside it, a symlink anywhere below it, or a non-regular file is
 refused and counted as an error; the same holds for the `.xmp` sidecar.
+The unlink opens each directory without following symlinks. A sidecar
+modified after `uploadedAt` was never sent to Immich and is kept.
 Per entry the order is: stamp `prunedAt` and write the state file, then
 delete the media, then its `.xmp`. A run killed after the stamp leaves a
 pruned entry with its file; the next run deletes it (under the same
@@ -351,9 +354,9 @@ alone, and `status` counts it as `pruned`, not `missingFile`.
 Exit codes: 0 done (skips are not errors), 1 any error, a locked state
 file, or a refusal; 2 usage or missing Immich configuration. It refuses
 with exit 1, changing nothing, when the save directory is unset, absent
-or not a directory, or when every saved file is missing (an unmounted
-volume). A transport error, a 5xx after retries or a short reply deletes
-nothing for that batch; a 401 or 403, or a failed state write, stops the
+or not a directory, or when more than three files are saved and every one is missing
+(an unmounted volume). A transport error, a 5xx after retries or a short
+reply deletes nothing for that batch; a 401 or 403, or a failed state write, stops the
 run.
 
 ### Recovering saved files that are gone

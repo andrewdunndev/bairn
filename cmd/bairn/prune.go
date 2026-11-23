@@ -17,6 +17,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
+	"golang.org/x/sys/unix"
 )
 
 // pruneSummary is what `prune` prints. Considered counts the uploaded,
@@ -46,8 +47,39 @@ var (
 	errRefuse = errors.New("refused")
 )
 
-// removeFile is the one place prune deletes; tests replace it.
-var removeFile = os.Remove
+// removeFile is the one place prune deletes; tests replace it. It takes
+// the resolved absolute path and the save root.
+var removeFile = unlinkContained
+
+// unlinkContained deletes p with no symlink followed anywhere below root:
+// each directory is opened O_NOFOLLOW relative to the one before and the
+// file is unlinked relative to the last, so a directory swapped for a
+// symlink after the check is refused, not followed.
+func unlinkContained(root, p string) error {
+	rel, err := filepath.Rel(root, p)
+	if err != nil || rel == "." || !sink.Within(root, p) {
+		return fmt.Errorf("%w: %s is outside %s", errRefuse, p, root)
+	}
+	parts := strings.Split(rel, string(filepath.Separator))
+	fd, err := unix.Open(root, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return &fs.PathError{Op: "open", Path: root, Err: err}
+	}
+	for _, part := range parts[:len(parts)-1] {
+		nfd, err := unix.Openat(fd, part, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+		_ = unix.Close(fd)
+		if err != nil {
+			return &fs.PathError{Op: "openat", Path: part, Err: err}
+		}
+		fd = nfd
+	}
+	defer unix.Close(fd)
+	name := parts[len(parts)-1]
+	if err := unix.Unlinkat(fd, name, 0); err != nil {
+		return &fs.PathError{Op: "unlinkat", Path: p, Err: err}
+	}
+	return nil
+}
 
 // runPrune implements `bairn prune [--apply]`.
 func runPrune(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
@@ -117,18 +149,22 @@ func guardSaveRoot(st *state.Store, root string) error {
 	return nil
 }
 
-// lstatContained resolves p under root and returns its Lstat. It refuses
+// lstatContained resolves p (made absolute against the working directory,
+// as every other open of it is) and returns the resolved path with its
+// Lstat; callers act on that path only. It refuses
 // (errRefuse) a path outside root, any symlink on the way below root, a
 // non-directory parent, and a final element that is not a regular file.
 // A component that does not exist is errNoFile.
-func lstatContained(root, p string) (fs.FileInfo, error) {
-	root = filepath.Clean(root)
-	if !filepath.IsAbs(p) {
-		p = filepath.Join(root, p)
+func lstatContained(root, p string) (string, fs.FileInfo, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return "", nil, err
 	}
-	p = filepath.Clean(p)
+	if p, err = filepath.Abs(p); err != nil {
+		return "", nil, err
+	}
 	if !sink.Within(root, p) || p == root {
-		return nil, fmt.Errorf("%w: %s is outside %s", errRefuse, p, root)
+		return "", nil, fmt.Errorf("%w: %s is outside %s", errRefuse, p, root)
 	}
 	rel, _ := filepath.Rel(root, p)
 	parts := strings.Split(rel, string(filepath.Separator))
@@ -139,22 +175,22 @@ func lstatContained(root, p string) (fs.FileInfo, error) {
 		var err error
 		fi, err = os.Lstat(cur)
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, errNoFile
+			return "", nil, errNoFile
 		}
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
 		switch {
 		case fi.Mode()&fs.ModeSymlink != 0:
-			return nil, fmt.Errorf("%w: %s is a symlink", errRefuse, cur)
+			return "", nil, fmt.Errorf("%w: %s is a symlink", errRefuse, cur)
 		case i < len(parts)-1 && !fi.IsDir():
-			return nil, fmt.Errorf("%w: %s is not a directory", errRefuse, cur)
+			return "", nil, fmt.Errorf("%w: %s is not a directory", errRefuse, cur)
 		}
 	}
 	if !fi.Mode().IsRegular() {
-		return nil, fmt.Errorf("%w: %s is not a regular file", errRefuse, p)
+		return "", nil, fmt.Errorf("%w: %s is not a regular file", errRefuse, p)
 	}
-	return fi, nil
+	return p, fi, nil
 }
 
 // pruneEntries is the whole run. dry makes the Immich calls but writes
@@ -274,7 +310,7 @@ func pruneOne(st *state.Store, root string, e state.PruneEntry, dry bool, at tim
 		sum.MissingFile++
 		return false, nil
 	}
-	fi, err := lstatContained(root, e.SavedPath)
+	path, fi, err := lstatContained(root, e.SavedPath)
 	switch {
 	case errors.Is(err, errNoFile):
 		sum.MissingFile++
@@ -284,7 +320,7 @@ func pruneOne(st *state.Store, root string, e state.PruneEntry, dry bool, at tim
 		sum.Errors++
 		return false, nil
 	}
-	got, err := hashFile(filepath.Clean(e.SavedPath))
+	got, err := hashFile(path)
 	if err != nil {
 		logger.Error("prune: hash", "id", e.ID, "err", err)
 		sum.Errors++
@@ -297,6 +333,9 @@ func pruneOne(st *state.Store, root string, e state.PruneEntry, dry bool, at tim
 	if dry {
 		sum.WouldPrune++
 		sum.WouldFreeBytes += fi.Size()
+		if _, xfi, err := sidecar(root, path, e.UploadedAt); err == nil && xfi != nil {
+			sum.WouldFreeBytes += xfi.Size()
+		}
 		return false, nil
 	}
 	// Tombstone first and make it durable: a kill after this leaves a
@@ -310,7 +349,7 @@ func pruneOne(st *state.Store, root string, e state.PruneEntry, dry bool, at tim
 		sum.Errors++
 		return true, fmt.Errorf("write state: %w", err)
 	}
-	freed, rerr := removeEntryFiles(root, e.SavedPath, fi.Size())
+	freed, rerr := removeEntryFiles(root, path, fi.Size(), e.UploadedAt)
 	sum.BytesFreed += freed
 	if rerr != nil {
 		logger.Error("prune: unlink; the entry is tombstoned and the next run finishes it", "id", e.ID, "err", rerr)
@@ -321,23 +360,43 @@ func pruneOne(st *state.Store, root string, e state.PruneEntry, dry bool, at tim
 	return false, nil
 }
 
-// removeEntryFiles deletes the media, then its .xmp sidecar, each after
-// the containment check. A missing file is fine. It returns the bytes
-// freed and the first error.
-func removeEntryFiles(root, path string, mediaSize int64) (int64, error) {
+// sidecar is the .xmp beside the resolved media path, when prune should
+// delete it: present, contained, and not newer than the upload. A newer
+// one was written after Immich last saw the entry, so it is the only
+// copy and stays (nil FileInfo, nil error), as does a missing one
+// (errNoFile is folded into the same).
+func sidecar(root, media string, uploadedAt time.Time) (string, fs.FileInfo, error) {
+	xp, xfi, err := lstatContained(root, media+".xmp")
+	switch {
+	case errors.Is(err, errNoFile):
+		return "", nil, nil
+	case err != nil:
+		return "", nil, err
+	case xfi.ModTime().After(uploadedAt):
+		return "", nil, nil
+	}
+	return xp, xfi, nil
+}
+
+// removeEntryFiles deletes the media (a resolved path from
+// lstatContained), then its .xmp sidecar, each unlinked without following
+// a symlink. A missing file is fine. It returns the bytes freed and the
+// first error.
+func removeEntryFiles(root, path string, mediaSize int64, uploadedAt time.Time) (int64, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return 0, err
+	}
 	var freed int64
-	if err := removeFile(filepath.Clean(path)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := removeFile(root, path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return freed, err
 	}
 	freed += mediaSize
-	xfi, err := lstatContained(root, path+".xmp")
-	switch {
-	case errors.Is(err, errNoFile):
-		return freed, nil
-	case err != nil:
+	xp, xfi, err := sidecar(root, path, uploadedAt)
+	if err != nil || xfi == nil {
 		return freed, err
 	}
-	if err := removeFile(filepath.Clean(path + ".xmp")); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := removeFile(root, xp); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return freed, err
 	}
 	return freed + xfi.Size(), nil
@@ -352,25 +411,25 @@ func resumePruned(st *state.Store, root string, dry bool, sum *pruneSummary, log
 		if e.SavedPath == "" {
 			continue
 		}
-		fi, err := lstatContained(root, e.SavedPath)
+		path, fi, err := lstatContained(root, e.SavedPath)
 		switch {
 		case errors.Is(err, errNoFile):
 			fi = nil
+			path, _ = filepath.Abs(e.SavedPath)
 		case err != nil:
 			logger.Error("prune: pruned entry, refusing path", "id", e.ID, "err", err)
 			sum.Errors++
 			continue
 		}
 		if fi != nil {
-			got, err := hashFile(filepath.Clean(e.SavedPath))
+			got, err := hashFile(path)
 			if err != nil || got != e.UploadSHA1 {
 				logger.Error("prune: pruned entry's file is not the uploaded bytes; kept", "id", e.ID, "err", err)
 				sum.Errors++
 				continue
 			}
 		}
-		_, xerr := lstatContained(root, e.SavedPath+".xmp")
-		if fi == nil && errors.Is(xerr, errNoFile) {
+		if _, xfi, xerr := sidecar(root, path, e.UploadedAt); fi == nil && xfi == nil && xerr == nil {
 			continue
 		}
 		if dry {
@@ -381,7 +440,7 @@ func resumePruned(st *state.Store, root string, dry bool, sum *pruneSummary, log
 		if fi != nil {
 			size = fi.Size()
 		}
-		freed, rerr := removeEntryFiles(root, e.SavedPath, size)
+		freed, rerr := removeEntryFiles(root, path, size, e.UploadedAt)
 		if rerr != nil {
 			logger.Error("prune: unlink", "id", e.ID, "err", rerr)
 			sum.Errors++
