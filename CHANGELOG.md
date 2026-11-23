@@ -43,6 +43,9 @@ additions.
   moved to CONTRIBUTING.md.
 - ADR 0004 points at `internal/state/store.go` for the record fields
   instead of carrying an example that had drifted.
+- CI installs exiftool and runs the metadata round-trip test, which a
+  missing exiftool used to skip silently; it now fails instead. CI
+  images move to ci-go 4.17.0.
 
 ### Fixed
 
