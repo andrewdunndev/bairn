@@ -672,3 +672,21 @@ func TestNormalSightingClearsGoneAt(t *testing.T) {
 		t.Errorf("gone %d failed %d", len(st.Gone()), len(st.Failed()))
 	}
 }
+
+func TestFetchLeavesDatedSavedEntriesAlone(t *testing.T) {
+	e := newRetryEnv(t, newDatedFeed(t, 30, nil, false))
+	ctx := context.Background()
+	kept := postTime(5).Add(-72 * time.Hour)
+	if err := e.st.Discover(ctx, "img-5", state.Asset{Source: "feed-image", FeedItemID: "post-5", FeedItemAt: kept, DiscoveredAt: postTime(5).Add(time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := e.st.MarkSaved(ctx, "img-5", "x/img-5.jpg", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if res := e.fetch(t, false, 0); res.Stamped != 0 {
+		t.Errorf("Stamped = %d, want 0", res.Stamped)
+	}
+	if got, _ := e.st.Get(ctx, "img-5"); !got.FeedItemAt.Equal(kept) {
+		t.Errorf("FeedItemAt = %v, want %v", got.FeedItemAt, kept)
+	}
+}

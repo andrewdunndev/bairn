@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
@@ -65,6 +66,27 @@ func runStatusCapture(t *testing.T, statePath string, args ...string) (string, i
 	_ = w.Close()
 	b, _ := io.ReadAll(r)
 	return string(b), code
+}
+
+// TestStatusLeavesStateUntouched pins that status is read-only, on both paths.
+func TestStatusLeavesStateUntouched(t *testing.T) {
+	for _, args := range [][]string{nil, {"--missing"}} {
+		path := seedStatus(t)
+		before, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, code := runStatusCapture(t, path, args...); code != 0 {
+			t.Fatalf("%v: exit %d", args, code)
+		}
+		after, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(before, after) {
+			t.Errorf("%v: status changed state.json", args)
+		}
+	}
 }
 
 func TestStatusCountsUndatedAndMissingFile(t *testing.T) {
