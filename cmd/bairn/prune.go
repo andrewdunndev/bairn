@@ -58,6 +58,9 @@ var (
 // the resolved absolute path and the save root.
 var removeFile = unlinkContained
 
+// flushState writes the state before any unlink; a test hook.
+var flushState = func(st *state.Store) error { return st.Flush() }
+
 // stillPresent reports whether path exists now, without following a
 // final symlink.
 func stillPresent(path string) bool {
@@ -271,8 +274,11 @@ func pruneBatch(ctx context.Context, st *state.Store, ic bulkChecker, root strin
 		}
 	}
 	if demoted {
-		if err := st.Flush(); err != nil {
-			sum.Errors += len(batch) - countFailed(outcomes)
+		if err := flushState(st); err != nil {
+			// The demotions are not durable: the whole batch is
+			// undecided, so each entry moves to Errors, once.
+			sum.ReverifyFailed -= countFailed(outcomes)
+			sum.Errors += len(batch)
 			return true, fmt.Errorf("write state: %w", err)
 		}
 	}
@@ -300,7 +306,7 @@ func pruneBatch(ctx context.Context, st *state.Store, ic bulkChecker, root strin
 			sum.Errors++
 		}
 	}
-	if err := st.Flush(); err != nil {
+	if err := flushState(st); err != nil {
 		sum.Errors += len(stamped)
 		return true, fmt.Errorf("write state: %w", err)
 	}
@@ -560,7 +566,7 @@ func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root str
 		}
 	}
 	if cleared {
-		if err := st.Flush(); err != nil {
+		if err := flushState(st); err != nil {
 			logger.Error("prune: write state", "err", err)
 			sum.Errors++
 			return skip, true

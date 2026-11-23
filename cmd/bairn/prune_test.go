@@ -907,11 +907,11 @@ func flushFailEnv(t *testing.T, setup func(e *pEnv)) (*pEnv, int, pruneSummary) 
 	setup(e)
 	e.seed()
 	f := e.fake()
-	dir := filepath.Dir(e.state)
-	if err := os.Chmod(dir, 0o500); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	// A hook, not a read-only dir: CI runs tests as root, which ignores
+	// directory permissions.
+	old := flushState
+	t.Cleanup(func() { flushState = old })
+	flushState = func(*state.Store) error { return errors.New("injected write failure") }
 	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
 	return e, code, sum
 }
