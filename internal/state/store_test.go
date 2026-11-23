@@ -650,3 +650,25 @@ func TestStampFeedItemAtNoOps(t *testing.T) {
 		t.Error("second stamp reported true")
 	}
 }
+
+func TestMarkUploadedRefusesADifferentImmichID(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+	at := time.Unix(100, 0)
+	_ = s.Discover(ctx, "a", Asset{Source: "feed-image"})
+	if err := s.MarkUploaded(ctx, "a", "imm-1", "created", "sha-1", at); err != nil {
+		t.Fatal(err)
+	}
+	err := s.MarkUploaded(ctx, "a", "imm-2", "created", "sha-2", at.Add(time.Hour))
+	if !errors.Is(err, ErrImmichIDConflict) {
+		t.Fatalf("err = %v, want ErrImmichIDConflict", err)
+	}
+	got, _ := s.Get(ctx, "a")
+	if got.ImmichAssetID != "imm-1" || got.UploadSHA1 != "sha-1" || !got.UploadedAt.Equal(at) {
+		t.Errorf("entry changed: %+v", got)
+	}
+	// The same id again (a duplicate answer) is fine.
+	if err := s.MarkUploaded(ctx, "a", "imm-1", "duplicate", "sha-1", at); err != nil {
+		t.Errorf("same id refused: %v", err)
+	}
+}

@@ -694,16 +694,17 @@ func TestFetchLeavesDatedSavedEntriesAlone(t *testing.T) {
 
 // TestRepairedEntryIsRedownloadedAndNotReuploaded covers the recovery
 // from a saved file lost with its disk: after Requeue, --retry-failed
-// downloads it into the current save root and uploads it again, and
-// Immich (which dedupes by checksum) answers duplicate, so no second
-// asset is created and the stored receipt id stays.
+// downloads it into the current save root and never uploads it: the
+// re-download carries a new EXIF stamp, so Immich would take it as a new
+// asset. The fake answers "created" with a fresh id to any request, so a
+// stray upload shows as a request and a changed id.
 func TestRepairedEntryIsRedownloadedAndNotReuploaded(t *testing.T) {
 	feed := newDatedFeed(t, 3, nil, false)
 	e := newRetryEnv(t, feed)
 	var posts atomic.Int32
 	im := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		posts.Add(1)
-		_, _ = w.Write([]byte(`{"id":"asset-orig","status":"duplicate"}`))
+		_, _ = w.Write([]byte(`{"id":"asset-second","status":"created"}`))
 	}))
 	t.Cleanup(im.Close)
 	e.deps.Immich = sink.NewImmich(immich.New(im.URL, "k"))
@@ -712,7 +713,7 @@ func TestRepairedEntryIsRedownloadedAndNotReuploaded(t *testing.T) {
 	at := postTime(1)
 	_ = e.st.Discover(ctx, "img-1", state.Asset{Source: "feed-image", FeedItemID: "post-1", FeedItemAt: at})
 	_ = e.st.MarkSaved(ctx, "img-1", "/home/laptop/saved/img-1.jpg", at)
-	_ = e.st.MarkUploaded(ctx, "img-1", "asset-orig", "created", "sha", at)
+	_ = e.st.MarkUploaded(ctx, "img-1", "asset-orig", "created", "sha-orig", at)
 	if n := e.st.Requeue([]string{"img-1"}, "saved file missing"); n != 1 {
 		t.Fatalf("requeued %d", n)
 	}
@@ -724,12 +725,12 @@ func TestRepairedEntryIsRedownloadedAndNotReuploaded(t *testing.T) {
 	if res.Retry == nil || res.Retry.Failed != 1 || res.Retry.Fixed != 1 {
 		t.Fatalf("retry = %+v, want one fixed", res.Retry)
 	}
-	if posts.Load() != 1 || res.UploadDuplicates != 1 || res.Uploaded != 0 {
-		t.Errorf("uploads: requests=%d duplicates=%d created=%d, want a single duplicate", posts.Load(), res.UploadDuplicates, res.Uploaded)
+	if posts.Load() != 0 || res.UploadDuplicates != 0 || res.Uploaded != 0 || res.Errors != 0 {
+		t.Errorf("uploads: requests=%d duplicates=%d created=%d errors=%d, want none", posts.Load(), res.UploadDuplicates, res.Uploaded, res.Errors)
 	}
 	a, _ := e.st.Get(ctx, "img-1")
-	if a.ImmichAssetID != "asset-orig" {
-		t.Errorf("ImmichAssetID = %q, want the original kept", a.ImmichAssetID)
+	if a.ImmichAssetID != "asset-orig" || a.UploadSHA1 != "sha-orig" {
+		t.Errorf("receipt = %q/%q, want the original kept", a.ImmichAssetID, a.UploadSHA1)
 	}
 	if !sink.Within(e.dir, a.SavedPath) {
 		t.Fatalf("SavedPath %q is not under the save root %q", a.SavedPath, e.dir)
@@ -739,5 +740,25 @@ func TestRepairedEntryIsRedownloadedAndNotReuploaded(t *testing.T) {
 	}
 	if a.LastError != "" || a.SavedAt.IsZero() {
 		t.Errorf("entry not resolved: %+v", a)
+	}
+}
+
+// TestRequeueClearsGoneAt: a gone entry that is requeued is a plain
+// failure again, so it lists under Failed and not Gone.
+func TestRequeueClearsGoneAt(t *testing.T) {
+	e := newRetryEnv(t, newDatedFeed(t, 1, nil, false))
+	ctx := context.Background()
+	at := postTime(1)
+	_ = e.st.Discover(ctx, "img-1", state.Asset{Source: "feed-image", FeedItemID: "post-1", FeedItemAt: at})
+	_ = e.st.MarkSaved(ctx, "img-1", "/gone/img-1.jpg", at)
+	_ = e.st.MarkGone(ctx, "img-1", at)
+	if n := e.st.Requeue([]string{"img-1"}, "saved file missing"); n != 1 {
+		t.Fatalf("requeued %d", n)
+	}
+	if len(e.st.Gone()) != 0 {
+		t.Errorf("Gone = %+v, want empty", e.st.Gone())
+	}
+	if f := e.st.Failed(); len(f) != 1 || f[0].ID != "img-1" {
+		t.Errorf("Failed = %+v, want img-1", f)
 	}
 }

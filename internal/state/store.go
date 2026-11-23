@@ -282,15 +282,30 @@ func (s *Store) MarkExifFixed(ctx context.Context, id string, at time.Time, errM
 	})
 }
 
+// ErrImmichIDConflict is returned by MarkUploaded when the entry
+// already holds a different Immich asset id. The stored id is kept.
+var ErrImmichIDConflict = errors.New("state: entry already has a different Immich asset id")
+
 // MarkUploaded sets the Immich receipt fields and the SHA-1 of the
-// bytes sent, in one update.
+// bytes sent, in one update. It never replaces a non-empty
+// ImmichAssetID with a different one: that would orphan the first
+// Immich asset. Such a call changes nothing and returns
+// ErrImmichIDConflict.
 func (s *Store) MarkUploaded(ctx context.Context, id, immichID, status, uploadSHA1 string, at time.Time) error {
-	return s.update(id, func(a *Asset) {
-		a.UploadedAt = at.UTC()
-		a.ImmichAssetID = immichID
-		a.ImmichStatus = status
-		a.UploadSHA1 = uploadSHA1
-	})
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.data[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if a.ImmichAssetID != "" && a.ImmichAssetID != immichID {
+		return fmt.Errorf("%w: %s has %s, got %s", ErrImmichIDConflict, id, a.ImmichAssetID, immichID)
+	}
+	a.UploadedAt = at.UTC()
+	a.ImmichAssetID = immichID
+	a.ImmichStatus = status
+	a.UploadSHA1 = uploadSHA1
+	return s.changedLocked()
 }
 
 // MarkPosted records the post date an upload is to be filed under.
