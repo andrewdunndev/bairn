@@ -45,6 +45,7 @@ subcommands:
   status   print totals for the whole state file (--missing: ids of saved entries without a file)
   version  print the bairn version
   backfill fill state fields from the saved files, offline (backfill upload-sha1)
+  repair   re-queue entries whose saved file is gone, offline (repair missing)
   drift    check the vendor surface for schema drift
   smoke    live contract probe of a sink on a smoke account
 
@@ -84,6 +85,8 @@ func main() {
 		os.Exit(runStatus(ctx, cfg, logger, os.Args[2:]))
 	case "backfill":
 		os.Exit(runBackfill(ctx, cfg, logger, os.Args[2:]))
+	case "repair":
+		os.Exit(runRepair(ctx, cfg, logger, os.Args[2:]))
 	case "drift":
 		os.Exit(runDrift(ctx, cfg, logger, os.Args[2:]))
 	case "smoke":

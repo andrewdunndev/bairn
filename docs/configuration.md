@@ -145,6 +145,7 @@ Other commands:
 | | `--user`, `--password` | Immich login for the full smoke (defaults `IMMICH_BAIRN_USER`, `IMMICH_BAIRN_PASSWORD`) |
 | | `--api-key` | Immich API key (default `IMMICH_API_KEY`); ignored when user and password are set |
 | `bairn backfill upload-sha1` | `--dry-run` | count without writing the state file |
+| `bairn repair missing` | `--dry-run` | count without writing the state file |
 | `bairn status` | `--missing` | print the ids (state keys only) of saved entries whose file is missing, one per line |
 
 Albums are off unless `--albums` or a pattern is set. Patterns take
@@ -241,6 +242,45 @@ a fetch. The summary is JSON:
 | `skippedModified` | left blank because the file changed after upload |
 | `missingFile` | no saved path, or the file is gone |
 | `errors` | stat, hash or state-write failures; any makes the exit code 1 |
+
+### Recovering saved files that are gone
+
+When saved files are lost (a disk replaced, state moved to a server
+without its files), the entries still say saved, so a fetch skips them.
+The recovery is three steps: `bairn status --missing` lists them,
+`bairn repair missing [--dry-run]` re-queues them, and
+`bairn fetch --retry-failed` downloads them again into the current save
+root. Run `--dry-run` first, and check that the save volume is mounted:
+an unmounted root makes every file look absent.
+
+`repair missing` is offline and takes the state lock like the backfill.
+It marks only files known to be absent: for every entry with `savedAt`
+set whose file is not there (the `status --missing` definition) it
+clears `savedAt` and `savedPath` and sets `lastError` to `saved file
+missing`, all in one state write. It keeps `immichAssetId`,
+`uploadSha1`, `feedItemAt` and every other field. A file whose stat
+fails for any other reason is reported, counted in `errors`, makes the
+exit code 1 and is left alone; `status --missing` still lists it.
+The command refuses, exit 1 and nothing written, when the configured
+save directory is absent or not a directory, or when every saved file is
+missing and more than three entries are considered (the signature of a
+gone mount).
+
+An entry that is already in Immich is not uploaded again. The
+re-download carries a fresh EXIF `Software` stamp, so its bytes differ
+from the first upload and Immich would create a second asset; the retry
+records the file as saved and leaves `immichAssetId` and `uploadSha1`
+as they were. A requeued entry keeps `uploadedAt`, so `status` counts it
+under uploaded until the retry saves it. The summary is JSON:
+
+| Field | Meaning |
+|---|---|
+| `considered` | entries with `savedAt` set |
+| `marked` | entries re-queued (with `--dry-run`, that would be) |
+| `present` | entries whose file exists |
+| `errors` | stat or state-write failures; any makes the exit code 1 |
+
+Usage errors exit 2.
 
 ### Retrying failed items
 

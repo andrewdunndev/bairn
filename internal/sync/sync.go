@@ -715,6 +715,19 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 		res.Saved++
 	}
 
+	// A requeued entry (repair missing) already has its Immich asset. The
+	// re-download carries a new EXIF stamp, so its bytes differ and Immich
+	// would create a second asset: record the file as saved and stop.
+	if prev, err := deps.State.Get(ctx, id); err == nil && !prev.UploadedAt.IsZero() && prev.ImmichAssetID != "" {
+		if _, err := saved.Record(ctx, deps.State); err != nil {
+			res.Errors++
+			logger.Error("record (re-saved)", "id", id, "err", err)
+			return bFailed
+		}
+		logger.Info("re-saved; already in Immich, not re-uploaded", "id", id, "path", saved.FinalPath(), "immich_id", prev.ImmichAssetID)
+		return bSavedNew
+	}
+
 	if deps.Immich == nil {
 		if _, err := saved.Record(ctx, deps.State); err != nil {
 			res.Errors++
