@@ -334,13 +334,24 @@ func householdSets(ctx context.Context, fc *famly.Client, logger *slog.Logger) (
 	return logins, children, nil
 }
 
+// statusStore is the slice of the state store runStatus uses.
+type statusStore interface {
+	io.Closer
+	Stats(ctx context.Context) (state.Summary, error)
+}
+
+// openStatusState opens the store for status; tests replace it.
+var openStatusState = func(ctx context.Context, path string) (statusStore, error) {
+	return state.Open(ctx, path)
+}
+
 // runStatus implements the status subcommand.
 func runStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) (code int) {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	st, err := state.Open(ctx, cfg.StatePath)
+	st, err := openStatusState(ctx, cfg.StatePath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "state:", err)
 		return 1

@@ -124,6 +124,17 @@ type Deps struct {
 	tagOwners map[string][]string
 	tagMarked func(ctx context.Context, tagged []string, refused map[string]string, logger *slog.Logger)
 	marked    func(ctx context.Context, filed []string, refused map[string]string, logger *slog.Logger)
+
+	// saved overrides State for the saved-state check; tests inject a
+	// failing one. Nil = State.
+	saved savedChecker
+}
+
+func (d Deps) savedState() savedChecker {
+	if d.saved != nil {
+		return d.saved
+	}
+	return d.State
 }
 
 func defaultDownloadRetry() retry.Policy { return retry.DownloadPolicy() }
@@ -635,7 +646,7 @@ func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discove
 	id := disc.FamlyImageID()
 
 	// Skip if already saved.
-	already, ok := checkSaved(ctx, deps.State, disc, opts.DryRun, res, logger)
+	already, ok := checkSaved(ctx, deps.savedState(), disc, opts.DryRun, res, logger)
 	if !ok {
 		return bFailed
 	}

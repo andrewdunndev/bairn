@@ -5,14 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"gitlab.com/dunn.dev/bairn/api/famly"
 	"gitlab.com/dunn.dev/bairn/internal/config"
+	"gitlab.com/dunn.dev/bairn/internal/state"
 	"gitlab.com/dunn.dev/bairn/internal/sync"
 )
 
@@ -105,5 +109,81 @@ func TestHouseholdSetsFailsOnRelationsError(t *testing.T) {
 		} else if err == nil {
 			t.Errorf("relations failure: want error, got logins=%v", logins)
 		}
+	}
+}
+
+type fakeStatusStore struct{ closeErr error }
+
+func (f fakeStatusStore) Close() error { return f.closeErr }
+func (f fakeStatusStore) Stats(context.Context) (state.Summary, error) {
+	return state.Summary{}, nil
+}
+
+// TestRunStatusExitsOneOnFailedClose pins that status routes its close
+// through closeState.
+func TestRunStatusExitsOneOnFailedClose(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	old := openStatusState
+	t.Cleanup(func() { openStatusState = old })
+	for _, c := range []struct {
+		err  error
+		want int
+	}{{nil, 0}, {errors.New("flush"), 1}} {
+		openStatusState = func(context.Context, string) (statusStore, error) {
+			return fakeStatusStore{c.err}, nil
+		}
+		if got := runStatus(context.Background(), &config.Config{}, log, nil); got != c.want {
+			t.Errorf("close err %v: exit %d, want %d", c.err, got, c.want)
+		}
+	}
+}
+
+// TestRunFetchAbortsOnRelationsError: a /relations failure ends fetch
+// with exit 1 before any feed request, download or state write.
+func TestRunFetchAbortsOnRelationsError(t *testing.T) {
+	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	var other int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/me/me/me", func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{"loginId":"me","roles2":[{"targetId":"c1"}]}`)
+	})
+	mux.HandleFunc("/api/v2/relations", func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusBadRequest)
+	})
+	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		other++
+		http.NotFound(w, r)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	dir := t.TempDir()
+	saveDir := filepath.Join(dir, "save")
+	statePath := filepath.Join(dir, "state.json")
+	cfg := &config.Config{
+		FamlyAccessToken: "t", FamlyBaseURL: srv.URL,
+		SaveDir: saveDir, StatePath: statePath,
+	}
+	got := runFetch(context.Background(), cfg, log, []string{"--source=tagged", "--no-immich", "--tz=UTC"})
+	if got != 1 {
+		t.Errorf("exit %d, want 1", got)
+	}
+	if other != 0 {
+		t.Errorf("%d requests beyond /me and /relations", other)
+	}
+	if _, err := os.Stat(statePath); err == nil {
+		if b, _ := os.ReadFile(statePath); strings.Contains(string(b), "imageId") {
+			t.Errorf("state written: %s", b)
+		}
+	}
+	var files int
+	_ = filepath.WalkDir(saveDir, func(_ string, d fs.DirEntry, _ error) error {
+		if d != nil && !d.IsDir() {
+			files++
+		}
+		return nil
+	})
+	if files != 0 {
+		t.Errorf("%d files saved, want 0", files)
 	}
 }
