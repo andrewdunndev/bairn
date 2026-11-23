@@ -330,6 +330,44 @@ func (s *Store) Untagged() []UntaggedAsset {
 	return out
 }
 
+// UploadSHA1Candidate is an uploaded asset whose UploadSHA1 is blank.
+type UploadSHA1Candidate struct {
+	ID          string
+	SavedPath   string
+	UploadedAt  time.Time
+	ExifFixedAt time.Time
+}
+
+// WithoutUploadSHA1 lists the uploaded assets (UploadedAt set) whose
+// UploadSHA1 is blank, ordered by ID.
+func (s *Store) WithoutUploadSHA1() []UploadSHA1Candidate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []UploadSHA1Candidate
+	for id, a := range s.data {
+		if !a.UploadedAt.IsZero() && a.UploadSHA1 == "" {
+			out = append(out, UploadSHA1Candidate{ID: id, SavedPath: a.SavedPath, UploadedAt: a.UploadedAt, ExifFixedAt: a.ExifFixedAt})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// StampUploadSHA1 sets a blank UploadSHA1 and reports whether it did;
+// a value already there is never overwritten. Like Discover's stamp it
+// only marks the store dirty, so a bulk backfill rides one Flush.
+func (s *Store) StampUploadSHA1(id, sha1 string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.data[id]
+	if !ok || a.UploadSHA1 != "" || sha1 == "" {
+		return false
+	}
+	a.UploadSHA1 = sha1
+	s.dirty++
+	return true
+}
+
 // UnfiledAsset is an uploaded asset still owed its albums.
 type UnfiledAsset struct {
 	ID            string

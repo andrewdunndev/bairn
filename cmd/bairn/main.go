@@ -44,6 +44,7 @@ subcommands:
   fetch    pull new photos and videos to disk (and Immich, if configured)
   status   print totals for the whole state file
   version  print the bairn version
+  backfill fill state fields from the saved files, offline (backfill upload-sha1)
   drift    check the vendor surface for schema drift
   smoke    live contract probe of a sink on a smoke account
 
@@ -81,6 +82,8 @@ func main() {
 		os.Exit(runFetch(ctx, cfg, logger, os.Args[2:]))
 	case "status":
 		os.Exit(runStatus(ctx, cfg, logger, os.Args[2:]))
+	case "backfill":
+		os.Exit(runBackfill(ctx, cfg, logger, os.Args[2:]))
 	case "drift":
 		os.Exit(runDrift(ctx, cfg, logger, os.Args[2:]))
 	case "smoke":
