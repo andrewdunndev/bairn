@@ -24,6 +24,7 @@ const (
 	resTrashed  = "trashed"
 	resMismatch = "mismatch"
 	resAbsent   = "absent"
+	resUnverif  = "unverifiable"
 )
 
 // verifySummary is what `verify` prints.
@@ -100,13 +101,17 @@ func classify(c state.VerifyCandidate, r immich.CheckResult) string {
 // fails stamps nothing, adds its entries to Errors and moves on, except
 // that an auth failure, a cancelled context or a failed state write
 // stops the run, counting every entry not yet checked. An entry with no
-// uploadSha1 or no immichAssetId is unverifiable: no call, no stamp.
+// uploadSha1 or no immichAssetId is unverifiable: no call is made, and
+// it is stamped unverifiable so an earlier verification never survives.
 func verifyEntries(ctx context.Context, st *state.Store, ic bulkChecker, dryRun bool, at time.Time, logger *slog.Logger) verifySummary {
 	var sum verifySummary
 	var todo []state.VerifyCandidate
 	for _, c := range st.VerifyCandidates() {
 		if c.UploadSHA1 == "" || c.ImmichAssetID == "" {
 			sum.Unverifiable++
+			if !dryRun {
+				st.StampVerify(c.ID, resUnverif, at)
+			}
 			continue
 		}
 		todo = append(todo, c)
@@ -126,8 +131,9 @@ func verifyEntries(ctx context.Context, st *state.Store, ic bulkChecker, dryRun 
 	return sum
 }
 
-// verifyBatchOnce checks one batch. It stamps and counts only after the
-// whole reply is accepted, so a failed batch leaves no partial result.
+// verifyBatchOnce checks one batch. It stamps only after the whole reply
+// is accepted and counts only after the state write, so a failed batch
+// leaves no partial result and is counted once, under Errors.
 // abort reports an error that no later batch can survive.
 func verifyBatchOnce(ctx context.Context, st *state.Store, ic bulkChecker, batch []state.VerifyCandidate, dryRun bool, at time.Time, sum *verifySummary) (abort bool, err error) {
 	items := make([]immich.CheckItem, len(batch))
@@ -153,16 +159,17 @@ func verifyBatchOnce(ctx context.Context, st *state.Store, ic bulkChecker, batch
 		}
 		outcomes[i] = classify(c, r)
 	}
+	var tally verifySummary
 	for i, c := range batch {
 		switch outcomes[i] {
 		case resVerified:
-			sum.Verified++
+			tally.Verified++
 		case resTrashed:
-			sum.Trashed++
+			tally.Trashed++
 		case resMismatch:
-			sum.Mismatch++
+			tally.Mismatch++
 		case resAbsent:
-			sum.AbsentInImmich++
+			tally.AbsentInImmich++
 		}
 		if !dryRun {
 			st.StampVerify(c.ID, outcomes[i], at)
@@ -173,5 +180,9 @@ func verifyBatchOnce(ctx context.Context, st *state.Store, ic bulkChecker, batch
 			return true, fmt.Errorf("write state: %w", err)
 		}
 	}
+	sum.Verified += tally.Verified
+	sum.Trashed += tally.Trashed
+	sum.Mismatch += tally.Mismatch
+	sum.AbsentInImmich += tally.AbsentInImmich
 	return false, nil
 }

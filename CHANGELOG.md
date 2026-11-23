@@ -25,8 +25,8 @@ additions.
   holds each uploaded entry's `uploadSha1` under the entry's own
   `immichAssetId`, not trashed. It stamps `immichVerifiedAt`, or
   `verifyResult` (`trashed`, `mismatch`, `absent`) and clears an earlier
-  verification. Entries with no `uploadSha1` are `unverifiable` and not
-  touched; pruned entries are skipped. Immich unreachable, a 5xx or a
+  verification. Entries with no `uploadSha1` are `unverifiable`: no call is made
+  and an earlier verification is cleared; pruned entries are skipped. Immich unreachable, a 5xx or a
   malformed reply stamps nothing for that batch and exits 1. It deletes
   nothing.
 - `bairn status` reports `verified`, `verifyFailed` and `pruned`.

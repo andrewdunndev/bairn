@@ -274,7 +274,7 @@ state file is written after each batch.
 | same asset, trashed | `trashed` | `verifyResult=trashed`, `immichVerifiedAt` cleared |
 | the checksum maps to a different asset | `mismatch` | `verifyResult=mismatch`, `immichVerifiedAt` cleared |
 | the checksum is unknown to the key's owner | `absentInImmich` | `verifyResult=absent`, `immichVerifiedAt` cleared |
-| the entry has no `uploadSha1` (or no `immichAssetId`) | `unverifiable` | none; no call is made |
+| the entry has no `uploadSha1` (or no `immichAssetId`) | `unverifiable` | `verifyResult=unverifiable`, `immichVerifiedAt` cleared; no call is made |
 
 A later non-verified answer therefore clears an earlier verification.
 `mismatch` and `absent` cannot be told apart from "Immich holds other

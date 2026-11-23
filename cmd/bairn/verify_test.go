@@ -135,7 +135,7 @@ func TestVerifyMapsEveryOutcome(t *testing.T) {
 		"trashed":   {UploadSHA1: vsum(2), ImmichAssetID: "imm-trashed", ImmichVerifiedAt: old},
 		"mismatch":  {UploadSHA1: vsum(3), ImmichAssetID: "imm-mine", ImmichVerifiedAt: old},
 		"absent":    {UploadSHA1: vsum(4), ImmichAssetID: "imm-absent", ImmichVerifiedAt: old},
-		"blank":     {ImmichAssetID: "imm-blank"},
+		"blank":     {ImmichAssetID: "imm-blank", ImmichVerifiedAt: old},
 		"pruned":    {UploadSHA1: vsum(1), ImmichAssetID: "imm-ok", PrunedAt: old},
 		"unflagged": {UploadSHA1: vsum(1), ImmichAssetID: "imm-ok", VerifyResult: "trashed"},
 	})
@@ -150,7 +150,7 @@ func TestVerifyMapsEveryOutcome(t *testing.T) {
 	}{
 		"ok": {true, ""}, "unflagged": {true, ""},
 		"trashed": {false, "trashed"}, "mismatch": {false, "mismatch"}, "absent": {false, "absent"},
-		"blank": {false, ""}, "pruned": {false, ""},
+		"blank": {false, "unverifiable"}, "pruned": {false, ""},
 	} {
 		a := vGet(t, st, id)
 		if !a.ImmichVerifiedAt.IsZero() != w.verified || a.VerifyResult != w.result {
