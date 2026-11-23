@@ -153,7 +153,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 // read-only command never rewrites the file.
 func healStaleErrors(data map[string]*Asset) {
 	for _, a := range data {
-		if a.LastError != "" && !a.SavedAt.IsZero() && !a.UploadedAt.IsZero() && a.ImmichAssetID != "" {
+		if a.LastError != "" && !a.SavedAt.IsZero() && !a.UploadedAt.IsZero() {
 			a.LastError = ""
 		}
 	}

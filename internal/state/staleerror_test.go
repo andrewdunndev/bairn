@@ -96,3 +96,38 @@ func TestOpenClearsStaleErrorOnSavedUploadedEntries(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+// The heal is in memory only: opening and closing a store that holds a
+// stale error leaves the file byte-identical.
+func TestOpenHealDoesNotRewriteTheFile(t *testing.T) {
+	ctx := context.Background()
+	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	path := filepath.Join(t.TempDir(), "state.json")
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Discover(ctx, "a", staleAsset(at, at, staleDownloadErr)); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s, err = Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a, _ := s.Get(ctx, "a"); a.LastError != "" {
+		t.Fatalf("not healed in memory: %q", a.LastError)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatal("a read-only open rewrote the state file")
+	}
+}
