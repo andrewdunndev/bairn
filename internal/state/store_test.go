@@ -577,3 +577,42 @@ func TestStampUploadSHA1NeverOverwrites(t *testing.T) {
 		t.Errorf("UploadSHA1 = %q, want first", a.UploadSHA1)
 	}
 }
+
+func TestStampUploadSHA1DefersItsFlushToClose(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	ctx := context.Background()
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.flushEvery = 1
+	ids := []string{"a", "b", "c"}
+	for _, id := range ids {
+		must(t, s.Discover(ctx, id, Asset{Source: "feed_image"}))
+		must(t, s.MarkUploaded(ctx, id, "i-"+id, "created", "", time.Now()))
+	}
+	must(t, s.Flush())
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if !s.StampUploadSHA1(id, "sha-"+id) {
+			t.Fatalf("%s not stamped", id)
+		}
+	}
+	if got, _ := os.ReadFile(path); !bytes.Equal(got, want) {
+		t.Fatal("stamps rewrote the file before Close")
+	}
+	must(t, s.Close())
+	r, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = r.Close() })
+	for _, id := range ids {
+		if got, _ := r.Get(ctx, id); got.UploadSHA1 != "sha-"+id {
+			t.Fatalf("%s UploadSHA1 after reopen = %q", id, got.UploadSHA1)
+		}
+	}
+}
