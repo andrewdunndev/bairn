@@ -17,12 +17,15 @@ import (
 // notice" issue: technically valid output that an actual photo
 // viewer doesn't display correctly.
 //
-// Skipped when exiftool isn't on PATH so go test in a bare CI
-// container stays green; install with `brew install exiftool` (mac)
+// Skipped when exiftool isn't on PATH, unless BAIRN_REQUIRE_EXIFTOOL is
+// set (CI sets it), in which case it fails; install with `brew install exiftool` (mac)
 // or `apt install libimage-exiftool-perl` (debian).
 func TestRoundTripViaExifTool(t *testing.T) {
 	bin, err := exec.LookPath("exiftool")
 	if err != nil {
+		if os.Getenv("BAIRN_REQUIRE_EXIFTOOL") != "" {
+			t.Fatal("exiftool is required: the metadata round-trip test skips without it")
+		}
 		t.Skip("exiftool not on PATH; skipping metadata round-trip test")
 	}
 

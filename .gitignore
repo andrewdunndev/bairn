@@ -3,8 +3,6 @@
 /dist/
 # Go module and build caches the CI catalog places inside the checkout;
 # untracked files make Go stamp a release binary +dirty.
-/.gomodcache/
-/.gocache/
 *.test
 *.out
 coverage.txt

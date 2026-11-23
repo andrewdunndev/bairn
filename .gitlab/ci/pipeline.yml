@@ -30,13 +30,17 @@ audit:
 # default kept it off merge_request_event pipelines.
 test:
   stage: test
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.16.1@sha256:9afb9e31503434d060511b987ec6e704c5cd71e79ef5525421321c36f6866f80
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.17.0@sha256:f9d3d615cb09fd36791e04edcb6bc8b41060ad67d1fbd9c30b1863ae01de830e
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_PIPELINE_SOURCE == "push"'
     - if: '$CI_COMMIT_TAG'
+  variables:
+    BAIRN_REQUIRE_EXIFTOOL: "1"
   script:
+    - apt-get update && apt-get install -y --no-install-recommends libimage-exiftool-perl
     - go test -race ./...
+    - go test -run TestRoundTripViaExifTool -v ./internal/exif/
 
 
 # Tag-only: a release binary must carry a clean VCS stamp. Go stamps
@@ -47,7 +51,7 @@ test:
 # release and re-tag.
 stamp-check:
   stage: package
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.16.1@sha256:9afb9e31503434d060511b987ec6e704c5cd71e79ef5525421321c36f6866f80
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.17.0@sha256:f9d3d615cb09fd36791e04edcb6bc8b41060ad67d1fbd9c30b1863ae01de830e
   interruptible: false
   needs:
     - job: package
