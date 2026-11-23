@@ -24,6 +24,10 @@ make test       go test -race ./...
 make lint       golangci-lint run
 make build      bin/bairn for the host
 make build-linux bin/bairn-linux-amd64 for headless deploy
+make build-darwin bin/bairn-darwin-arm64 for an Apple Silicon laptop
+make build-all   both of the above
+make smoke-immich live round-trip against your Immich
+make pre-tag-check lint + test + smoke-immich (run before git tag)
 ```
 
 `make gen` reads `api/famly/schema.graphql`, the hand-curated SDL
@@ -56,6 +60,38 @@ contract are exercised; CI covers neither.
 The EXIF and GraphQL libraries are feature-complete upstream and
 flagged abandoned by Renovate; they are kept because the exiftool
 round-trip test pins their behaviour.
+
+## Pre-tag gate
+
+Before cutting a release tag, run `make pre-tag-check`. It runs
+golangci-lint, the unit suite, and a real-server round trip against
+your Immich: login, mint an ephemeral API key, upload a tiny JPEG
+through the production sink, assert created, delete the asset and the
+key. The round trip catches controller-layer wire-contract changes no
+static spec models. v0.4.3 shipped without it and broke uploads against
+Immich v2.7.5.
+
+`make smoke-immich` reads `IMMICH_BAIRN_HOST`, `IMMICH_BAIRN_USER` and
+`IMMICH_BAIRN_PASSWORD` (a quota-limited test user, separate from your
+archive account), or falls back to `IMMICH_BASE_URL` and
+`IMMICH_API_KEY` for ad-hoc runs. It is a local gate only: CI runners
+cannot reach a LAN Immich.
+
+On the login path the smoke also runs the album and tag legs. It mints
+a key with only `asset.upload`, `album.read`, `album.create`,
+`albumAsset.create`, `tag.create` and `tag.asset`, uploads a tiny asset
+and files it into uniquely named `bairn-smoke-*` month and year albums
+twice through the filer fetch uses, and asserts one album per name and
+the asset in each (with `SMOKE_SHARE_USER_EMAIL` set, that user as
+editor). It then tags the asset through the same tagger and asserts the
+tag was created once, the asset carries it, a rerun adds nothing, and a
+missing asset comes back as a refusal. The login session deletes the
+albums, tag, asset and key, even on failure.
+
+`make test` includes a metadata round-trip that reads back what bairn
+wrote with `exiftool -j`. It skips when `exiftool` is not on PATH, so a
+bare CI stays green, but `make pre-tag-check` fails without it. Install
+with `brew install exiftool` or `apt install libimage-exiftool-perl`.
 
 ## Code conventions
 
