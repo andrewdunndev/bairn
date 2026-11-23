@@ -95,13 +95,13 @@ func TestBackfillIgnoresPruned(t *testing.T) {
 	defer st.Close()
 	at := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
 	_ = st.Discover(context.Background(), "pruned", state.Asset{Source: "feed_image", SavedAt: at,
-		SavedPath: filepath.Join(dir, "pruned.jpg"), UploadSHA1: "up-pruned", UploadedAt: at, ImmichAssetID: "imm-pruned", PrunedAt: at})
+		SavedPath: filepath.Join(dir, "pruned.jpg"), UploadedAt: at, ImmichAssetID: "imm-pruned", PrunedAt: at})
 	got := backfillUploadSHA1(st, false, quiet)
 	want := backfillSummary{Considered: 4, Hashed: 1, SkippedModified: 2, MissingFile: 1}
 	if got != want {
 		t.Fatalf("summary = %+v, want %+v (pruned entry counted)", got, want)
 	}
-	if a, _ := st.Get(context.Background(), "pruned"); a.UploadSHA1 != "up-pruned" || a.PrunedAt.IsZero() {
+	if a, _ := st.Get(context.Background(), "pruned"); a.UploadSHA1 != "" || a.PrunedAt.IsZero() {
 		t.Errorf("pruned entry changed: %+v", a)
 	}
 }

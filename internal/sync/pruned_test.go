@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
@@ -98,7 +97,8 @@ func TestFetchNeverRedownloadsOrReuploadsPruned(t *testing.T) {
 }
 
 // A pruned entry that also carries a stale LastError (a repair run
-// before the guards, say) must not be revisited by --retry-failed.
+// before the guards, say) must not be revisited by --retry-failed. A pin:
+// Failed already requires a zero SavedAt, which a pruned entry keeps.
 func TestRetryFailedNeverRedownloadsPruned(t *testing.T) {
 	e, uploads := prunedEnv(t, 3)
 	seedPruned(t, e.st, 1, "saved file missing")
@@ -120,5 +120,3 @@ func TestRequeueRefusesPrunedThenRetryFailedLeavesIt(t *testing.T) {
 	e.run(t, false)
 	assertUntouched(t, e, uploads, "img-1", want)
 }
-
-var _ = time.Second

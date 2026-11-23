@@ -383,14 +383,15 @@ type UploadSHA1Candidate struct {
 	ExifFixedAt time.Time
 }
 
-// WithoutUploadSHA1 lists the uploaded assets (UploadedAt set) whose
-// UploadSHA1 is blank, ordered by ID.
+// WithoutUploadSHA1 lists the uploaded, unpruned assets (UploadedAt set,
+// PrunedAt zero) whose UploadSHA1 is blank, ordered by ID. A pruned entry
+// has no file left to hash.
 func (s *Store) WithoutUploadSHA1() []UploadSHA1Candidate {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []UploadSHA1Candidate
 	for id, a := range s.data {
-		if !a.UploadedAt.IsZero() && a.UploadSHA1 == "" {
+		if !a.UploadedAt.IsZero() && a.PrunedAt.IsZero() && a.UploadSHA1 == "" {
 			out = append(out, UploadSHA1Candidate{ID: id, SavedPath: a.SavedPath, UploadedAt: a.UploadedAt, ExifFixedAt: a.ExifFixedAt})
 		}
 	}
