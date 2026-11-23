@@ -414,6 +414,52 @@ func (s *Store) StampUploadSHA1(id, sha1 string) bool {
 	return true
 }
 
+// VerifyCandidate is an uploaded, unpruned asset a verify run covers.
+// UploadSHA1 or ImmichAssetID may be blank; such an entry cannot be
+// checked.
+type VerifyCandidate struct {
+	ID            string
+	UploadSHA1    string
+	ImmichAssetID string
+}
+
+// VerifyCandidates lists the entries with UploadedAt set and PrunedAt
+// zero, ordered by ID.
+func (s *Store) VerifyCandidates() []VerifyCandidate {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []VerifyCandidate
+	for id, a := range s.data {
+		if !a.UploadedAt.IsZero() && a.PrunedAt.IsZero() {
+			out = append(out, VerifyCandidate{ID: id, UploadSHA1: a.UploadSHA1, ImmichAssetID: a.ImmichAssetID})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// StampVerify records a verify outcome. An empty result is "verified":
+// ImmichVerifiedAt is set to at and VerifyResult cleared. Any other
+// result (trashed, mismatch, absent) is stored and ImmichVerifiedAt
+// cleared, so a later failure demotes an earlier verification. A pruned
+// or unknown entry is left alone. Like StampUploadSHA1 it only marks the
+// store dirty; the caller flushes.
+func (s *Store) StampVerify(id, result string, at time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.data[id]
+	if !ok || !a.PrunedAt.IsZero() {
+		return false
+	}
+	if result == "" {
+		a.ImmichVerifiedAt, a.VerifyResult = at, ""
+	} else {
+		a.ImmichVerifiedAt, a.VerifyResult = time.Time{}, result
+	}
+	s.dirty++
+	return true
+}
+
 // UnfiledAsset is an uploaded asset still owed its albums.
 type UnfiledAsset struct {
 	ID            string
