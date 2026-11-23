@@ -58,6 +58,13 @@ var (
 // the resolved absolute path and the save root.
 var removeFile = unlinkContained
 
+// stillPresent reports whether path exists now, without following a
+// final symlink.
+func stillPresent(path string) bool {
+	_, err := os.Lstat(path)
+	return err == nil
+}
+
 // unlinkContained deletes p with no symlink followed anywhere below root:
 // each directory is opened O_NOFOLLOW relative to the one before and the
 // file is unlinked relative to the last, so a directory swapped for a
@@ -512,7 +519,9 @@ func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root str
 			}
 			if !gate {
 				sum.ResumeKept++
-				if l.fi != nil && !dry {
+				// Un-prune only while the media is still on disk: it may
+				// have gone during the re-verify round trip.
+				if l.fi != nil && !dry && stillPresent(l.path) {
 					st.ClearPruned(e.ID)
 					if !verified {
 						st.StampVerify(e.ID, outcomes[j], at)

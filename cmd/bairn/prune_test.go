@@ -851,6 +851,14 @@ func TestPruneResumeMediaAbsentVerifiedRemovesSidecar(t *testing.T) {
 		t.Fatal(err)
 	}
 	e.seed()
+	old := removeFile
+	t.Cleanup(func() { removeFile = old })
+	removeFile = func(root, q string) error {
+		if q == p {
+			t.Error("removeFile called on the absent media path")
+		}
+		return old(root, q)
+	}
 	f := e.fake()
 	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
 	if code != 0 || sum.Resumed != 1 || exists(p+".xmp") || e.get("t").PrunedAt.IsZero() {
@@ -935,5 +943,56 @@ func TestPruneFlushFailureKeepsEveryFile(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// A dry run over leftovers whose gate fails (trashed, hash mismatch)
+// changes nothing on disk or in state.
+func TestPruneDryRunResumeGateFailChangesNothing(t *testing.T) {
+	e := newPEnv(t)
+	for _, id := range []string{"a", "b", "c"} {
+		e.add(id, "bytes-"+id, "bytes-"+id)
+	}
+	e.add("tr", "bytes-tr", "bytes-tr")
+	e.table[shaOf("bytes-tr")] = vKnown{id: "imm-tr", trashed: true}
+	e.add("mm", "NEW-BYTES", "bytes-mm")
+	for _, id := range []string{"tr", "mm"} {
+		a := e.ents[id]
+		a.PrunedAt = pruneAt
+		e.ents[id] = a
+	}
+	e.seed()
+	f := e.fake()
+	before := snapshot(t, e.root, filepath.Dir(e.state))
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL))
+	if code != 0 || sum.ResumeKept != 2 {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+	if after := snapshot(t, e.root, filepath.Dir(e.state)); !mapsEqual(before, after) {
+		t.Fatalf("dry run changed the tree:\n%v\n%v", keys(before), keys(after))
+	}
+}
+
+// Media present at scan time but gone by the time Immich answers: the
+// tombstone stays, so repair never re-queues it.
+func TestPruneResumeMediaGoneDuringRecheckKeepsTombstone(t *testing.T) {
+	e := newPEnv(t)
+	p := e.add("t", "bytes-t", "bytes-t")
+	e.table[shaOf("bytes-t")] = vKnown{id: "imm-t", trashed: true}
+	a := e.ents["t"]
+	a.PrunedAt = pruneAt
+	e.ents["t"] = a
+	e.seed()
+	f := e.fake()
+	inner := f.srv.Config.Handler
+	f.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = os.Remove(p)
+		inner.ServeHTTP(w, r)
+	})
+	if _, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply"); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if g := e.get("t"); g.PrunedAt.IsZero() {
+		t.Errorf("tombstone cleared with the media gone: %+v", g)
 	}
 }
