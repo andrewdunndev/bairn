@@ -174,7 +174,7 @@ include:
 # only, the same content as the committed baseline.
 drift-gate:
   stage: drift-gate
-  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.16.1@sha256:9afb9e31503434d060511b987ec6e704c5cd71e79ef5525421321c36f6866f80
+  image: registry.gitlab.com/dunn.dev/pipeline/ci-go:4.17.0@sha256:f9d3d615cb09fd36791e04edcb6bc8b41060ad67d1fbd9c30b1863ae01de830e
   interruptible: false
   script:
     - go build -o bin/bairn ./cmd/bairn
