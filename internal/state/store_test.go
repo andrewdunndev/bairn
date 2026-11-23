@@ -557,3 +557,23 @@ func TestDiscoverKeepsExistingFeedItemAt(t *testing.T) {
 	}
 	must(t, s.Close())
 }
+
+func TestStampUploadSHA1NeverOverwrites(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	_ = s.Discover(ctx, "a", Asset{Source: "feed_image"})
+	_ = s.MarkUploaded(ctx, "a", "i", "created", "", time.Now())
+	if !s.StampUploadSHA1("a", "first") {
+		t.Fatal("blank value not stamped")
+	}
+	if s.StampUploadSHA1("a", "second") {
+		t.Error("stamped over a set value")
+	}
+	if a, _ := s.Get(ctx, "a"); a.UploadSHA1 != "first" {
+		t.Errorf("UploadSHA1 = %q, want first", a.UploadSHA1)
+	}
+}
