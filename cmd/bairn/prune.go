@@ -41,9 +41,11 @@ type pruneSummary struct {
 	// left behind and this run removed; WouldResume is the dry-run count.
 	Resumed     int `json:"resumed"`
 	WouldResume int `json:"wouldResume"`
-	// ResumeKept counts tombstoned entries whose leftover file stayed:
-	// Immich no longer holds the asset (the entry is unpruned again) or
-	// the file is not the uploaded bytes.
+	// ResumeKept counts tombstoned entries the resume sweep did not
+	// finish: with the media present (Immich no longer holds the asset,
+	// or the file is not the uploaded bytes) the entry is unpruned and
+	// the file stays; with the media absent the tombstone and sidecar
+	// stay. Each is counted here and not again in the main pass.
 	ResumeKept int `json:"resumeKept"`
 }
 
@@ -207,12 +209,16 @@ func lstatContained(root, p string) (string, fs.FileInfo, error) {
 // every entry not yet decided as an error.
 func pruneEntries(ctx context.Context, st *state.Store, ic bulkChecker, root string, dry bool, at time.Time, logger *slog.Logger) pruneSummary {
 	sum := pruneSummary{DryRun: dry}
-	if abort := resumePruned(ctx, st, ic, root, dry, at, &sum, logger); abort {
+	skip, abort := resumePruned(ctx, st, ic, root, dry, at, &sum, logger)
+	if abort {
 		return sum
 	}
 
 	var todo []state.PruneEntry
 	for _, e := range st.PruneCandidates() {
+		if skip[e.ID] { // un-pruned by the resume sweep: counted there
+			continue
+		}
 		sum.Considered++
 		// Only an entry the last verify confirmed, and that holds both
 		// halves of the question, goes to the re-verify.
@@ -412,44 +418,57 @@ func sidecar(root, media string, e state.PruneEntry) (string, fs.FileInfo, error
 }
 
 // removeEntryFiles deletes the media (a resolved path from
-// lstatContained), then its .xmp sidecar, each unlinked without following
-// a symlink. A missing file is fine. It returns the bytes freed and the
-// first error.
+// lstatContained), then its gated .xmp sidecar, each unlinked without
+// following a symlink. A missing file is fine. It returns the bytes freed
+// and the first error.
 func removeEntryFiles(root, path string, mediaSize int64, e state.PruneEntry) (int64, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return 0, err
 	}
-	var freed int64
 	if err := removeFile(root, path); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return freed, err
+		return 0, err
 	}
-	freed += mediaSize
-	xp, xfi, err := sidecar(root, path, e)
-	if err != nil || xfi == nil {
-		return freed, err
-	}
-	if err := removeFile(root, xp); err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return freed, err
-	}
-	return freed + xfi.Size(), nil
+	freed, err := removeSidecar(root, path, e)
+	return mediaSize + freed, err
 }
 
-// resumePruned finishes a crashed run: an entry with PrunedAt set whose
-// media or sidecar is still on disk is deleted only if it passes the
-// same gate as a fresh prune: the same-run bulk check still finds the
-// asset (same id, not trashed) and the media is still the bytes bairn
-// uploaded, under the usual containment checks. Otherwise the file stays
-// and counts under ResumeKept; when Immich no longer holds the asset,
-// PrunedAt is cleared too, so the entry is an ordinary saved one again
-// (its file is on disk, so it is not lost). abort reports a failed state
-// write or an unusable Immich; no leftover is touched then.
-func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root string, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (abort bool) {
+// removeSidecar deletes only the gated sidecar of the media at path; it
+// never touches the media path itself.
+func removeSidecar(root, path string, e state.PruneEntry) (int64, error) {
+	root, err := filepath.Abs(root)
+	if err != nil {
+		return 0, err
+	}
+	xp, xfi, err := sidecar(root, path, e)
+	if err != nil || xfi == nil {
+		return 0, err
+	}
+	if err := removeFile(root, xp); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return 0, err
+	}
+	return xfi.Size(), nil
+}
+
+// resumePruned finishes a crashed run, under one invariant: an entry is
+// un-pruned only when its media is on disk, and media is unlinked only
+// after the full gate (contained, regular, not a symlink, hash equal to
+// the uploaded bytes, the same-run bulk check still finding the asset).
+// Media present and the gate passes: media, then the gated sidecar, go.
+// Media present and the gate fails: the file stays and PrunedAt is
+// cleared (the verify result is stamped when Immich answered), counted
+// under ResumeKept. Media absent: the tombstone always stays; a verified
+// run removes the gated sidecar, otherwise the sidecar stays, counted
+// under ResumeKept. skip holds the entries un-pruned here, so the main
+// pass does not count them again. abort reports a failed state write or
+// an unusable Immich.
+func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root string, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (skip map[string]bool, abort bool) {
 	type left struct {
 		e    state.PruneEntry
 		path string
-		fi   fs.FileInfo // nil: only a sidecar remains
+		fi   fs.FileInfo // nil: media absent, only a sidecar remains
 	}
+	skip = map[string]bool{}
 	var lefts []left
 	for _, e := range st.PrunedEntries() {
 		if e.SavedPath == "" {
@@ -481,36 +500,47 @@ func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root str
 		if err != nil {
 			logger.Error("prune: resume re-verify failed; leftovers kept", "err", err)
 			sum.Errors += len(lefts) - i
-			return errors.Is(err, immich.ErrUnauthorized) || ctx.Err() != nil
+			return skip, errors.Is(err, immich.ErrUnauthorized) || ctx.Err() != nil
 		}
 		for j, l := range batch {
 			e := l.e
-			if outcomes[j] != resVerified {
+			verified := outcomes[j] == resVerified
+			gate := verified
+			if gate && l.fi != nil {
+				got, herr := hashFile(l.path)
+				gate = herr == nil && got == e.UploadSHA1
+			}
+			if !gate {
 				sum.ResumeKept++
-				if !dry {
+				if l.fi != nil && !dry {
 					st.ClearPruned(e.ID)
-					st.StampVerify(e.ID, outcomes[j], at)
+					if !verified {
+						st.StampVerify(e.ID, outcomes[j], at)
+					}
+					skip[e.ID] = true
 					cleared = true
 				}
-				continue
-			}
-			if l.fi != nil {
-				got, err := hashFile(l.path)
-				if err != nil || got != e.UploadSHA1 {
-					logger.Error("prune: pruned entry's file is not the uploaded bytes; kept", "id", e.ID, "err", err)
-					sum.Errors++
-					continue
-				}
-			}
-			if dry {
-				sum.WouldResume++
 				continue
 			}
 			var size int64
 			if l.fi != nil {
 				size = l.fi.Size()
 			}
-			freed, rerr := removeEntryFiles(root, l.path, size, e)
+			if dry {
+				if _, xfi, _ := sidecar(root, l.path, e); xfi != nil {
+					size += xfi.Size()
+				}
+				sum.WouldResume++
+				sum.WouldFreeBytes += size
+				continue
+			}
+			var freed int64
+			var rerr error
+			if l.fi != nil {
+				freed, rerr = removeEntryFiles(root, l.path, size, e)
+			} else {
+				freed, rerr = removeSidecar(root, l.path, e)
+			}
 			if rerr != nil {
 				logger.Error("prune: unlink", "id", e.ID, "err", rerr)
 				sum.Errors++
@@ -524,8 +554,8 @@ func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root str
 		if err := st.Flush(); err != nil {
 			logger.Error("prune: write state", "err", err)
 			sum.Errors++
-			return true
+			return skip, true
 		}
 	}
-	return false
+	return skip, false
 }

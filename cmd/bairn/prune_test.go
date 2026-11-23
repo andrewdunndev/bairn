@@ -417,23 +417,6 @@ func TestPruneCrashAfterStampIsFinishedByRerun(t *testing.T) {
 	}
 }
 
-func TestPruneResumeKeepsAFileThatIsNotTheUploadedBytes(t *testing.T) {
-	e := newPEnv(t)
-	for _, id := range []string{"a", "b", "c"} {
-		e.add(id, "bytes-"+id, "bytes-"+id)
-	}
-	p := e.add("t", "other", "bytes-t")
-	a := e.ents["t"]
-	a.PrunedAt = pruneAt
-	e.ents["t"] = a
-	e.seed()
-	f := e.fake()
-	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
-	if code != 1 || sum.Errors != 1 || !exists(p) {
-		t.Errorf("exit %d %+v exists %v", code, sum, exists(p))
-	}
-}
-
 func TestPruneDeletesNothingWhenImmichFails(t *testing.T) {
 	for name, h := range map[string]http.HandlerFunc{
 		"401": func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(401) },
@@ -812,5 +795,145 @@ func TestPruneCrashBetweenFlushAndUnlinkIsResumed(t *testing.T) {
 		if exists(e.ents[id].SavedPath) {
 			t.Errorf("%s: left", id)
 		}
+	}
+}
+
+// R3: media gone, sidecar left, asset trashed. The tombstone and the
+// sidecar stay, and repair finds nothing to re-download.
+func TestPruneResumeMediaAbsentKeepsTombstone(t *testing.T) {
+	e := newPEnv(t)
+	p := e.add("t", "bytes-t", "bytes-t")
+	e.table[shaOf("bytes-t")] = vKnown{id: "imm-t", trashed: true}
+	a := e.ents["t"]
+	a.PrunedAt = pruneAt
+	e.ents["t"] = a
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	e.seed()
+	old := removeFile
+	t.Cleanup(func() { removeFile = old })
+	removeFile = func(root, q string) error {
+		if q == p {
+			t.Error("removeFile called on the absent media path")
+		}
+		return old(root, q)
+	}
+	f := e.fake()
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if code != 0 || sum.ResumeKept != 1 || sum.Resumed != 0 {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+	if !exists(p + ".xmp") {
+		t.Error("sidecar deleted")
+	}
+	if g := e.get("t"); g.PrunedAt.IsZero() {
+		t.Errorf("tombstone cleared with the media absent: %+v", g)
+	}
+	st, err := state.Open(context.Background(), e.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	if r, err := repairMissing(st, e.root, true, quiet); err != nil || r.Marked != 0 {
+		t.Errorf("repair dry run: %+v %v", r, err)
+	}
+}
+
+// R3 verified: media gone, sidecar left, asset held: the sidecar goes.
+func TestPruneResumeMediaAbsentVerifiedRemovesSidecar(t *testing.T) {
+	e := newPEnv(t)
+	p := e.add("t", "bytes-t", "bytes-t")
+	a := e.ents["t"]
+	a.PrunedAt = pruneAt
+	e.ents["t"] = a
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	e.seed()
+	f := e.fake()
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if code != 0 || sum.Resumed != 1 || exists(p+".xmp") || e.get("t").PrunedAt.IsZero() {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+}
+
+// R2: media present, gate fails on the hash: kept, un-pruned, not an
+// error, and counted once (not again by the main pass).
+func TestPruneResumeHashMismatchUnprunesOnceCounted(t *testing.T) {
+	e := newPEnv(t)
+	p := e.add("t", "NEW-BYTES", "bytes-t")
+	a := e.ents["t"]
+	a.PrunedAt = pruneAt
+	e.ents["t"] = a
+	e.seed()
+	f := e.fake()
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if code != 0 || sum.ResumeKept != 1 || sum.Errors != 0 || sum.Considered != 0 || sum.NotVerified != 0 || sum.LocalDiffers != 0 {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+	if !exists(p) || !exists(p+".xmp") || !e.get("t").PrunedAt.IsZero() {
+		t.Error("file lost or entry still pruned")
+	}
+}
+
+// R5: a dry-run resume reports the bytes it would free.
+func TestPruneDryRunResumeWouldFreeBytes(t *testing.T) {
+	e := newPEnv(t)
+	e.add("t", "bytes-t", "bytes-t")
+	a := e.ents["t"]
+	a.PrunedAt = pruneAt
+	e.ents["t"] = a
+	e.seed()
+	f := e.fake()
+	sum, _ := runPruneCapture(t, e.cfg(f.srv.URL))
+	if want := int64(len("bytes-t") + len("xmp-t")); sum.WouldResume != 1 || sum.WouldFreeBytes != want {
+		t.Fatalf("%+v want %d", sum, want)
+	}
+}
+
+// R4: a failing state write (read-only state dir after Open) stops the
+// run with every file kept, Errors counted and exit 1.
+func flushFailEnv(t *testing.T, setup func(e *pEnv)) (*pEnv, int, pruneSummary) {
+	e := newPEnv(t)
+	setup(e)
+	e.seed()
+	f := e.fake()
+	dir := filepath.Dir(e.state)
+	if err := os.Chmod(dir, 0o500); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	return e, code, sum
+}
+
+func TestPruneFlushFailureKeepsEveryFile(t *testing.T) {
+	cases := map[string]func(e *pEnv){
+		"post-stamp": func(e *pEnv) { e.add("a", "bytes-a", "bytes-a") },
+		"demote": func(e *pEnv) {
+			e.add("a", "bytes-a", "bytes-a")
+			e.table[shaOf("bytes-a")] = vKnown{id: "imm-a", trashed: true}
+		},
+		"resume-clear": func(e *pEnv) {
+			e.add("a", "bytes-a", "bytes-a")
+			e.table[shaOf("bytes-a")] = vKnown{id: "imm-a", trashed: true}
+			x := e.ents["a"]
+			x.PrunedAt = pruneAt
+			e.ents["a"] = x
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			e, code, sum := flushFailEnv(t, setup)
+			if code != 1 || sum.Errors == 0 {
+				t.Errorf("exit %d %+v", code, sum)
+			}
+			for _, a := range e.ents {
+				if !exists(a.SavedPath) || !exists(a.SavedPath+".xmp") {
+					t.Errorf("file lost: %s", a.SavedPath)
+				}
+			}
+		})
 	}
 }

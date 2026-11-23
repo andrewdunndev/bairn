@@ -341,11 +341,17 @@ run killed after the stamp leaves pruned entries with their files. The
 next run treats those leftovers as a deletion path with the same gate:
 it re-verifies them in the same run (same id, not trashed) and deletes a
 leftover only if the local file still hashes to `uploadSha1`, under the
-same path checks; it never downloads anything again. If Immich no longer
-holds the asset (for example it was trashed after the prune and the file
-was copied back), the file is kept, counted as `resumeKept`, and
-`prunedAt` is cleared with the verify result stamped, so the entry is an
-ordinary saved one again. A pruned entry otherwise keeps its `savedAt`,
+same path checks; it never downloads anything again. The invariant: an entry is un-pruned only when its media is on disk, and
+media is deleted only after the full gate (contained, regular, not a
+symlink, hash equal to `uploadSha1`, re-verified this run). With the media
+present and the gate failing (Immich no longer holds the asset, or the
+file is not the uploaded bytes), the file is kept, counted as
+`resumeKept`, and `prunedAt` is cleared (the verify result is stamped when
+Immich answered), so the entry is an ordinary saved one again; this is not
+an error. With the media absent (only a sidecar left) the tombstone always
+stays, so nothing is re-downloaded: a verified run removes the gated
+sidecar, otherwise the sidecar stays and counts as `resumeKept`. An entry
+un-pruned by the sweep is not counted again by the main pass. A pruned entry otherwise keeps its `savedAt`,
 `savedPath`, hashes and `immichAssetId`; fetch, `--retry-failed`,
 `repair missing`, `backfill` and `status` leave it alone, and `status`
 counts it as `pruned`, not `missingFile`.
@@ -357,7 +363,7 @@ is outside its guarantees (symlinks are never followed).
 | Field | Meaning |
 |---|---|
 | `dryRun` | true unless `--apply` |
-| `considered` | uploaded, saved, unpruned entries |
+| `considered` | uploaded, saved, unpruned entries (not those the resume sweep just un-pruned) |
 | `pruned` | deleted (media and sidecar) |
 | `wouldPrune` | dry run: entries that would be deleted |
 | `notVerified` | no `immichVerifiedAt`, a `verifyResult`, or no hash or asset id; no call made |
@@ -365,9 +371,9 @@ is outside its guarantees (symlinks are never followed).
 | `localDiffers` | the file is not the bytes uploaded; kept |
 | `missingFile` | no saved path, or the file is gone |
 | `errors` | an unsafe path, a hash, unlink or state-write failure, or an entry in a batch whose Immich check failed or was not reached; any makes the exit code 1 |
-| `bytesFreed`, `wouldFreeBytes` | media and sidecar bytes removed, or that would be |
+| `bytesFreed`, `wouldFreeBytes` | media and sidecar bytes removed, or that would be, resume sweep included |
 | `resumed`, `wouldResume` | already-pruned entries whose leftover file a crashed run left, re-verified and finished, or that would be |
-| `resumeKept` | leftover file of a pruned entry kept: Immich no longer holds the asset (the entry is unpruned) |
+| `resumeKept` | pruned entry the sweep did not finish: media present but the gate failed (file kept, entry unpruned), or media absent and not re-verified (tombstone and sidecar kept) |
 
 Exit codes: 0 done (skips are not errors), 1 any error, a locked state
 file, or a refusal; 2 usage or missing Immich configuration. It refuses
