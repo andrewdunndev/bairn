@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"gitlab.com/dunn.dev/bairn/api/immich"
+	"gitlab.com/dunn.dev/bairn/internal/asset"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
@@ -40,6 +41,10 @@ type pruneSummary struct {
 	// left behind and this run removed; WouldResume is the dry-run count.
 	Resumed     int `json:"resumed"`
 	WouldResume int `json:"wouldResume"`
+	// ResumeKept counts tombstoned entries whose leftover file stayed:
+	// Immich no longer holds the asset (the entry is unpruned again) or
+	// the file is not the uploaded bytes.
+	ResumeKept int `json:"resumeKept"`
 }
 
 var (
@@ -194,14 +199,17 @@ func lstatContained(root, p string) (string, fs.FileInfo, error) {
 }
 
 // pruneEntries is the whole run. dry makes the Immich calls but writes
-// no state and removes no file. In apply mode, per entry: PrunedAt is
-// stamped and the state flushed, then the media is removed, then its
-// .xmp. A batch whose re-verify fails deletes nothing; an auth failure,
+// no state and removes no file. In apply mode, per batch: PrunedAt is
+// stamped on every entry that passed, the state flushed once, then each
+// media is removed, then its .xmp. A batch whose re-verify fails deletes
+// nothing; an auth failure,
 // a cancelled context or a failed state write stops the run, counting
 // every entry not yet decided as an error.
 func pruneEntries(ctx context.Context, st *state.Store, ic bulkChecker, root string, dry bool, at time.Time, logger *slog.Logger) pruneSummary {
 	sum := pruneSummary{DryRun: dry}
-	resumePruned(st, root, dry, &sum, logger)
+	if abort := resumePruned(ctx, st, ic, root, dry, at, &sum, logger); abort {
+		return sum
+	}
 
 	var todo []state.PruneEntry
 	for _, e := range st.PruneCandidates() {
@@ -232,31 +240,10 @@ func pruneEntries(ctx context.Context, st *state.Store, ic bulkChecker, root str
 // abort for an error no later batch can survive. Entries it could not
 // decide are counted under Errors.
 func pruneBatch(ctx context.Context, st *state.Store, ic bulkChecker, root string, batch []state.PruneEntry, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (abort bool, err error) {
-	items := make([]immich.CheckItem, len(batch))
-	for i, e := range batch {
-		items[i] = immich.CheckItem{ID: e.ID, Checksum: e.UploadSHA1}
-	}
-	res, err := ic.BulkUploadCheck(ctx, items)
+	outcomes, err := recheck(ctx, ic, batch)
 	if err != nil {
 		sum.Errors += len(batch)
 		return errors.Is(err, immich.ErrUnauthorized) || ctx.Err() != nil, err
-	}
-	byID := make(map[string]immich.CheckResult, len(res))
-	for _, r := range res {
-		byID[r.ID] = r
-	}
-	if len(byID) != len(batch) {
-		sum.Errors += len(batch)
-		return false, fmt.Errorf("reply covers %d of %d entries", len(byID), len(batch))
-	}
-	outcomes := make([]string, len(batch))
-	for i, e := range batch {
-		r, ok := byID[e.ID]
-		if !ok {
-			sum.Errors += len(batch)
-			return false, errors.New("reply is missing a requested entry")
-		}
-		outcomes[i] = classify(state.VerifyCandidate{ID: e.ID, UploadSHA1: e.UploadSHA1, ImmichAssetID: e.ImmichAssetID}, r)
 	}
 	// A failed re-verify demotes the stamp, so the entry shows as
 	// failed in status and the next prune does not re-ask.
@@ -276,21 +263,74 @@ func pruneBatch(ctx context.Context, st *state.Store, ic bulkChecker, root strin
 			return true, fmt.Errorf("write state: %w", err)
 		}
 	}
+	var pend []pending
 	for i, e := range batch {
 		if outcomes[i] != resVerified {
 			continue
 		}
-		if abort, err := pruneOne(st, root, e, dry, at, sum, logger); abort {
-			// Entries after this one in the batch are undecided.
-			for _, rest := range outcomes[i+1:] {
-				if rest == resVerified {
-					sum.Errors++
-				}
-			}
-			return true, err
+		if p, ok := checkOne(root, e, dry, sum, logger); ok {
+			pend = append(pend, p)
 		}
 	}
+	if dry || len(pend) == 0 {
+		return false, nil
+	}
+	// Tombstone the batch and make it durable before any unlink: a kill
+	// after this leaves pruned entries with their files, which the next
+	// run re-verifies and finishes; a kill before leaves ordinary
+	// verified entries.
+	stamped := pend[:0]
+	for _, p := range pend {
+		if st.MarkPruned(p.e.ID, at) {
+			stamped = append(stamped, p)
+		} else {
+			sum.Errors++
+		}
+	}
+	if err := st.Flush(); err != nil {
+		sum.Errors += len(stamped)
+		return true, fmt.Errorf("write state: %w", err)
+	}
+	for _, p := range stamped {
+		freed, rerr := removeEntryFiles(root, p.path, p.size, p.e)
+		sum.BytesFreed += freed
+		if rerr != nil {
+			logger.Error("prune: unlink; the entry is tombstoned and the next run finishes it", "id", p.e.ID, "err", rerr)
+			sum.Errors++
+			continue
+		}
+		sum.Pruned++
+	}
 	return false, nil
+}
+
+// recheck asks Immich one bulk question about the entries and returns
+// each one's outcome, in order.
+func recheck(ctx context.Context, ic bulkChecker, es []state.PruneEntry) ([]string, error) {
+	items := make([]immich.CheckItem, len(es))
+	for i, e := range es {
+		items[i] = immich.CheckItem{ID: e.ID, Checksum: e.UploadSHA1}
+	}
+	res, err := ic.BulkUploadCheck(ctx, items)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[string]immich.CheckResult, len(res))
+	for _, r := range res {
+		byID[r.ID] = r
+	}
+	if len(byID) != len(es) {
+		return nil, fmt.Errorf("reply covers %d of %d entries", len(byID), len(es))
+	}
+	out := make([]string, len(es))
+	for i, e := range es {
+		r, ok := byID[e.ID]
+		if !ok {
+			return nil, errors.New("reply is missing a requested entry")
+		}
+		out[i] = classify(state.VerifyCandidate{ID: e.ID, UploadSHA1: e.UploadSHA1, ImmichAssetID: e.ImmichAssetID}, r)
+	}
+	return out, nil
 }
 
 func countFailed(outcomes []string) int {
@@ -303,76 +343,69 @@ func countFailed(outcomes []string) int {
 	return n
 }
 
-// pruneOne applies the local checks to a re-verified entry and, unless
-// dry, tombstones then deletes it. abort reports a failed state write.
-func pruneOne(st *state.Store, root string, e state.PruneEntry, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (abort bool, err error) {
+// pending is a re-verified entry whose local file passed every check.
+type pending struct {
+	e    state.PruneEntry
+	path string
+	size int64
+}
+
+// checkOne applies the local checks to a re-verified entry. ok reports
+// an entry to delete (apply only); a dry run counts it as wouldPrune.
+func checkOne(root string, e state.PruneEntry, dry bool, sum *pruneSummary, logger *slog.Logger) (p pending, ok bool) {
 	if e.SavedPath == "" {
 		sum.MissingFile++
-		return false, nil
+		return p, false
 	}
 	path, fi, err := lstatContained(root, e.SavedPath)
 	switch {
 	case errors.Is(err, errNoFile):
 		sum.MissingFile++
-		return false, nil
+		return p, false
 	case err != nil:
 		logger.Error("prune: refusing path", "id", e.ID, "err", err)
 		sum.Errors++
-		return false, nil
+		return p, false
 	}
 	got, err := hashFile(path)
 	if err != nil {
 		logger.Error("prune: hash", "id", e.ID, "err", err)
 		sum.Errors++
-		return false, nil
+		return p, false
 	}
 	if got != e.UploadSHA1 {
 		sum.LocalDiffers++
-		return false, nil
+		return p, false
 	}
 	if dry {
 		sum.WouldPrune++
 		sum.WouldFreeBytes += fi.Size()
-		if _, xfi, err := sidecar(root, path, e.UploadedAt); err == nil && xfi != nil {
+		if _, xfi, err := sidecar(root, path, e); err == nil && xfi != nil {
 			sum.WouldFreeBytes += xfi.Size()
 		}
-		return false, nil
+		return p, false
 	}
-	// Tombstone first and make it durable: a kill after this leaves a
-	// pruned entry with its file, which the next run finishes; a kill
-	// before leaves an ordinary verified entry.
-	if !st.MarkPruned(e.ID, at) {
-		sum.Errors++
-		return false, nil
-	}
-	if err := st.Flush(); err != nil {
-		sum.Errors++
-		return true, fmt.Errorf("write state: %w", err)
-	}
-	freed, rerr := removeEntryFiles(root, path, fi.Size(), e.UploadedAt)
-	sum.BytesFreed += freed
-	if rerr != nil {
-		logger.Error("prune: unlink; the entry is tombstoned and the next run finishes it", "id", e.ID, "err", rerr)
-		sum.Errors++
-		return false, nil
-	}
-	sum.Pruned++
-	return false, nil
+	return pending{e: e, path: path, size: fi.Size()}, true
 }
 
 // sidecar is the .xmp beside the resolved media path, when prune should
-// delete it: present, contained, and not newer than the upload. A newer
-// one was written after Immich last saw the entry, so it is the only
-// copy and stays (nil FileInfo, nil error), as does a missing one
-// (errNoFile is folded into the same).
-func sidecar(root, media string, uploadedAt time.Time) (string, fs.FileInfo, error) {
+// delete it: bairn uploaded it to Immich (only a feed-video's sidecar is
+// sent; any other .xmp is someone else's file), it is present and
+// contained, and not newer than the upload. A newer one was written
+// after Immich last saw the entry, so it is the only copy and stays
+// (nil FileInfo, nil error), as does a missing one (errNoFile is folded
+// into the same).
+func sidecar(root, media string, e state.PruneEntry) (string, fs.FileInfo, error) {
+	if e.Source != string(asset.SourceFeedVideo) {
+		return "", nil, nil
+	}
 	xp, xfi, err := lstatContained(root, media+".xmp")
 	switch {
 	case errors.Is(err, errNoFile):
 		return "", nil, nil
 	case err != nil:
 		return "", nil, err
-	case xfi.ModTime().After(uploadedAt):
+	case xfi.ModTime().After(e.UploadedAt):
 		return "", nil, nil
 	}
 	return xp, xfi, nil
@@ -382,7 +415,7 @@ func sidecar(root, media string, uploadedAt time.Time) (string, fs.FileInfo, err
 // lstatContained), then its .xmp sidecar, each unlinked without following
 // a symlink. A missing file is fine. It returns the bytes freed and the
 // first error.
-func removeEntryFiles(root, path string, mediaSize int64, uploadedAt time.Time) (int64, error) {
+func removeEntryFiles(root, path string, mediaSize int64, e state.PruneEntry) (int64, error) {
 	root, err := filepath.Abs(root)
 	if err != nil {
 		return 0, err
@@ -392,7 +425,7 @@ func removeEntryFiles(root, path string, mediaSize int64, uploadedAt time.Time) 
 		return freed, err
 	}
 	freed += mediaSize
-	xp, xfi, err := sidecar(root, path, uploadedAt)
+	xp, xfi, err := sidecar(root, path, e)
 	if err != nil || xfi == nil {
 		return freed, err
 	}
@@ -403,10 +436,21 @@ func removeEntryFiles(root, path string, mediaSize int64, uploadedAt time.Time) 
 }
 
 // resumePruned finishes a crashed run: an entry with PrunedAt set whose
-// media or sidecar is still on disk is deleted, under the same checks
-// (contained, no symlink, regular, and the media still the bytes
-// bairn uploaded). It never touches the state and never re-downloads.
-func resumePruned(st *state.Store, root string, dry bool, sum *pruneSummary, logger *slog.Logger) {
+// media or sidecar is still on disk is deleted only if it passes the
+// same gate as a fresh prune: the same-run bulk check still finds the
+// asset (same id, not trashed) and the media is still the bytes bairn
+// uploaded, under the usual containment checks. Otherwise the file stays
+// and counts under ResumeKept; when Immich no longer holds the asset,
+// PrunedAt is cleared too, so the entry is an ordinary saved one again
+// (its file is on disk, so it is not lost). abort reports a failed state
+// write or an unusable Immich; no leftover is touched then.
+func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root string, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (abort bool) {
+	type left struct {
+		e    state.PruneEntry
+		path string
+		fi   fs.FileInfo // nil: only a sidecar remains
+	}
+	var lefts []left
 	for _, e := range st.PrunedEntries() {
 		if e.SavedPath == "" {
 			continue
@@ -421,32 +465,67 @@ func resumePruned(st *state.Store, root string, dry bool, sum *pruneSummary, log
 			sum.Errors++
 			continue
 		}
-		if fi != nil {
-			got, err := hashFile(path)
-			if err != nil || got != e.UploadSHA1 {
-				logger.Error("prune: pruned entry's file is not the uploaded bytes; kept", "id", e.ID, "err", err)
+		if _, xfi, xerr := sidecar(root, path, e); fi == nil && xfi == nil && xerr == nil {
+			continue
+		}
+		lefts = append(lefts, left{e, path, fi})
+	}
+	cleared := false
+	for i := 0; i < len(lefts); i += verifyBatch {
+		batch := lefts[i:min(i+verifyBatch, len(lefts))]
+		es := make([]state.PruneEntry, len(batch))
+		for j, l := range batch {
+			es[j] = l.e
+		}
+		outcomes, err := recheck(ctx, ic, es)
+		if err != nil {
+			logger.Error("prune: resume re-verify failed; leftovers kept", "err", err)
+			sum.Errors += len(lefts) - i
+			return errors.Is(err, immich.ErrUnauthorized) || ctx.Err() != nil
+		}
+		for j, l := range batch {
+			e := l.e
+			if outcomes[j] != resVerified {
+				sum.ResumeKept++
+				if !dry {
+					st.ClearPruned(e.ID)
+					st.StampVerify(e.ID, outcomes[j], at)
+					cleared = true
+				}
+				continue
+			}
+			if l.fi != nil {
+				got, err := hashFile(l.path)
+				if err != nil || got != e.UploadSHA1 {
+					logger.Error("prune: pruned entry's file is not the uploaded bytes; kept", "id", e.ID, "err", err)
+					sum.Errors++
+					continue
+				}
+			}
+			if dry {
+				sum.WouldResume++
+				continue
+			}
+			var size int64
+			if l.fi != nil {
+				size = l.fi.Size()
+			}
+			freed, rerr := removeEntryFiles(root, l.path, size, e)
+			if rerr != nil {
+				logger.Error("prune: unlink", "id", e.ID, "err", rerr)
 				sum.Errors++
 				continue
 			}
+			sum.Resumed++
+			sum.BytesFreed += freed
 		}
-		if _, xfi, xerr := sidecar(root, path, e.UploadedAt); fi == nil && xfi == nil && xerr == nil {
-			continue
-		}
-		if dry {
-			sum.WouldResume++
-			continue
-		}
-		var size int64
-		if fi != nil {
-			size = fi.Size()
-		}
-		freed, rerr := removeEntryFiles(root, path, size, e.UploadedAt)
-		if rerr != nil {
-			logger.Error("prune: unlink", "id", e.ID, "err", rerr)
-			sum.Errors++
-			continue
-		}
-		sum.Resumed++
-		sum.BytesFreed += freed
 	}
+	if cleared {
+		if err := st.Flush(); err != nil {
+			logger.Error("prune: write state", "err", err)
+			sum.Errors++
+			return true
+		}
+	}
+	return false
 }

@@ -71,7 +71,7 @@ func (e *pEnv) add(id, content, uploaded string) string {
 }
 
 func (e *pEnv) entry(id, path, uploaded string, verified time.Time, result string) {
-	e.ents[id] = state.Asset{SavedAt: pruneAt, SavedPath: path, SHA1: "dl-" + id, UploadSHA1: shaOf(uploaded),
+	e.ents[id] = state.Asset{Source: "feed-video", SavedAt: pruneAt, SavedPath: path, SHA1: "dl-" + id, UploadSHA1: shaOf(uploaded),
 		ImmichAssetID: "imm-" + id, ImmichVerifiedAt: verified, VerifyResult: result}
 }
 
@@ -392,8 +392,8 @@ func TestPruneCrashAfterStampIsFinishedByRerun(t *testing.T) {
 			if code != 0 || sum.Resumed != 1 || sum.Errors != 0 || sum.Pruned != 0 || sum.Considered != 0 {
 				t.Fatalf("rerun: exit %d %+v", code, sum)
 			}
-			if f.calls.Load() != calls {
-				t.Error("rerun called Immich")
+			if f.calls.Load() != calls+1 {
+				t.Error("rerun should make exactly one bulk check for the leftovers")
 			}
 			a := e.get(left)
 			if exists(a.SavedPath) || exists(a.SavedPath+".xmp") {
@@ -708,5 +708,109 @@ func TestPruneKeepsASidecarNewerThanTheUpload(t *testing.T) {
 	}
 	if exists(p) || !exists(p+".xmp") {
 		t.Errorf("media exists %v, sidecar exists %v", exists(p), exists(p+".xmp"))
+	}
+}
+
+// Immich only ever got a sidecar for a video: a photo's .xmp is someone
+// else's file and survives --apply, in the dry-run byte count too.
+func TestPruneKeepsAPhotosXmp(t *testing.T) {
+	e := newPEnv(t)
+	for _, id := range []string{"a", "b", "c"} {
+		e.add(id, "bytes-"+id, "bytes-"+id)
+	}
+	p := e.add("photo", "bytes-photo", "bytes-photo")
+	a := e.ents["photo"]
+	a.Source = "feed-image"
+	e.ents["photo"] = a
+	e.seed()
+	f := e.fake()
+	want := int64(len("bytes-photo"))
+	for _, id := range []string{"a", "b", "c"} {
+		want += int64(len("bytes-"+id) + len("xmp-"+id))
+	}
+	if dry, _ := runPruneCapture(t, e.cfg(f.srv.URL)); dry.WouldFreeBytes != want {
+		t.Errorf("wouldFreeBytes %d, want %d", dry.WouldFreeBytes, want)
+	}
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if code != 0 || sum.Pruned != 4 || sum.BytesFreed != want {
+		t.Fatalf("exit %d %+v want bytes %d", code, sum, want)
+	}
+	if exists(p) || !exists(p+".xmp") {
+		t.Errorf("media exists %v, sidecar exists %v", exists(p), exists(p+".xmp"))
+	}
+}
+
+// Trashed in Immich after the prune, then the file copied back: the
+// resume sweep must not delete the only copy, and the entry is unpruned.
+func TestPruneResumeKeepsAFileWhoseAssetIsTrashed(t *testing.T) {
+	e := newPEnv(t)
+	for _, id := range []string{"a", "b", "c"} {
+		e.add(id, "bytes-"+id, "bytes-"+id)
+	}
+	p := e.add("t", "bytes-t", "bytes-t")
+	e.table[shaOf("bytes-t")] = vKnown{id: "imm-t", trashed: true}
+	a := e.ents["t"]
+	a.PrunedAt = pruneAt
+	e.ents["t"] = a
+	e.seed()
+	f := e.fake()
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if code != 0 || sum.ResumeKept != 1 || sum.Resumed != 0 {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+	if !exists(p) || !exists(p+".xmp") {
+		t.Error("the copied-back file was deleted")
+	}
+	if g := e.get("t"); !g.PrunedAt.IsZero() || g.VerifyResult != "trashed" {
+		t.Errorf("entry not unpruned and demoted: %+v", g)
+	}
+	// And it stays: the next run does not touch it either.
+	if sum, _ := runPruneCapture(t, e.cfg(f.srv.URL), "--apply"); sum.Resumed != 0 || !exists(p) {
+		t.Errorf("second run %+v", sum)
+	}
+}
+
+// A kill after the batch's single state write and before any unlink:
+// every verified entry is tombstoned with its file on disk, and the
+// next run finishes them all.
+func TestPruneCrashBetweenFlushAndUnlinkIsResumed(t *testing.T) {
+	e := newPEnv(t)
+	ids := []string{"a", "b", "c", "d"}
+	for _, id := range ids {
+		e.add(id, "bytes-"+id, "bytes-"+id)
+	}
+	e.seed()
+	f := e.fake()
+	old := removeFile
+	t.Cleanup(func() { removeFile = old })
+	removeFile = func(string, string) error { panic("kill") }
+	st, err := state.Open(context.Background(), e.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	func() {
+		defer func() { _ = recover() }()
+		pruneEntries(context.Background(), st, f.client(), e.root, false, pruneAt, quiet)
+		t.Error("no crash")
+	}()
+	b, _ := os.ReadFile(e.state)
+	if n := strings.Count(string(b), `"prunedAt"`); n != len(ids) {
+		t.Errorf("%d of %d tombstones durable at the crash", n, len(ids))
+	}
+	_ = st.Close()
+	for _, id := range ids {
+		if !exists(e.ents[id].SavedPath) {
+			t.Errorf("%s: file gone", id)
+		}
+	}
+	removeFile = unlinkContained
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if code != 0 || sum.Resumed != len(ids) {
+		t.Fatalf("rerun: exit %d %+v", code, sum)
+	}
+	for _, id := range ids {
+		if exists(e.ents[id].SavedPath) {
+			t.Errorf("%s: left", id)
+		}
 	}
 }

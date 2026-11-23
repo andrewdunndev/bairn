@@ -326,16 +326,33 @@ The path deleted is `savedPath` made absolute against the working directory,
 as the sink wrote it; the same resolved path is checked, hashed and unlinked. A
 path outside it, a symlink anywhere below it, or a non-regular file is
 refused and counted as an error; the same holds for the `.xmp` sidecar.
-The unlink opens each directory without following symlinks. A sidecar
-modified after `uploadedAt` was never sent to Immich and is kept.
-Per entry the order is: stamp `prunedAt` and write the state file, then
-delete the media, then its `.xmp`. A run killed after the stamp leaves a
-pruned entry with its file; the next run deletes it (under the same
-path checks, and only if the file still hashes to `uploadSha1`) without
-calling Immich and without ever downloading it again. A pruned entry
-keeps its `savedAt`, `savedPath`, hashes and `immichAssetId`; fetch,
-`--retry-failed`, `repair missing`, `backfill` and `status` leave it
-alone, and `status` counts it as `pruned`, not `missingFile`.
+The unlink opens each directory without following symlinks.
+
+The `.xmp` sidecar is deleted only when bairn uploaded it to Immich:
+source `feed-video`, with the sidecar present at upload. A sidecar
+modified after `uploadedAt` was never sent and is kept. For every other
+source (a photo embeds its XMP and has no bairn sidecar) any `.xmp`
+beside the media belongs to another tool (digiKam, darktable) and is
+never touched, nor counted in `bytesFreed` or `wouldFreeBytes`.
+
+Per batch the order is: stamp `prunedAt` on every verified entry and
+write the state file once, then delete each media, then its `.xmp`. A
+run killed after the stamp leaves pruned entries with their files. The
+next run treats those leftovers as a deletion path with the same gate:
+it re-verifies them in the same run (same id, not trashed) and deletes a
+leftover only if the local file still hashes to `uploadSha1`, under the
+same path checks; it never downloads anything again. If Immich no longer
+holds the asset (for example it was trashed after the prune and the file
+was copied back), the file is kept, counted as `resumeKept`, and
+`prunedAt` is cleared with the verify result stamped, so the entry is an
+ordinary saved one again. A pruned entry otherwise keeps its `savedAt`,
+`savedPath`, hashes and `immichAssetId`; fetch, `--retry-failed`,
+`repair missing`, `backfill` and `status` leave it alone, and `status`
+counts it as `pruned`, not `missingFile`.
+
+Prune assumes a single operator on the host: it holds the state lock, but
+a file swapped between the check and the unlink by another local process
+is outside its guarantees (symlinks are never followed).
 
 | Field | Meaning |
 |---|---|
@@ -349,7 +366,8 @@ alone, and `status` counts it as `pruned`, not `missingFile`.
 | `missingFile` | no saved path, or the file is gone |
 | `errors` | an unsafe path, a hash, unlink or state-write failure, or an entry in a batch whose Immich check failed or was not reached; any makes the exit code 1 |
 | `bytesFreed`, `wouldFreeBytes` | media and sidecar bytes removed, or that would be |
-| `resumed`, `wouldResume` | already-pruned entries whose leftover file a crashed run left, finished or that would be |
+| `resumed`, `wouldResume` | already-pruned entries whose leftover file a crashed run left, re-verified and finished, or that would be |
+| `resumeKept` | leftover file of a pruned entry kept: Immich no longer holds the asset (the entry is unpruned) |
 
 Exit codes: 0 done (skips are not errors), 1 any error, a locked state
 file, or a refusal; 2 usage or missing Immich configuration. It refuses

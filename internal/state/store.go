@@ -469,6 +469,7 @@ type PruneEntry struct {
 	ImmichVerifiedAt time.Time
 	VerifyResult     string
 	UploadedAt       time.Time
+	Source           string
 }
 
 // PruneCandidates lists the entries a prune run considers: uploaded and
@@ -488,7 +489,7 @@ func (s *Store) pruneEntries(pruned bool) []PruneEntry {
 			continue
 		}
 		out = append(out, PruneEntry{ID: id, SavedPath: a.SavedPath, UploadSHA1: a.UploadSHA1,
-			ImmichAssetID: a.ImmichAssetID, ImmichVerifiedAt: a.ImmichVerifiedAt, VerifyResult: a.VerifyResult, UploadedAt: a.UploadedAt})
+			ImmichAssetID: a.ImmichAssetID, ImmichVerifiedAt: a.ImmichVerifiedAt, VerifyResult: a.VerifyResult, UploadedAt: a.UploadedAt, Source: a.Source})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
@@ -505,6 +506,20 @@ func (s *Store) MarkPruned(id string, at time.Time) bool {
 		return false
 	}
 	a.PrunedAt = at
+	s.dirty++
+	return true
+}
+
+// ClearPruned removes the tombstone from a pruned entry, returning it to
+// a saved one. It marks the store dirty; the caller flushes.
+func (s *Store) ClearPruned(id string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.data[id]
+	if !ok || a.PrunedAt.IsZero() {
+		return false
+	}
+	a.PrunedAt = time.Time{}
 	s.dirty++
 	return true
 }
