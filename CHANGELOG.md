@@ -14,6 +14,15 @@ additions.
 
 ## [Unreleased]
 
+### Added
+
+- The fetch summary gains `stamped`, the number of `feedItemAt` stamps
+  written this run (left out when 0; a dry run writes none), so the
+  stamping of already-saved entries can be confirmed from output.
+- `bairn status` reports `undated` (saved entries with no `feedItemAt`)
+  and `missingFile` (saved entries whose file is not on disk), and
+  `bairn status --missing` prints the ids of the latter.
+
 ## [0.8.0] - 2026-11-22
 
 A **minor**: exit codes tighten. `fetch` and `status` now exit 1 on

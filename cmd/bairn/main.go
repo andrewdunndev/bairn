@@ -42,7 +42,7 @@ const usage = `usage: bairn <subcommand> [flags]
 subcommands:
   login    authenticate against Famly with email and password
   fetch    pull new photos and videos to disk (and Immich, if configured)
-  status   print totals for the whole state file
+  status   print totals for the whole state file (--missing: ids of saved entries without a file)
   version  print the bairn version
   backfill fill state fields from the saved files, offline (backfill upload-sha1)
   drift    check the vendor surface for schema drift
@@ -341,6 +341,7 @@ func householdSets(ctx context.Context, fc *famly.Client, logger *slog.Logger) (
 type statusStore interface {
 	io.Closer
 	Stats(ctx context.Context) (state.Summary, error)
+	SavedFiles() []state.SavedFile
 }
 
 // openStatusState opens the store for status; tests replace it.
@@ -351,6 +352,7 @@ var openStatusState = func(ctx context.Context, path string) (statusStore, error
 // runStatus implements the status subcommand.
 func runStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) (code int) {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
+	missing := fs.Bool("missing", false, "print the ids of saved entries whose file is missing, one per line")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -365,9 +367,26 @@ func runStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger, arg
 		logger.Error("stats", "err", err)
 		return 1
 	}
+	// Stat only, never hash: status stays fast and read-only.
+	var missingIDs []string
+	for _, f := range st.SavedFiles() {
+		if _, err := statSaved(f.SavedPath); err != nil {
+			missingIDs = append(missingIDs, f.ID)
+		}
+	}
+	if *missing {
+		for _, id := range missingIDs {
+			fmt.Println(id)
+		}
+		return 0
+	}
+	out := struct {
+		state.Summary
+		MissingFile int `json:"missingFile"`
+	}{sm, len(missingIDs)}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
-	_ = enc.Encode(sm)
+	_ = enc.Encode(out)
 	return 0
 }
 

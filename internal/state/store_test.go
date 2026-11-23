@@ -616,3 +616,37 @@ func TestStampUploadSHA1DefersItsFlushToClose(t *testing.T) {
 		}
 	}
 }
+
+func TestStampFeedItemAtNoOps(t *testing.T) {
+	s := tempStore(t)
+	ctx := context.Background()
+	at := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	later := at.Add(48 * time.Hour)
+	must(t, s.Discover(ctx, "undated", Asset{Source: "feed-image"}))
+	must(t, s.Discover(ctx, "dated", Asset{Source: "feed-image", FeedItemAt: at}))
+
+	if s.StampFeedItemAt("undated", time.Time{}) {
+		t.Error("zero time stamped")
+	}
+	if got, _ := s.Get(ctx, "undated"); !got.FeedItemAt.IsZero() {
+		t.Errorf("zero time wrote %v", got.FeedItemAt)
+	}
+	if s.StampFeedItemAt("missing", at) {
+		t.Error("unknown id reported a stamp")
+	}
+	if s.StampFeedItemAt("dated", later) {
+		t.Error("already-dated entry reported a stamp")
+	}
+	if got, _ := s.Get(ctx, "dated"); !got.FeedItemAt.Equal(at) {
+		t.Errorf("dated entry changed to %v, want %v", got.FeedItemAt, at)
+	}
+	if !s.StampFeedItemAt("undated", at) {
+		t.Fatal("undated entry not stamped")
+	}
+	if got, _ := s.Get(ctx, "undated"); !got.FeedItemAt.Equal(at) {
+		t.Errorf("stamped to %v, want %v", got.FeedItemAt, at)
+	}
+	if s.StampFeedItemAt("undated", later) {
+		t.Error("second stamp reported true")
+	}
+}

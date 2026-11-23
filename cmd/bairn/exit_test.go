@@ -118,6 +118,7 @@ func (f fakeStatusStore) Close() error { return f.closeErr }
 func (f fakeStatusStore) Stats(context.Context) (state.Summary, error) {
 	return state.Summary{}, nil
 }
+func (f fakeStatusStore) SavedFiles() []state.SavedFile { return nil }
 
 // TestRunStatusExitsOneOnFailedClose pins that status routes its close
 // through closeState.

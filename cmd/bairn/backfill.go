@@ -71,16 +71,12 @@ func backfillUploadSHA1(st *state.Store, dryRun bool, logger *slog.Logger) backf
 			sum.SkippedModified++
 			continue
 		}
-		if c.SavedPath == "" {
+		fi, err := statSaved(c.SavedPath)
+		if errors.Is(err, errNoSavedFile) {
 			sum.MissingFile++
 			continue
 		}
-		fi, err := os.Stat(c.SavedPath)
-		if errors.Is(err, fs.ErrNotExist) {
-			sum.MissingFile++
-			continue
-		}
-		if err != nil || !fi.Mode().IsRegular() {
+		if err != nil {
 			logger.Error("backfill: stat", "id", c.ID, "err", err)
 			sum.Errors++
 			continue
@@ -101,6 +97,30 @@ func backfillUploadSHA1(st *state.Store, dryRun bool, logger *slog.Logger) backf
 		}
 	}
 	return sum
+}
+
+// errNoSavedFile means the recorded path is empty or absent.
+var errNoSavedFile = errors.New("no saved file")
+
+// statSaved stats a recorded SavedPath. An empty or absent path is
+// errNoSavedFile; any other stat failure, or a non-regular file, is
+// returned as is. Backfill and status share it so they agree on what
+// "missing" means.
+func statSaved(path string) (fs.FileInfo, error) {
+	if path == "" {
+		return nil, errNoSavedFile
+	}
+	fi, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, errNoSavedFile
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !fi.Mode().IsRegular() {
+		return nil, errors.New("not a regular file")
+	}
+	return fi, nil
 }
 
 func hashFile(path string) (string, error) {
