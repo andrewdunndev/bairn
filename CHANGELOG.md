@@ -14,6 +14,8 @@ additions.
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-23
+
 ### Added
 
 - `bairn repair missing [--dry-run]` re-queues saved entries whose file
@@ -674,7 +676,8 @@ If you upgraded to v0.4.3, downgrade to v0.4.5 or later.
   provenance, GitLab Release with all artifacts linked, OCI
   container image.
 
-[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.8.0...main
+[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.8.1...main
+[0.8.1]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.8.1
 [0.8.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.8.0
 [0.7.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.7.0
 [0.6.2]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.2
