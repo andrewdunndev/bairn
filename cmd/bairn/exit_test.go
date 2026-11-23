@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"io"
+	"log/slog"
 	"strings"
 	"testing"
 
+	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/sync"
 )
 
@@ -38,5 +41,12 @@ func TestRetryFailedRefusesFilterFlags(t *testing.T) {
 	err := checkRetryFailed(map[string]bool{"source": true, "include-system-posts": true})
 	if err == nil || !strings.Contains(err.Error(), "--include-system-posts, --source") {
 		t.Errorf("err = %v, want both incompatible flags named", err)
+	}
+}
+
+func TestRetryGoneNeedsRetryFailed(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	if got := runFetch(context.Background(), &config.Config{}, logger, []string{"--retry-gone"}); got != 2 {
+		t.Errorf("exit %d, want 2", got)
 	}
 }

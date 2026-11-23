@@ -23,7 +23,7 @@ additions.
 
 ### Added
 
-- `fetch --retry-failed` marks an entry `goneAt` after a walk that
+- `fetch --retry-failed` marks an entry `goneAt` (`omitzero`, so entries never marked gain no key) after a walk that
   covered its post date (or reached the feed's end) did not find it,
   and later retries skip it. `--retry-gone` revisits marked entries; a
   find clears the mark. The retry summary gains `gone`.

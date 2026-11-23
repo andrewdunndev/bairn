@@ -63,8 +63,8 @@ type retryPlan struct {
 	seen map[string]struct{}
 	// oldest is the creation date of the oldest feed item walked.
 	oldest time.Time
-	// feedEnded is set when the walk ran out of feed rather than being
-	// stopped by --max-pages, cancellation or an error.
+	// feedEnded is set when the iterator ran out of feed rather than
+	// being stopped by finished, --max-pages, cancellation or an error.
 	feedEnded bool
 }
 

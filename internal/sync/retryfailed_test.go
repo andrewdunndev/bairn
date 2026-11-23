@@ -1,13 +1,16 @@
 package sync
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -31,6 +34,8 @@ type datedFeed struct {
 	mu      sync.Mutex
 	queries []string
 	pages   int
+	// failFrom, when >0, answers 400 from that feed request on.
+	failFrom int
 }
 
 func newDatedFeed(t *testing.T, n int, gone map[int]bool, ignoreOlderThan bool) *datedFeed {
@@ -45,7 +50,12 @@ func newDatedFeed(t *testing.T, n int, gone map[int]bool, ignoreOlderThan bool) 
 		f.mu.Lock()
 		f.queries = append(f.queries, r.URL.RawQuery)
 		f.pages++
+		n0 := f.pages
 		f.mu.Unlock()
+		if f.failFrom > 0 && n0 >= f.failFrom {
+			http.Error(w, "boom", http.StatusBadRequest)
+			return
+		}
 		hi := n - 1
 		if c := q.Get("cursor"); c != "" {
 			id, _ := strconv.Atoi(c[len("post-"):])
@@ -541,5 +551,118 @@ func TestStateWithoutGoneAtRoundTrips(t *testing.T) {
 	defer st.Close()
 	if len(st.Failed()) != 0 || len(st.Gone()) != 1 {
 		t.Errorf("after reopen failed %d gone %d", len(st.Failed()), len(st.Gone()))
+	}
+}
+
+// cancelAfter cancels a context once the nth feed response is fully
+// read, handing the body over from memory so the cancellation cannot
+// turn that response into an error.
+type cancelAfter struct {
+	n      int
+	cancel context.CancelFunc
+	seen   int
+}
+
+func (c *cancelAfter) RoundTrip(r *http.Request) (*http.Response, error) {
+	resp, err := http.DefaultTransport.RoundTrip(r)
+	if err != nil || !strings.HasPrefix(r.URL.Path, "/api/feed/") {
+		return resp, err
+	}
+	c.seen++
+	if c.seen == c.n {
+		b, _ := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		resp.Body = io.NopCloser(bytes.NewReader(b))
+		c.cancel()
+	}
+	return resp, nil
+}
+
+func TestRetryGoneCancelledWalkMarksNothing(t *testing.T) {
+	// The context dies as the feed's last (empty) page arrives, so the
+	// iterator ends without an error although the walk was cut short.
+	feed := newDatedFeed(t, 30, nil, false)
+	e := newRetryEnv(t, feed)
+	seedMissing(t, e.st, "img-gone", time.Time{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	hc := &http.Client{Transport: &cancelAfter{n: 4, cancel: cancel}}
+	e.deps.Famly = famly.New(famly.NewStaticToken("t"), famly.WithBaseURL(feed.URL), famly.WithPageDelay(0), famly.WithHTTPClient(hc))
+	res, err := Run(ctx, e.deps, Options{Source: SourceAll, RetryFailed: true})
+	if err != nil || res.PagesWalked != 4 {
+		t.Fatalf("err %v, pages %d; want the walk to reach the empty page", err, res.PagesWalked)
+	}
+	if isGone(e, "img-gone") {
+		t.Error("undated miss marked gone after the context was cancelled")
+	}
+}
+
+func TestRetryGoneFeedErrorMarksNothing(t *testing.T) {
+	feed := newDatedFeed(t, 100, nil, false)
+	e := newRetryEnv(t, feed)
+	seedMissing(t, e.st, "img-gone", time.Time{})
+	feed.failFrom = 2
+	if _, err := Run(context.Background(), e.deps, Options{Source: SourceAll, RetryFailed: true}); err == nil {
+		t.Fatal("want the feed error")
+	}
+	if isGone(e, "img-gone") {
+		t.Error("undated miss marked gone after a feed error")
+	}
+}
+
+func TestRetryGoneStillAbsentIsRemarkedUnderRetryGone(t *testing.T) {
+	e := newRetryEnv(t, newDatedFeed(t, 100, nil, false))
+	seedMissing(t, e.st, "img-gone", postTime(25))
+	old := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	_ = e.st.MarkGone(context.Background(), "img-gone", old)
+	res, err := Run(context.Background(), e.deps, Options{Source: SourceAll, RetryFailed: true, RetryGone: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := e.st.Get(context.Background(), "img-gone")
+	if res.Retry.Gone != 1 || !a.GoneAt.After(old) {
+		t.Errorf("gone = %d, goneAt %v (was %v)", res.Retry.Gone, a.GoneAt, old)
+	}
+}
+
+func TestStateGoneAtKeyAbsentForNeverGoneEntry(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	st, err := state.Open(context.Background(), path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = st.Discover(context.Background(), "img-1", state.Asset{Source: "feed-image", DiscoveredAt: postTime(1)})
+	_ = st.MarkError(context.Background(), "img-1", "x")
+	_ = st.Close()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), "goneAt") {
+		t.Errorf("never-gone entry wrote goneAt: %s", b)
+	}
+}
+
+func TestNormalSightingClearsGoneAt(t *testing.T) {
+	ctx := context.Background()
+	st, err := state.Open(ctx, filepath.Join(t.TempDir(), "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	for _, id := range []string{"a", "b"} {
+		_ = st.Discover(ctx, id, state.Asset{Source: "feed-image", DiscoveredAt: postTime(1)})
+		_ = st.MarkError(ctx, id, "x")
+		_ = st.MarkGone(ctx, id, time.Now())
+	}
+	_ = st.MarkError(ctx, "a", "failed again")
+	_ = st.MarkSaved(ctx, "b", "/p", time.Now())
+	for _, id := range []string{"a", "b"} {
+		if a, _ := st.Get(ctx, id); !a.GoneAt.IsZero() {
+			t.Errorf("%s keeps goneAt after a normal fetch", id)
+		}
+	}
+	if len(st.Gone()) != 0 || len(st.Failed()) != 1 {
+		t.Errorf("gone %d failed %d", len(st.Gone()), len(st.Failed()))
 	}
 }

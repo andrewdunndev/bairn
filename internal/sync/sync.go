@@ -459,6 +459,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			logProgress(logger, res, page)
 		}
 		if plan != nil && plan.finished(page) {
+			walkEnded = false
 			break
 		}
 		if opts.MaxPages > 0 && res.PagesWalked >= opts.MaxPages {

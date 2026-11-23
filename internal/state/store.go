@@ -63,7 +63,7 @@ type Asset struct {
 	// GoneAt is when a --retry-failed walk that covered the entry's
 	// post date (or reached the feed's end) did not find the post.
 	// Failed skips such entries; --retry-gone revisits them.
-	GoneAt  time.Time `json:"goneAt,omitempty"`
+	GoneAt  time.Time `json:"goneAt,omitzero"`
 	Retries int       `json:"retries,omitempty"`
 }
 
@@ -251,6 +251,7 @@ func (s *Store) MarkSaved(ctx context.Context, id, savedPath string, at time.Tim
 		a.SavedAt = at.UTC()
 		a.SavedPath = savedPath
 		a.LastError = "" // a failed fetch is resolved once the file is on disk
+		a.GoneAt = time.Time{}
 	})
 }
 
@@ -420,6 +421,7 @@ func (s *Store) MarkError(ctx context.Context, id, errMsg string) error {
 	return s.update(id, func(a *Asset) {
 		a.Retries++
 		a.LastError = errMsg
+		a.GoneAt = time.Time{}
 	})
 }
 

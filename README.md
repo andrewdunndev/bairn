@@ -359,7 +359,8 @@ not one per run. A walk stopped by `--max-pages` or an error marks
 nothing, and `--dry-run` never marks. The summary's `gone` counts the
 entries marked this run. `--retry-failed --retry-gone` revisits the
 marked entries too: one found is filled in and unmarked, one still
-missing is marked again.
+missing is marked again. `--retry-gone` without `--retry-failed` is refused (exit 2); a
+run that skips marked entries logs "skipping entries marked gone".
 
 The flag cannot be combined with `--source`, `--include-system-posts`
 or `--allow-missing-state`, works with `--dry-run`, and skips the album
