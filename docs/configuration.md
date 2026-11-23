@@ -145,6 +145,7 @@ Other commands:
 | | `--user`, `--password` | Immich login for the full smoke (defaults `IMMICH_BAIRN_USER`, `IMMICH_BAIRN_PASSWORD`) |
 | | `--api-key` | Immich API key (default `IMMICH_API_KEY`); ignored when user and password are set |
 | `bairn backfill upload-sha1` | `--dry-run` | count without writing the state file |
+| `bairn verify` | `--dry-run` | make the Immich calls and count the outcomes without writing the state file |
 | `bairn repair missing` | `--dry-run` | count without writing the state file |
 | `bairn status` | `--missing` | print the ids (state keys only) of saved entries whose file is missing, one per line |
 
@@ -255,6 +256,46 @@ a fetch. The summary is JSON:
 | `skippedModified` | left blank because the file changed after upload |
 | `missingFile` | no saved path, or the file is gone |
 | `errors` | stat, hash or state-write failures; any makes the exit code 1 |
+
+### Verifying against Immich
+
+`bairn verify [--dry-run]` needs `IMMICH_BASE_URL` and `IMMICH_API_KEY`
+(exit 2 without them) and takes the state lock, so it cannot run beside
+a fetch. It never reads or changes a saved file. For every entry with
+`uploadedAt` set and `prunedAt` zero it asks Immich one question:
+`POST /assets/bulk-upload-check` with `{"assets":[{"id","checksum"}]}`,
+where `id` is the state id and `checksum` is the hex `uploadSha1`. The
+key needs only `asset.upload`. Requests carry at most 500 entries; the
+state file is written after each batch.
+
+| Immich answer | Result | Stamp |
+|---|---|---|
+| the checksum maps to the entry's own `immichAssetId`, not trashed | `verified` | `immichVerifiedAt` set, `verifyResult` cleared |
+| same asset, trashed | `trashed` | `verifyResult=trashed`, `immichVerifiedAt` cleared |
+| the checksum maps to a different asset | `mismatch` | `verifyResult=mismatch`, `immichVerifiedAt` cleared |
+| the checksum is unknown to the key's owner | `absentInImmich` | `verifyResult=absent`, `immichVerifiedAt` cleared |
+| the entry has no `uploadSha1` (or no `immichAssetId`) | `unverifiable` | `verifyResult=unverifiable`, `immichVerifiedAt` cleared; no call is made |
+
+A later non-verified answer therefore clears an earlier verification.
+`mismatch` and `absent` cannot be told apart from "Immich holds other
+bytes" versus "deleted in Immich" without `asset.read`; both keep the
+file. The summary is JSON:
+
+| Field | Meaning |
+|---|---|
+| `verified` | entries Immich confirmed |
+| `trashed` | same asset, but in Immich's trash |
+| `mismatch` | the checksum belongs to a different asset |
+| `absentInImmich` | the checksum is unknown to the key's owner |
+| `unverifiable` | no `uploadSha1` or no `immichAssetId`; not checked |
+| `errors` | entries in a batch that failed (transport error, 5xx after retries, a reply that does not cover the batch exactly, a state write); any makes the exit code 1 |
+
+A failed batch stamps nothing, other batches keep their stamps, and a
+failure is never read as `absentInImmich`. A 401 or 403 stops the run;
+the entries not yet checked count in `errors`. Exit codes: 0 all
+checkable entries answered, 1 any error or a locked state file, 2 usage
+or missing Immich configuration. With `--dry-run` the counts are the
+same and the state file is not written.
 
 ### Recovering saved files that are gone
 

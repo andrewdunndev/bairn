@@ -171,6 +171,8 @@ summary, the state file, filename layout and embedded metadata are in
 - `bairn fetch --retry-failed` revisits only the items that failed.
 - `bairn backfill upload-sha1` fills in the Immich checksum on older
   state entries, offline.
+- `bairn verify [--dry-run]` asks Immich whether it holds each uploaded
+  entry's bytes and stamps the result in state; it deletes nothing.
 - The state file is the tombstone for uploads: back it up with the archive.
 
 ## Developing
