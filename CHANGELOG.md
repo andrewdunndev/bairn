@@ -23,6 +23,10 @@ additions.
 
 ### Added
 
+- `fetch --retry-failed` marks an entry `goneAt` after a walk that
+  covered its post date (or reached the feed's end) did not find it,
+  and later retries skip it. `--retry-gone` revisits marked entries; a
+  find clears the mark. The retry summary gains `gone`.
 - State entries gain `uploadSha1`, the SHA-1 of the bytes uploaded to
   Immich (its asset checksum). `sha1` still holds the download hash,
   which differs once EXIF is reinjected. Entries uploaded before this
