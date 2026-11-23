@@ -35,29 +35,11 @@ State persists as a single JSON file. Default location:
 is `<save-dir>/.bairn-state.json` for keep-photos-and-state-together
 deployments.
 
-Format: a flat object keyed by Famly image ID, values are records:
-
-```json
-{
-  "<famly-image-id>": {
-    "source": "feed-image",
-    "feedItemId": "...",
-    "discoveredAt": "2026-05-06T14:00:00Z",
-    "downloadedAt": "...",
-    "savedAt": "...",
-    "savedPath": "feed-image-2026-05-06_14-00-00-<id>.jpg",
-    "sha1": "...",
-    "uploadSha1": "...",
-    "exifFixedAt": "...",
-    "exifError": null,
-    "uploadedAt": null,
-    "immichAssetId": null,
-    "immichStatus": null,
-    "lastError": null,
-    "retries": 0
-  }
-}
-```
+Format: a flat object keyed by Famly image ID, values are records.
+The record is the `Asset` struct in `internal/state/store.go`, which is
+the one source of truth for its fields; this ADR deliberately carries
+no example so it cannot drift from it. Every optional field is
+`omitempty` (or `omitzero` for times that need it).
 
 Concurrency: an OS file lock (`flock` LOCK_EX|LOCK_NB, unix only) is held for the duration of a run, on a sibling `<state-path>.lock`
 that is never renamed (the state file is replaced on every flush).

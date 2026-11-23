@@ -14,23 +14,53 @@ additions.
 
 ## [Unreleased]
 
+### Added
+
+- `bairn backfill upload-sha1 [--dry-run]` fills `uploadSha1` on
+  entries uploaded before it existed, offline, by hashing the saved
+  file. An entry whose EXIF stamp or file mtime is later than its
+  upload is left blank, existing values are never overwritten, and the
+  summary counts `considered`, `hashed`, `skippedModified`,
+  `missingFile` and `errors` (any error exits 1).
+- State entries gain `uploadSha1`, the SHA-1 of the bytes uploaded to
+  Immich (its asset checksum). `sha1` still holds the download hash,
+  which differs once EXIF is reinjected. Entries uploaded before this
+  release lack the field until the backfill runs.
+- `fetch --retry-failed` marks an entry `goneAt` (`omitzero`, so entries never marked gain no key) after a walk that
+  covered its post date (or reached the feed's end) did not find it,
+  and later retries skip it. `--retry-gone` revisits marked entries; a
+  find clears the mark. `--retry-gone` without `--retry-failed` is
+  refused with exit 2. The retry summary gains `gone`.
+- `docs/configuration.md` holds the configuration, flag, exit-code and
+  summary reference moved out of the README, with a flag table for
+  `login`, `drift` and `smoke immich`.
+
+### Changed
+
+- `fetch --retry-failed` logs `jumpTo` and `stopAfter` as `none` when
+  there is nothing to retry, instead of a zero date.
+- The README is a short front page; local dev and the pre-tag gate
+  moved to CONTRIBUTING.md.
+- ADR 0004 points at `internal/state/store.go` for the record fields
+  instead of carrying an example that had drifted.
+- CI installs exiftool and runs the metadata round-trip test, which a
+  missing exiftool used to skip silently; it now fails instead. CI
+  images move to ci-go 4.17.0.
+
 ### Fixed
 
 - A fetch now stamps the post date (`feedItemAt`) on entries that are
   already saved but undated, so `--retry-failed` can jump to dated
   entries instead of walking the whole feed. The stamp is flushed with
   the next batched write or at exit, not on its own.
-
-### Added
-
-- `fetch --retry-failed` marks an entry `goneAt` (`omitzero`, so entries never marked gain no key) after a walk that
-  covered its post date (or reached the feed's end) did not find it,
-  and later retries skip it. `--retry-gone` revisits marked entries; a
-  find clears the mark. The retry summary gains `gone`.
-- State entries gain `uploadSha1`, the SHA-1 of the bytes uploaded to
-  Immich (its asset checksum). `sha1` still holds the download hash,
-  which differs once EXIF is reinjected. Entries uploaded before this
-  release lack the field; it is forward-only.
+- Silent state and household errors now surface in the exit code.
+  `bairn status` exits 1 when its state close fails, as `fetch`
+  already did. Under `--source=tagged` or `--source=liked` a failed
+  `/relations` lookup aborts the run before sync (it was a warning that
+  left a partial household set and dropped images). A failed state read
+  or `feedItemAt` stamp in the saved-item check counts into
+  `stateErrors` and exits 1; an item whose read failed is skipped, not
+  reprocessed as unsaved.
 
 ## [0.7.0] - 2026-11-21
 
