@@ -124,6 +124,17 @@ type Deps struct {
 	tagOwners map[string][]string
 	tagMarked func(ctx context.Context, tagged []string, refused map[string]string, logger *slog.Logger)
 	marked    func(ctx context.Context, filed []string, refused map[string]string, logger *slog.Logger)
+
+	// saved overrides State for the saved-state check; tests inject a
+	// failing one. Nil = State.
+	saved savedChecker
+}
+
+func (d Deps) savedState() savedChecker {
+	if d.saved != nil {
+		return d.saved
+	}
+	return d.State
 }
 
 func defaultDownloadRetry() retry.Policy { return retry.DownloadPolicy() }
@@ -600,24 +611,46 @@ func shouldDownloadImage(img famly.Image, opts Options) bool {
 	return false
 }
 
+// savedChecker is the slice of the state store checkSaved needs.
+type savedChecker interface {
+	IsSaved(ctx context.Context, id string) (bool, error)
+	Discover(ctx context.Context, id string, a state.Asset) error
+}
+
+// checkSaved reports whether the asset is already saved. ok is false
+// when the state read failed: the item is counted in res.StateErrors
+// and must be skipped, never reprocessed as unsaved. A failed
+// FeedItemAt stamp on a saved entry is counted but does not skip.
+func checkSaved(ctx context.Context, st savedChecker, disc asset.Discovered, dryRun bool, res *Result, logger *slog.Logger) (already, ok bool) {
+	id := disc.FamlyImageID()
+	already, err := st.IsSaved(ctx, id)
+	if err != nil {
+		res.StateErrors++
+		logger.Error("state.IsSaved", "id", id, "err", err)
+		return false, false
+	}
+	if already && !dryRun {
+		// Entries saved before FeedItemAt existed gain it here; Discover
+		// only fills a zero value and defers its flush.
+		if err := st.Discover(ctx, id, state.Asset{FeedItemAt: disc.FeedItemAt()}); err != nil {
+			res.StateErrors++
+			logger.Error("state.Discover (stamp)", "id", id, "err", err)
+		}
+	}
+	return already, true
+}
+
 // processOne runs the typestate transitions for one asset and returns
 // the bucket it ended in.
 func processOne(ctx context.Context, deps Deps, opts Options, disc asset.Discovered, res *Result, logger *slog.Logger) bucket {
 	id := disc.FamlyImageID()
 
 	// Skip if already saved.
-	already, err := deps.State.IsSaved(ctx, id)
-	if err != nil {
-		logger.Warn("state.IsSaved", "id", id, "err", err)
+	already, ok := checkSaved(ctx, deps.savedState(), disc, opts.DryRun, res, logger)
+	if !ok {
+		return bFailed
 	}
 	if already {
-		if !opts.DryRun {
-			// Entries saved before FeedItemAt existed gain it here; Discover
-			// only fills a zero value and defers its flush.
-			if err := deps.State.Discover(ctx, id, state.Asset{FeedItemAt: disc.FeedItemAt()}); err != nil {
-				logger.Warn("state.Discover (stamp)", "id", id, "err", err)
-			}
-		}
 		// On disk but maybe not in Immich: a failed upload, an
 		// Immich outage, or a save-only run. Upload from the disk sink.
 		if deps.Immich != nil {

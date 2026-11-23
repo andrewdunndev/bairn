@@ -216,41 +216,18 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		fmt.Fprintln(os.Stderr, "state:", err)
 		return 1
 	}
-	defer func() {
-		if err := st.Close(); err != nil {
-			logger.Error("state close", "err", err)
-			if code == 0 {
-				code = 1
-			}
-		}
-	}()
+	defer closeState(st, logger, &code)
 
 	// Built after state.Open so the session write sits under the state
 	// lock: two runs cannot race over the file.
 	tokenSrc := buildTokenSource(cfg, *dryRun, true, logger)
 	fc := famly.New(tokenSrc, famlyOpts(cfg)...)
 
-	logins := map[string]struct{}{}
-	children := map[string]struct{}{}
+	var logins, children map[string]struct{}
 	if src == sync.SourceTagged || src == sync.SourceLiked {
-		me, err := fc.Me(ctx)
+		logins, children, err = householdSets(ctx, fc, logger)
 		if err != nil {
-			logger.Error("fetch /me", "err", err)
 			return 1
-		}
-		logins[me.LoginID] = struct{}{}
-		for _, r := range me.Roles2 {
-			children[r.TargetID] = struct{}{}
-			rels, err := fc.Relations(ctx, r.TargetID)
-			if err != nil {
-				logger.Warn("fetch /relations", "child", r.TargetID, "err", err)
-				continue
-			}
-			for _, rel := range rels {
-				if rel.LoginID != "" {
-					logins[rel.LoginID] = struct{}{}
-				}
-			}
 		}
 		// Trap A: a token that mints fine but resolves to no
 		// children/logins makes shouldDownloadImage return false for
@@ -321,18 +298,68 @@ func fetchExitCode(res sync.Result, w io.Writer) int {
 	return code
 }
 
+// closeState closes the state store at the end of a command. A failed
+// close can mean the final flush did not reach disk, so it is logged
+// and turns a clean exit into 1.
+func closeState(st io.Closer, logger *slog.Logger, code *int) {
+	if err := st.Close(); err != nil {
+		logger.Error("state close", "err", err)
+		if *code == 0 {
+			*code = 1
+		}
+	}
+}
+
+// householdSets resolves the login and child ID sets the tagged and
+// liked sources filter on. Any failure is returned (and logged): a
+// partial set would silently drop household images.
+func householdSets(ctx context.Context, fc *famly.Client, logger *slog.Logger) (logins, children map[string]struct{}, err error) {
+	me, err := fc.Me(ctx)
+	if err != nil {
+		logger.Error("fetch /me", "err", err)
+		return nil, nil, err
+	}
+	logins = map[string]struct{}{me.LoginID: {}}
+	children = map[string]struct{}{}
+	for _, r := range me.Roles2 {
+		children[r.TargetID] = struct{}{}
+		rels, err := fc.Relations(ctx, r.TargetID)
+		if err != nil {
+			logger.Error("fetch /relations: household set incomplete, aborting before sync", "child", r.TargetID, "err", err)
+			return nil, nil, err
+		}
+		for _, rel := range rels {
+			if rel.LoginID != "" {
+				logins[rel.LoginID] = struct{}{}
+			}
+		}
+	}
+	return logins, children, nil
+}
+
+// statusStore is the slice of the state store runStatus uses.
+type statusStore interface {
+	io.Closer
+	Stats(ctx context.Context) (state.Summary, error)
+}
+
+// openStatusState opens the store for status; tests replace it.
+var openStatusState = func(ctx context.Context, path string) (statusStore, error) {
+	return state.Open(ctx, path)
+}
+
 // runStatus implements the status subcommand.
-func runStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
+func runStatus(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) (code int) {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	st, err := state.Open(ctx, cfg.StatePath)
+	st, err := openStatusState(ctx, cfg.StatePath)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "state:", err)
 		return 1
 	}
-	defer st.Close()
+	defer closeState(st, logger, &code)
 	sm, err := st.Stats(ctx)
 	if err != nil {
 		logger.Error("stats", "err", err)
