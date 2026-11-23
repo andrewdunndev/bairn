@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/asset"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/sink"
@@ -98,8 +97,12 @@ func unlinkContained(root, p string) error {
 	return nil
 }
 
-// runPrune implements `bairn prune [--apply]`.
+// runPrune implements `bairn prune [--apply]` against the configured sink.
 func runPrune(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
+	return runPruneOn(ctx, configuredSink(cfg, logger), cfg, logger, args)
+}
+
+func runPruneOn(ctx context.Context, s sink.Sink, cfg *config.Config, logger *slog.Logger, args []string) int {
 	fl := flag.NewFlagSet("prune", flag.ExitOnError)
 	apply := fl.Bool("apply", false, "delete the verified local copies (default: a dry run that changes nothing)")
 	if err := fl.Parse(args); err != nil {
@@ -109,8 +112,8 @@ func runPrune(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		fmt.Fprintln(os.Stderr, "usage: bairn prune [--apply]")
 		return 2
 	}
-	if cfg.ImmichBaseURL == "" || cfg.ImmichAPIKey == "" {
-		fmt.Fprintln(os.Stderr, "prune: IMMICH_BASE_URL and IMMICH_API_KEY are required")
+	cf, ok := confirmerOf("prune", s)
+	if !ok {
 		return 2
 	}
 	// Open takes the exclusive state lock, so this cannot run beside a fetch.
@@ -124,8 +127,7 @@ func runPrune(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		fmt.Fprintln(os.Stderr, "prune: refusing:", gerr)
 		return 1
 	}
-	ic := immich.New(cfg.ImmichBaseURL, cfg.ImmichAPIKey, immich.WithLogger(logger))
-	sum := pruneEntries(ctx, st, ic, cfg.SaveDir, !*apply, time.Now().UTC(), logger)
+	sum := pruneEntries(ctx, st, cf, cfg.SaveDir, !*apply, time.Now().UTC(), logger)
 	if err := st.Close(); err != nil {
 		logger.Error("prune: write state", "err", err)
 		sum.Errors++
@@ -217,9 +219,9 @@ func lstatContained(root, p string) (string, fs.FileInfo, error) {
 // nothing; an auth failure,
 // a cancelled context or a failed state write stops the run, counting
 // every entry not yet decided as an error.
-func pruneEntries(ctx context.Context, st *state.Store, ic bulkChecker, root string, dry bool, at time.Time, logger *slog.Logger) pruneSummary {
+func pruneEntries(ctx context.Context, st *state.Store, cf sink.Confirmer, root string, dry bool, at time.Time, logger *slog.Logger) pruneSummary {
 	sum := pruneSummary{DryRun: dry}
-	skip, abort := resumePruned(ctx, st, ic, root, dry, at, &sum, logger)
+	skip, abort := resumePruned(ctx, st, cf, root, dry, at, &sum, logger)
 	if abort {
 		return sum
 	}
@@ -232,15 +234,15 @@ func pruneEntries(ctx context.Context, st *state.Store, ic bulkChecker, root str
 		sum.Considered++
 		// Only an entry the last verify confirmed, and that holds both
 		// halves of the question, goes to the re-verify.
-		if e.ImmichVerifiedAt.IsZero() || e.VerifyResult != "" || e.UploadSHA1 == "" || e.ImmichAssetID == "" {
+		if e.VerifiedAt.IsZero() || e.VerifyResult != "" || e.UploadSHA1 == "" || e.ImmichAssetID == "" {
 			sum.NotVerified++
 			continue
 		}
 		todo = append(todo, e)
 	}
-	for i := 0; i < len(todo); i += verifyBatch {
-		batch := todo[i:min(i+verifyBatch, len(todo))]
-		abort, err := pruneBatch(ctx, st, ic, root, batch, dry, at, &sum, logger)
+	for i := 0; i < len(todo); i += cf.ConfirmBatch() {
+		batch := todo[i:min(i+cf.ConfirmBatch(), len(todo))]
+		abort, err := pruneBatch(ctx, st, cf, root, batch, dry, at, &sum, logger)
 		if err != nil {
 			logger.Error("prune: batch failed; nothing deleted for it", "err", err)
 		}
@@ -255,11 +257,11 @@ func pruneEntries(ctx context.Context, st *state.Store, ic bulkChecker, root str
 // pruneBatch re-verifies one batch, then decides each entry. It returns
 // abort for an error no later batch can survive. Entries it could not
 // decide are counted under Errors.
-func pruneBatch(ctx context.Context, st *state.Store, ic bulkChecker, root string, batch []state.PruneEntry, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (abort bool, err error) {
-	outcomes, err := recheck(ctx, ic, batch)
+func pruneBatch(ctx context.Context, st *state.Store, cf sink.Confirmer, root string, batch []state.PruneEntry, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (abort bool, err error) {
+	outcomes, err := recheck(ctx, cf, batch)
 	if err != nil {
 		sum.Errors += len(batch)
-		return errors.Is(err, immich.ErrUnauthorized) || ctx.Err() != nil, err
+		return errors.Is(err, sink.ErrUnauthorized) || ctx.Err() != nil, err
 	}
 	// A failed re-verify demotes the stamp, so the entry shows as
 	// failed in status and the next prune does not re-ask.
@@ -325,16 +327,16 @@ func pruneBatch(ctx context.Context, st *state.Store, ic bulkChecker, root strin
 
 // recheck asks Immich one bulk question about the entries and returns
 // each one's outcome, in order.
-func recheck(ctx context.Context, ic bulkChecker, es []state.PruneEntry) ([]string, error) {
-	items := make([]immich.CheckItem, len(es))
+func recheck(ctx context.Context, cf sink.Confirmer, es []state.PruneEntry) ([]string, error) {
+	items := make([]sink.ConfirmItem, len(es))
 	for i, e := range es {
-		items[i] = immich.CheckItem{ID: e.ID, Checksum: e.UploadSHA1}
+		items[i] = sink.ConfirmItem{ID: e.ID, RemoteID: e.ImmichAssetID, SHA1: e.UploadSHA1}
 	}
-	res, err := ic.BulkUploadCheck(ctx, items)
+	res, err := cf.Confirm(ctx, items)
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]immich.CheckResult, len(res))
+	byID := make(map[string]sink.ConfirmResult, len(res))
 	for _, r := range res {
 		byID[r.ID] = r
 	}
@@ -347,7 +349,7 @@ func recheck(ctx context.Context, ic bulkChecker, es []state.PruneEntry) ([]stri
 		if !ok {
 			return nil, errors.New("reply is missing a requested entry")
 		}
-		out[i] = classify(state.VerifyCandidate{ID: e.ID, UploadSHA1: e.UploadSHA1, ImmichAssetID: e.ImmichAssetID}, r)
+		out[i] = resultFor(r.Outcome)
 	}
 	return out, nil
 }
@@ -475,7 +477,7 @@ func removeSidecar(root, path string, e state.PruneEntry) (int64, error) {
 // under ResumeKept. skip holds the entries un-pruned here, so the main
 // pass does not count them again. abort reports a failed state write or
 // an unusable Immich.
-func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root string, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (skip map[string]bool, abort bool) {
+func resumePruned(ctx context.Context, st *state.Store, cf sink.Confirmer, root string, dry bool, at time.Time, sum *pruneSummary, logger *slog.Logger) (skip map[string]bool, abort bool) {
 	type left struct {
 		e    state.PruneEntry
 		path string
@@ -503,17 +505,17 @@ func resumePruned(ctx context.Context, st *state.Store, ic bulkChecker, root str
 		lefts = append(lefts, left{e, path, fi})
 	}
 	cleared := false
-	for i := 0; i < len(lefts); i += verifyBatch {
-		batch := lefts[i:min(i+verifyBatch, len(lefts))]
+	for i := 0; i < len(lefts); i += cf.ConfirmBatch() {
+		batch := lefts[i:min(i+cf.ConfirmBatch(), len(lefts))]
 		es := make([]state.PruneEntry, len(batch))
 		for j, l := range batch {
 			es[j] = l.e
 		}
-		outcomes, err := recheck(ctx, ic, es)
+		outcomes, err := recheck(ctx, cf, es)
 		if err != nil {
 			logger.Error("prune: resume re-verify failed; leftovers kept", "err", err)
 			sum.Errors += len(lefts) - i
-			return skip, errors.Is(err, immich.ErrUnauthorized) || ctx.Err() != nil
+			return skip, errors.Is(err, sink.ErrUnauthorized) || ctx.Err() != nil
 		}
 		for j, l := range batch {
 			e := l.e

@@ -19,7 +19,7 @@ func addPruned(t *testing.T, st *state.Store, id, dir string) {
 		Source: "feed-image", FeedItemID: "post-" + id, FeedItemAt: at, DiscoveredAt: at,
 		DownloadedAt: at, SavedAt: at, SavedPath: filepath.Join(dir, id+".jpg"), SHA1: "sha-" + id,
 		UploadSHA1: "up-" + id, UploadedAt: at, ImmichAssetID: "imm-" + id,
-		ImmichVerifiedAt: at, PrunedAt: at,
+		VerifiedAt: at, PrunedAt: at,
 	})
 	if err != nil {
 		t.Fatal(err)

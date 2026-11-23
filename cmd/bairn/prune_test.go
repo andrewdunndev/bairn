@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"gitlab.com/dunn.dev/bairn/internal/config"
+	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 )
 
@@ -72,7 +73,7 @@ func (e *pEnv) add(id, content, uploaded string) string {
 
 func (e *pEnv) entry(id, path, uploaded string, verified time.Time, result string) {
 	e.ents[id] = state.Asset{Source: "feed-video", SavedAt: pruneAt, SavedPath: path, SHA1: "dl-" + id, UploadSHA1: shaOf(uploaded),
-		ImmichAssetID: "imm-" + id, ImmichVerifiedAt: verified, VerifyResult: result}
+		ImmichAssetID: "imm-" + id, VerifiedAt: verified, VerifyResult: result}
 }
 
 // seed writes the entries to the state file and closes it.
@@ -210,10 +211,10 @@ func TestPruneApplyDecidesEachEntry(t *testing.T) {
 		}
 	}
 	// A failed re-verify demotes the stamp.
-	if a := e.get("trashed"); !a.ImmichVerifiedAt.IsZero() || a.VerifyResult != "trashed" {
+	if a := e.get("trashed"); !a.VerifiedAt.IsZero() || a.VerifyResult != "trashed" {
 		t.Errorf("trashed not demoted: %+v", a)
 	}
-	if a := e.get("moved"); !a.ImmichVerifiedAt.IsZero() || a.VerifyResult != "mismatch" {
+	if a := e.get("moved"); !a.VerifiedAt.IsZero() || a.VerifyResult != "mismatch" {
 		t.Errorf("moved not demoted: %+v", a)
 	}
 	// Entries never verified made no Immich call: 7 sent.
@@ -450,7 +451,7 @@ func TestPruneDeletesNothingWhenImmichFails(t *testing.T) {
 
 func TestPruneUnauthorizedStopsLaterBatches(t *testing.T) {
 	e := newPEnv(t)
-	for i := range verifyBatch + 3 {
+	for i := range sink.NewImmich(nil).ConfirmBatch() + 3 {
 		id := "e" + vsum(i)[30:]
 		e.add(id, "b"+id, "b"+id)
 	}
@@ -459,7 +460,7 @@ func TestPruneUnauthorizedStopsLaterBatches(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(401) }))
 	defer srv.Close()
 	sum, code := runPruneCapture(t, e.cfg(srv.URL), "--apply")
-	if code != 1 || calls != 1 || sum.Errors != verifyBatch+3 || sum.Pruned != 0 {
+	if code != 1 || calls != 1 || sum.Errors != sink.NewImmich(nil).ConfirmBatch()+3 || sum.Pruned != 0 {
 		t.Errorf("exit %d calls %d %+v", code, calls, sum)
 	}
 }
@@ -773,7 +774,7 @@ func TestPruneCrashBetweenFlushAndUnlinkIsResumed(t *testing.T) {
 	}
 	func() {
 		defer func() { _ = recover() }()
-		pruneEntries(context.Background(), st, f.client(), e.root, false, pruneAt, quiet)
+		pruneEntries(context.Background(), st, sink.NewImmich(f.client()), e.root, false, pruneAt, quiet)
 		t.Error("no crash")
 	}()
 	b, _ := os.ReadFile(e.state)

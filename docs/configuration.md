@@ -225,7 +225,7 @@ that need a note:
 - `goneAt`: when a `--retry-failed` walk covered the entry's post date
   (or reached the feed's end) and did not find the post. Absent unless
   marked. It is cleared when the entry is saved or fails again.
-- `immichVerifiedAt`: when Immich last confirmed it holds the entry's
+- `verifiedAt`: when the confirming sink (Immich today) last confirmed it holds the entry's
   `uploadSha1` under `immichAssetId`, not trashed. Absent unless
   verified.
 - `verifyResult`: the last failed verify outcome (`trashed`,
@@ -260,8 +260,11 @@ a fetch. The summary is JSON:
 
 ### Verifying against Immich
 
-`bairn verify [--dry-run]` needs `IMMICH_BASE_URL` and `IMMICH_API_KEY`
-(exit 2 without them) and takes the state lock, so it cannot run beside
+`bairn verify [--dry-run]` and `bairn prune` need a sink that can
+confirm copies; Immich is the one that confirms today, so they need
+`IMMICH_BASE_URL` and `IMMICH_API_KEY` (exit 2 with the line `verify/prune
+need a sink that can confirm copies; none is configured` otherwise, before
+state or any file is touched). `verify` takes the state lock, so it cannot run beside
 a fetch. It never reads or changes a saved file. For every entry with
 `uploadedAt` set and `prunedAt` zero it asks Immich one question:
 `POST /assets/bulk-upload-check` with `{"assets":[{"id","checksum"}]}`,
@@ -271,11 +274,11 @@ state file is written after each batch.
 
 | Immich answer | Result | Stamp |
 |---|---|---|
-| the checksum maps to the entry's own `immichAssetId`, not trashed | `verified` | `immichVerifiedAt` set, `verifyResult` cleared |
-| same asset, trashed | `trashed` | `verifyResult=trashed`, `immichVerifiedAt` cleared |
-| the checksum maps to a different asset | `mismatch` | `verifyResult=mismatch`, `immichVerifiedAt` cleared |
-| the checksum is unknown to the key's owner | `absentInImmich` | `verifyResult=absent`, `immichVerifiedAt` cleared |
-| the entry has no `uploadSha1` (or no `immichAssetId`) | `unverifiable` | `verifyResult=unverifiable`, `immichVerifiedAt` cleared; no call is made |
+| the checksum maps to the entry's own `immichAssetId`, not trashed | `verified` | `verifiedAt` set, `verifyResult` cleared |
+| same asset, trashed | `trashed` | `verifyResult=trashed`, `verifiedAt` cleared |
+| the checksum maps to a different asset | `mismatch` | `verifyResult=mismatch`, `verifiedAt` cleared |
+| the checksum is unknown to the key's owner | `absentInImmich` | `verifyResult=absent`, `verifiedAt` cleared |
+| the entry has no `uploadSha1` (or no `immichAssetId`) | `unverifiable` | `verifyResult=unverifiable`, `verifiedAt` cleared; no call is made |
 
 A later non-verified answer therefore clears an earlier verification.
 `mismatch` and `absent` cannot be told apart from "Immich holds other
@@ -315,7 +318,7 @@ the state lock, and never downloads, uploads or `--restore`s anything
 
 An entry is deleted only when all of these hold in this run:
 
-1. `immichVerifiedAt` is set and `verifyResult` is empty;
+1. `verifiedAt` is set and `verifyResult` is empty;
 2. a fresh bulk-upload-check, sent by this run, says Immich holds the
    `uploadSha1` under the entry's own `immichAssetId`, not trashed;
 3. the SHA-1 of the local file equals `uploadSha1`, so a file re-saved
@@ -366,7 +369,7 @@ is outside its guarantees (symlinks are never followed).
 | `considered` | uploaded, saved, unpruned entries (not those the resume sweep just un-pruned) |
 | `pruned` | deleted (media and sidecar) |
 | `wouldPrune` | dry run: entries that would be deleted |
-| `notVerified` | no `immichVerifiedAt`, a `verifyResult`, or no hash or asset id; no call made |
+| `notVerified` | no `verifiedAt`, a `verifyResult`, or no hash or asset id; no call made |
 | `reverifyFailed` | this run's check said trashed, mismatch or absent; the stamp is demoted (apply only) |
 | `localDiffers` | the file is not the bytes uploaded; kept |
 | `missingFile` | no saved path, or the file is gone |
@@ -519,7 +522,7 @@ than the count of `alreadyDone` entries. Each considered entry lands in
 regular file; entries with `prunedAt` are never counted). It stats
 files and never hashes them. `bairn status --missing` prints the ids of
 the `missingFile` entries instead of the summary. `verified`,
-`verifyFailed` and `pruned` count entries with `immichVerifiedAt`,
+`verifyFailed` and `pruned` count entries with `verifiedAt`,
 `verifyResult` and `prunedAt` set.
 
 

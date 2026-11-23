@@ -16,14 +16,16 @@ additions.
 
 ### Added
 
-- State fields `immichVerifiedAt`, `verifyResult` and `prunedAt`, all
+- State fields `verifiedAt`, `verifyResult` and `prunedAt`, all
   omitted when unset, so state written by 0.8.1 loads unchanged. They
   are the groundwork for `bairn verify` and `bairn prune`.
-- `bairn verify [--dry-run]` asks Immich, with `POST
+- `bairn verify [--dry-run]` asks a sink that can confirm copies
+  (Immich is the one today; with none configured, `verify` and `prune`
+  exit 2 before touching state or files), with `POST
   /assets/bulk-upload-check` in batches of 500 (key permission
   `asset.upload`, which the upload key already holds), whether it still
   holds each uploaded entry's `uploadSha1` under the entry's own
-  `immichAssetId`, not trashed. It stamps `immichVerifiedAt`, or
+  `immichAssetId`, not trashed. It stamps `verifiedAt`, or
   `verifyResult` (`trashed`, `mismatch`, `absent`) and clears an earlier
   verification. Entries with no `uploadSha1` are `unverifiable`: no call is made
   and an earlier verification is cleared; pruned entries are skipped. Immich unreachable, a 5xx or a
