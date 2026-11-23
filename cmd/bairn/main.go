@@ -46,6 +46,7 @@ subcommands:
   version  print the bairn version
   backfill fill state fields from the saved files, offline (backfill upload-sha1)
   verify   ask Immich whether it holds each uploaded entry's bytes (verify [--dry-run])
+  prune    delete verified local copies; a dry run unless --apply (prune [--apply])
   repair   re-queue entries whose saved file is gone, offline (repair missing)
   drift    check the vendor surface for schema drift
   smoke    live contract probe of a sink on a smoke account
@@ -88,6 +89,8 @@ func main() {
 		os.Exit(runBackfill(ctx, cfg, logger, os.Args[2:]))
 	case "verify":
 		os.Exit(runVerify(ctx, cfg, logger, os.Args[2:]))
+	case "prune":
+		os.Exit(runPrune(ctx, cfg, logger, os.Args[2:]))
 	case "repair":
 		os.Exit(runRepair(ctx, cfg, logger, os.Args[2:]))
 	case "drift":

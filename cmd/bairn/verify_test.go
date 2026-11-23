@@ -98,7 +98,10 @@ func vSeed(t *testing.T, dir string, entries map[string]state.Asset) *state.Stor
 	}
 	at := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
 	for id, a := range entries {
-		a.Source, a.FeedItemID, a.FeedItemAt, a.DiscoveredAt = "feed-image", "post-"+id, at, at
+		if a.Source == "" {
+			a.Source = "feed-image"
+		}
+		a.FeedItemID, a.FeedItemAt, a.DiscoveredAt = "post-"+id, at, at
 		if a.UploadedAt.IsZero() {
 			a.UploadedAt = at
 		}

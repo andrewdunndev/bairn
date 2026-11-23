@@ -173,6 +173,10 @@ summary, the state file, filename layout and embedded metadata are in
   state entries, offline.
 - `bairn verify [--dry-run]` asks Immich whether it holds each uploaded
   entry's bytes and stamps the result in state; it deletes nothing.
+- `bairn prune [--apply]` deletes the local copy of entries Immich is
+  verified to hold. It is a dry run unless `--apply`, and the real prune
+  is operator-gated: run it only after a restore drill, and run `verify`
+  then a `prune` dry run first. See `docs/configuration.md`.
 - The state file is the tombstone for uploads: back it up with the archive.
 
 ## Developing

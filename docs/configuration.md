@@ -146,6 +146,7 @@ Other commands:
 | | `--api-key` | Immich API key (default `IMMICH_API_KEY`); ignored when user and password are set |
 | `bairn backfill upload-sha1` | `--dry-run` | count without writing the state file |
 | `bairn verify` | `--dry-run` | make the Immich calls and count the outcomes without writing the state file |
+| `bairn prune` | `--apply` | delete the verified local copies; without it, a dry run that writes nothing |
 | `bairn repair missing` | `--dry-run` | count without writing the state file |
 | `bairn status` | `--missing` | print the ids (state keys only) of saved entries whose file is missing, one per line |
 
@@ -296,6 +297,91 @@ the entries not yet checked count in `errors`. Exit codes: 0 all
 checkable entries answered, 1 any error or a locked state file, 2 usage
 or missing Immich configuration. With `--dry-run` the counts are the
 same and the state file is not written.
+
+### Pruning verified local copies
+
+`bairn prune [--apply]` deletes the saved copy of an entry Immich is
+known to hold, to free disk. **The real prune is operator-gated: run
+`--apply` only after a restore drill has shown the Immich copies are
+recoverable and the backups cover them.** Before that, run `bairn
+verify` and then a `bairn prune` dry run, and read the summary.
+
+Without `--apply` it is a dry run: it makes the same re-verify calls to
+Immich but writes neither the state file nor anything under the save
+directory (opening the state creates its `.lock` file, as every
+subcommand does). It needs `IMMICH_BASE_URL` and `IMMICH_API_KEY` and
+the state lock, and never downloads, uploads or `--restore`s anything
+(restoring a pruned file is not part of 0.9.0).
+
+An entry is deleted only when all of these hold in this run:
+
+1. `immichVerifiedAt` is set and `verifyResult` is empty;
+2. a fresh bulk-upload-check, sent by this run, says Immich holds the
+   `uploadSha1` under the entry's own `immichAssetId`, not trashed;
+3. the SHA-1 of the local file equals `uploadSha1`, so a file re-saved
+   after upload (new EXIF bytes Immich lacks) is kept;
+4. the entry is not already pruned.
+
+The path deleted is `savedPath` made absolute against the working directory,
+as the sink wrote it; the same resolved path is checked, hashed and unlinked. A
+path outside it, a symlink anywhere below it, or a non-regular file is
+refused and counted as an error; the same holds for the `.xmp` sidecar.
+The unlink opens each directory without following symlinks.
+
+The `.xmp` sidecar is deleted only when bairn uploaded it to Immich:
+source `feed-video`, with the sidecar present at upload. A sidecar
+modified after `uploadedAt` was never sent and is kept. For every other
+source (a photo embeds its XMP and has no bairn sidecar) any `.xmp`
+beside the media belongs to another tool (digiKam, darktable) and is
+never touched, nor counted in `bytesFreed` or `wouldFreeBytes`.
+
+Per batch the order is: stamp `prunedAt` on every verified entry and
+write the state file once, then delete each media, then its `.xmp`. A
+run killed after the stamp leaves pruned entries with their files. The
+next run treats those leftovers as a deletion path with the same gate:
+it re-verifies them in the same run (same id, not trashed) and deletes a
+leftover only if the local file still hashes to `uploadSha1`, under the
+same path checks; it never downloads anything again. The invariant: an entry is un-pruned only when its media is on disk, and
+media is deleted only after the full gate (contained, regular, not a
+symlink, hash equal to `uploadSha1`, re-verified this run). With the media
+present and the gate failing (Immich no longer holds the asset, or the
+file is not the uploaded bytes), the file is kept, counted as
+`resumeKept`, and `prunedAt` is cleared (the verify result is stamped when
+Immich answered), so the entry is an ordinary saved one again; this is not
+an error. With the media absent (only a sidecar left) the tombstone always
+stays, so nothing is re-downloaded: a verified run removes the gated
+sidecar, otherwise the sidecar stays and counts as `resumeKept`. An entry
+un-pruned by the sweep is not counted again by the main pass. A pruned entry otherwise keeps its `savedAt`,
+`savedPath`, hashes and `immichAssetId`; fetch, `--retry-failed`,
+`repair missing`, `backfill` and `status` leave it alone, and `status`
+counts it as `pruned`, not `missingFile`.
+
+Prune assumes a single operator on the host: it holds the state lock, but
+a file swapped between the check and the unlink by another local process
+is outside its guarantees (symlinks are never followed).
+
+| Field | Meaning |
+|---|---|
+| `dryRun` | true unless `--apply` |
+| `considered` | uploaded, saved, unpruned entries (not those the resume sweep just un-pruned) |
+| `pruned` | deleted (media and sidecar) |
+| `wouldPrune` | dry run: entries that would be deleted |
+| `notVerified` | no `immichVerifiedAt`, a `verifyResult`, or no hash or asset id; no call made |
+| `reverifyFailed` | this run's check said trashed, mismatch or absent; the stamp is demoted (apply only) |
+| `localDiffers` | the file is not the bytes uploaded; kept |
+| `missingFile` | no saved path, or the file is gone |
+| `errors` | an unsafe path, a hash, unlink or state-write failure, or an entry in a batch whose Immich check failed or was not reached; any makes the exit code 1 |
+| `bytesFreed`, `wouldFreeBytes` | media and sidecar bytes removed, or that would be, resume sweep included |
+| `resumed`, `wouldResume` | already-pruned entries whose leftover file a crashed run left, re-verified and finished, or that would be |
+| `resumeKept` | pruned entry the sweep did not finish: media present but the gate failed (file kept, entry unpruned), or media absent and not re-verified (tombstone and sidecar kept) |
+
+Exit codes: 0 done (skips are not errors), 1 any error, a locked state
+file, or a refusal; 2 usage or missing Immich configuration. It refuses
+with exit 1, changing nothing, when the save directory is unset, absent
+or not a directory, or when more than three files are saved and every one is missing
+(an unmounted volume). A transport error, a 5xx after retries or a short
+reply deletes nothing for that batch; a 401 or 403, or a failed state write, stops the
+run.
 
 ### Recovering saved files that are gone
 

@@ -30,6 +30,21 @@ additions.
   malformed reply stamps nothing for that batch and exits 1. It deletes
   nothing.
 - `bairn status` reports `verified`, `verifyFailed` and `pruned`.
+- `bairn prune [--apply]` deletes the saved copy of entries Immich holds
+  (and the `.xmp` only for a feed-video, whose sidecar bairn uploaded;
+  any other `.xmp` is never touched). A dry run by default, which writes nothing; the real
+  prune is operator-gated (after a restore drill), so run `bairn verify`
+  and a `prune` dry run first. An entry goes only if it was verified, a
+  re-verify in the same run says Immich still holds it untrashed, the
+  local SHA-1 equals `uploadSha1` (a file re-saved after upload is kept)
+  and the path is a regular, non-symlink file under the save directory.
+  `prunedAt` is written to the state (one write per batch) before any
+  unlink, so a crash is finished by the next run, which re-verifies the
+  leftovers with the same gate (media present but the gate failing: the
+  file is kept and the entry unpruned; media absent: the tombstone stays,
+  so nothing is re-downloaded) and downloads nothing. It refuses
+  on an unmounted save root and exits 1 on any error. The summary JSON is
+  in `docs/configuration.md`. `--restore` is not part of this release.
 
 ### Changed
 
