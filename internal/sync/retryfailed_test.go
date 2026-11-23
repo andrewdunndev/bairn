@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -688,5 +689,55 @@ func TestFetchLeavesDatedSavedEntriesAlone(t *testing.T) {
 	}
 	if got, _ := e.st.Get(ctx, "img-5"); !got.FeedItemAt.Equal(kept) {
 		t.Errorf("FeedItemAt = %v, want %v", got.FeedItemAt, kept)
+	}
+}
+
+// TestRepairedEntryIsRedownloadedAndNotReuploaded covers the recovery
+// from a saved file lost with its disk: after Requeue, --retry-failed
+// downloads it into the current save root and uploads it again, and
+// Immich (which dedupes by checksum) answers duplicate, so no second
+// asset is created and the stored receipt id stays.
+func TestRepairedEntryIsRedownloadedAndNotReuploaded(t *testing.T) {
+	feed := newDatedFeed(t, 3, nil, false)
+	e := newRetryEnv(t, feed)
+	var posts atomic.Int32
+	im := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		posts.Add(1)
+		_, _ = w.Write([]byte(`{"id":"asset-orig","status":"duplicate"}`))
+	}))
+	t.Cleanup(im.Close)
+	e.deps.Immich = sink.NewImmich(immich.New(im.URL, "k"))
+
+	ctx := context.Background()
+	at := postTime(1)
+	_ = e.st.Discover(ctx, "img-1", state.Asset{Source: "feed-image", FeedItemID: "post-1", FeedItemAt: at})
+	_ = e.st.MarkSaved(ctx, "img-1", "/home/laptop/saved/img-1.jpg", at)
+	_ = e.st.MarkUploaded(ctx, "img-1", "asset-orig", "created", "sha", at)
+	if n := e.st.Requeue([]string{"img-1"}, "saved file missing"); n != 1 {
+		t.Fatalf("requeued %d", n)
+	}
+	if ok, _ := e.st.IsSaved(ctx, "img-1"); ok {
+		t.Fatal("a normal fetch would skip the repaired entry")
+	}
+
+	res := e.run(t, false)
+	if res.Retry == nil || res.Retry.Failed != 1 || res.Retry.Fixed != 1 {
+		t.Fatalf("retry = %+v, want one fixed", res.Retry)
+	}
+	if posts.Load() != 1 || res.UploadDuplicates != 1 || res.Uploaded != 0 {
+		t.Errorf("uploads: requests=%d duplicates=%d created=%d, want a single duplicate", posts.Load(), res.UploadDuplicates, res.Uploaded)
+	}
+	a, _ := e.st.Get(ctx, "img-1")
+	if a.ImmichAssetID != "asset-orig" {
+		t.Errorf("ImmichAssetID = %q, want the original kept", a.ImmichAssetID)
+	}
+	if !sink.Within(e.dir, a.SavedPath) {
+		t.Fatalf("SavedPath %q is not under the save root %q", a.SavedPath, e.dir)
+	}
+	if _, err := os.Stat(a.SavedPath); err != nil {
+		t.Errorf("file not re-downloaded: %v", err)
+	}
+	if a.LastError != "" || a.SavedAt.IsZero() {
+		t.Errorf("entry not resolved: %+v", a)
 	}
 }

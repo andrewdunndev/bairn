@@ -145,6 +145,7 @@ Other commands:
 | | `--user`, `--password` | Immich login for the full smoke (defaults `IMMICH_BAIRN_USER`, `IMMICH_BAIRN_PASSWORD`) |
 | | `--api-key` | Immich API key (default `IMMICH_API_KEY`); ignored when user and password are set |
 | `bairn backfill upload-sha1` | `--dry-run` | count without writing the state file |
+| `bairn repair missing` | `--dry-run` | count without writing the state file |
 | `bairn status` | `--missing` | print the ids (state keys only) of saved entries whose file is missing, one per line |
 
 Albums are off unless `--albums` or a pattern is set. Patterns take
@@ -241,6 +242,34 @@ a fetch. The summary is JSON:
 | `skippedModified` | left blank because the file changed after upload |
 | `missingFile` | no saved path, or the file is gone |
 | `errors` | stat, hash or state-write failures; any makes the exit code 1 |
+
+### Recovering saved files that are gone
+
+When saved files are lost (a disk replaced, state moved to a server
+without its files), the entries still say saved, so a fetch skips them.
+The recovery is three steps: `bairn status --missing` lists them,
+`bairn repair missing [--dry-run]` re-queues them, and
+`bairn fetch --retry-failed` downloads them again into the current save
+root.
+
+`repair missing` is offline and takes the state lock like the backfill.
+For every entry with `savedAt` set whose file is absent (the
+`status --missing` definition) it clears `savedAt` and `savedPath` and
+sets `lastError` to `saved file missing`, all in one state write. It
+keeps `immichAssetId`, `uploadSha1`, `feedItemAt` and every other
+field. The retry uploads the new file; Immich recognises the checksum
+and answers duplicate, so no second asset is made. A file whose stat
+fails for a reason other than absence is an error and is left alone.
+The summary is JSON:
+
+| Field | Meaning |
+|---|---|
+| `considered` | entries with `savedAt` set |
+| `marked` | entries re-queued (with `--dry-run`, that would be) |
+| `present` | entries whose file exists |
+| `errors` | stat or state-write failures; any makes the exit code 1 |
+
+Usage errors exit 2.
 
 ### Retrying failed items
 

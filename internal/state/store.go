@@ -481,6 +481,32 @@ func (s *Store) MarkError(ctx context.Context, id, errMsg string) error {
 	})
 }
 
+// Requeue marks the saved entries ids as failed in one update: SavedAt
+// and SavedPath are cleared and LastError set, so Failed lists them and
+// IsSaved is false. Every other field, the Immich receipt included, is
+// kept. Unknown or unsaved ids are skipped. The count of entries
+// changed is returned; the write is deferred to Flush or Close.
+func (s *Store) Requeue(ids []string, errMsg string) int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for _, id := range ids {
+		a, ok := s.data[id]
+		if !ok || a.SavedAt.IsZero() {
+			continue
+		}
+		a.SavedAt = time.Time{}
+		a.SavedPath = ""
+		a.LastError = errMsg
+		a.GoneAt = time.Time{}
+		n++
+	}
+	if n > 0 {
+		s.dirty += n
+	}
+	return n
+}
+
 // update mutates an existing record under the lock.
 func (s *Store) update(id string, mut func(*Asset)) error {
 	s.mu.Lock()

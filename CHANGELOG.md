@@ -16,6 +16,11 @@ additions.
 
 ### Added
 
+- `bairn repair missing [--dry-run]` re-queues saved entries whose file
+  is gone: it clears `savedAt` and `savedPath` and sets `lastError`,
+  keeping the Immich receipt, so `fetch --retry-failed` downloads them
+  again (recovery: `status --missing`, `repair missing`, `fetch
+  --retry-failed`).
 - The fetch summary gains `stamped`, the number of `feedItemAt` stamps
   written this run (left out when 0; a dry run writes none), so the
   stamping of already-saved entries can be confirmed from output.
