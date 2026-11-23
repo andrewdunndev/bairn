@@ -83,6 +83,13 @@ is only a warning (the item is saved and uploaded) and still exits 0.
 2 means a usage or configuration error. A scheduler's last-success
 marker should advance only on 0.
 
+`bairn drift` exits 0 with no drift (or no `--diff`), 1 when drift is
+found, and 2 on a configuration or transport error, so a CI job fails
+on real changes only. `bairn backfill upload-sha1` exits 0 when every
+entry was hashed or skipped, 1 on a hashing error or when the state
+cannot be opened (for example while a fetch holds the lock), and 2 on a
+usage error.
+
 CLI flag overrides for `bairn fetch`:
 
 ```
@@ -259,8 +266,9 @@ as `notFound`.
 A walk that did not find an entry and covered it (it read past the
 entry's post date, or to the feed's end) marks the entry `goneAt`, and
 later `--retry-failed` runs skip it (the mark is cleared when the entry is saved or fails again), so a deleted post costs one walk,
-not one per run. A walk stopped by `--max-pages` or an error marks
-nothing, and `--dry-run` never marks. The summary's `gone` counts the
+not one per run. A walk stopped by `--max-pages` marks only the entries
+whose post date it had already read past; an error marks nothing, and
+`--dry-run` never marks. The summary's `gone` counts the
 entries marked this run. `--retry-failed --retry-gone` revisits the
 marked entries too: one found is filled in and unmarked, one still
 missing is marked again. `--retry-gone` without `--retry-failed` is refused (exit 2); a
@@ -278,8 +286,8 @@ and tag back-fill. The run summary gains a `retry` block: `failed`
 marked `goneAt` this run; they are also counted in `notFound` and
 `stillFailing`). `uploadFailed`, `undated` and `gone` are left out when
 zero. A new failure exits 1; an entry that is simply not found does
-not. Under `--dry-run` only `failed`, `retried`, `notFound` and
-`undated` are reported.
+not. Under `--dry-run` nothing is fixed or marked, so `fixed` and
+`stillFailing` print 0 and `uploadFailed` and `gone` are left out.
 
 ### Run summary
 
