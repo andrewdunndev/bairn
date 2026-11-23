@@ -88,6 +88,9 @@ func TestFailedUploadIsRetriedFromDiskOnRerun(t *testing.T) {
 	if up, _ := st.IsUploaded(context.Background(), "img-1"); !up {
 		t.Fatal("retry should record the upload")
 	}
+	if a, _ := st.Get(context.Background(), "img-1"); a.LastError != "" || a.Retries != 1 {
+		t.Fatalf("after the retry upload LastError=%q Retries=%d, want cleared and 1", a.LastError, a.Retries)
+	}
 
 	// The retry carries the same timeline date as the first attempt:
 	// the post's createdDate, not the retry's clock.

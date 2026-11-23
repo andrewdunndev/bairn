@@ -140,8 +140,23 @@ func Open(ctx context.Context, path string) (*Store, error) {
 			_ = s.Close()
 			return nil, fmt.Errorf("state: decode %s: %w", path, err)
 		}
+		healStaleErrors(s.data)
 	}
 	return s, nil
+}
+
+// healStaleErrors clears the LastError of every entry that is saved and
+// uploaded. Such an entry can only carry a failure that a later success
+// resolved: before 0.7.0 MarkSaved kept the error, and MarkUploaded did
+// too until it learned to clear it. Retries stays as history. The change
+// is in memory only and is written with the next real write, so a
+// read-only command never rewrites the file.
+func healStaleErrors(data map[string]*Asset) {
+	for _, a := range data {
+		if a.LastError != "" && !a.SavedAt.IsZero() && !a.UploadedAt.IsZero() {
+			a.LastError = ""
+		}
+	}
 }
 
 // Close flushes any unwritten changes and releases the file lock.
@@ -314,6 +329,9 @@ func (s *Store) MarkUploaded(ctx context.Context, id, immichID, status, uploadSH
 		return fmt.Errorf("%w: %s has %s, got %s", ErrImmichIDConflict, id, a.ImmichAssetID, immichID)
 	}
 	a.UploadedAt = at.UTC()
+	if !a.SavedAt.IsZero() {
+		a.LastError = "" // saved and uploaded: an earlier failure is resolved
+	}
 	a.ImmichAssetID = immichID
 	a.ImmichStatus = status
 	a.UploadSHA1 = uploadSHA1
