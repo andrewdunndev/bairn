@@ -53,6 +53,15 @@ additions.
   the store refuses to requeue it, so it is never downloaded again.
   No behavior change for state without `prunedAt`.
 
+### Fixed
+
+- A saved entry whose upload succeeded on a later run no longer keeps
+  the earlier failure in `lastError`: `MarkUploaded` clears it. On load,
+  an entry that is saved and uploaded has a leftover `lastError`
+  cleared in memory (pre-0.7.0 saves kept it), so `status` stops
+  counting it under `withErrors`. `retries` is kept as history, and the
+  file is not rewritten until the next real write.
+
 ## [0.8.1] - 2026-11-23
 
 ### Added
