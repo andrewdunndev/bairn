@@ -460,6 +460,54 @@ func (s *Store) StampVerify(id, result string, at time.Time) bool {
 	return true
 }
 
+// PruneEntry is what prune needs about one entry.
+type PruneEntry struct {
+	ID               string
+	SavedPath        string
+	UploadSHA1       string
+	ImmichAssetID    string
+	ImmichVerifiedAt time.Time
+	VerifyResult     string
+}
+
+// PruneCandidates lists the entries a prune run considers: uploaded and
+// saved, PrunedAt zero, ordered by ID.
+func (s *Store) PruneCandidates() []PruneEntry { return s.pruneEntries(false) }
+
+// PrunedEntries lists the entries already tombstoned (PrunedAt set),
+// ordered by ID: the ones a crashed prune may have left a file for.
+func (s *Store) PrunedEntries() []PruneEntry { return s.pruneEntries(true) }
+
+func (s *Store) pruneEntries(pruned bool) []PruneEntry {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []PruneEntry
+	for id, a := range s.data {
+		if a.PrunedAt.IsZero() == pruned || a.SavedAt.IsZero() || (!pruned && a.UploadedAt.IsZero()) {
+			continue
+		}
+		out = append(out, PruneEntry{ID: id, SavedPath: a.SavedPath, UploadSHA1: a.UploadSHA1,
+			ImmichAssetID: a.ImmichAssetID, ImmichVerifiedAt: a.ImmichVerifiedAt, VerifyResult: a.VerifyResult})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// MarkPruned stamps PrunedAt on a saved, unpruned entry, keeping every
+// other field. It marks the store dirty; the caller flushes before it
+// deletes the file.
+func (s *Store) MarkPruned(id string, at time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.data[id]
+	if !ok || a.SavedAt.IsZero() || !a.PrunedAt.IsZero() {
+		return false
+	}
+	a.PrunedAt = at
+	s.dirty++
+	return true
+}
+
 // UnfiledAsset is an uploaded asset still owed its albums.
 type UnfiledAsset struct {
 	ID            string
