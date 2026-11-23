@@ -42,7 +42,12 @@ func runRepair(ctx context.Context, cfg *config.Config, logger *slog.Logger, arg
 		fmt.Fprintln(os.Stderr, "state:", err)
 		return 1
 	}
-	sum := repairMissing(st, *dryRun, logger)
+	sum, gerr := repairMissing(st, cfg.SaveDir, *dryRun, logger)
+	if gerr != nil {
+		_ = st.Close() // nothing was changed, so nothing is written
+		fmt.Fprintln(os.Stderr, "repair: refusing:", gerr)
+		return 1
+	}
 	if err := st.Close(); err != nil {
 		logger.Error("repair: write state", "err", err)
 		sum.Errors++
@@ -56,12 +61,28 @@ func runRepair(ctx context.Context, cfg *config.Config, logger *slog.Logger, arg
 	return 0
 }
 
+// mountGoneMin is how many saved entries must be considered, all of them
+// missing, before repair reads that as a gone mount and refuses.
+const mountGoneMin = 3
+
 // repairMissing marks every saved entry whose file is missing (the
 // definition status --missing uses) as failed, in one store update, so
 // `fetch --retry-failed` downloads it again. A stat failure other than
-// absence is an error and leaves the entry alone.
-func repairMissing(st *state.Store, dryRun bool, logger *slog.Logger) repairSummary {
+// absence is an error and leaves the entry alone. It refuses, changing
+// nothing, when saveDir is absent or not a directory, or when every
+// saved entry is missing while more than mountGoneMin are considered:
+// an unmounted save root looks exactly like that.
+func repairMissing(st *state.Store, saveDir string, dryRun bool, logger *slog.Logger) (repairSummary, error) {
 	var sum repairSummary
+	fi, err := os.Stat(saveDir)
+	switch {
+	case saveDir == "":
+		return sum, errors.New("save directory is not configured")
+	case err != nil:
+		return sum, fmt.Errorf("save directory %s: %w", saveDir, err)
+	case !fi.IsDir():
+		return sum, fmt.Errorf("save directory %s is not a directory", saveDir)
+	}
 	var ids []string
 	for _, f := range st.SavedFiles() {
 		sum.Considered++
@@ -78,10 +99,13 @@ func repairMissing(st *state.Store, dryRun bool, logger *slog.Logger) repairSumm
 			sum.Errors++
 		}
 	}
+	if sum.Considered > mountGoneMin && len(ids) == sum.Considered {
+		return sum, fmt.Errorf("all %d saved files are missing under %s: is the volume mounted?", sum.Considered, saveDir)
+	}
 	if dryRun {
 		sum.Marked = len(ids)
-		return sum
+		return sum, nil
 	}
 	sum.Marked = st.Requeue(ids, missingFileError)
-	return sum
+	return sum, nil
 }

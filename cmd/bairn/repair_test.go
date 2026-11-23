@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,9 +42,9 @@ func seedRepair(t *testing.T) (st *state.Store, path, dir string) {
 }
 
 func TestRepairMarksOnlyMissingEntries(t *testing.T) {
-	st, _, _ := seedRepair(t)
+	st, _, dir := seedRepair(t)
 	defer st.Close()
-	got := repairMissing(st, false, quiet)
+	got, _ := repairMissing(st, dir, false, quiet)
 	if want := (repairSummary{Considered: 2, Marked: 1, Present: 1}); got != want {
 		t.Fatalf("summary = %+v, want %+v", got, want)
 	}
@@ -64,11 +65,11 @@ func TestRepairMarksOnlyMissingEntries(t *testing.T) {
 }
 
 func TestRepairKeepsTheOtherFields(t *testing.T) {
-	st, _, _ := seedRepair(t)
+	st, _, dir := seedRepair(t)
 	defer st.Close()
 	ctx := context.Background()
 	before, _ := st.Get(ctx, "gone")
-	repairMissing(st, false, quiet)
+	repairMissing(st, dir, false, quiet)
 	after, _ := st.Get(ctx, "gone")
 	if after.LastError != "saved file missing" || !after.SavedAt.IsZero() || after.SavedPath != "" {
 		t.Errorf("not requeued: %+v", after)
@@ -84,9 +85,9 @@ func TestRepairKeepsTheOtherFields(t *testing.T) {
 }
 
 func TestRepairDryRunWritesNothing(t *testing.T) {
-	st, path, _ := seedRepair(t)
+	st, path, dir := seedRepair(t)
 	before, _ := os.ReadFile(path)
-	got := repairMissing(st, true, quiet)
+	got, _ := repairMissing(st, dir, true, quiet)
 	if got.Marked != 1 {
 		t.Fatalf("marked = %d, want 1 counted", got.Marked)
 	}
@@ -103,8 +104,8 @@ func TestRepairDryRunWritesNothing(t *testing.T) {
 }
 
 func TestRepairPersistsAndIsIdempotent(t *testing.T) {
-	st, path, _ := seedRepair(t)
-	repairMissing(st, false, quiet)
+	st, path, dir := seedRepair(t)
+	repairMissing(st, dir, false, quiet)
 	if err := st.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +117,7 @@ func TestRepairPersistsAndIsIdempotent(t *testing.T) {
 	if f := re.Failed(); len(f) != 1 {
 		t.Fatalf("not persisted: %+v", f)
 	}
-	if got := repairMissing(re, false, quiet); got.Marked != 0 || got.Considered != 1 {
+	if got, _ := repairMissing(re, dir, false, quiet); got.Marked != 0 || got.Considered != 1 {
 		t.Errorf("second run = %+v, want nothing marked", got)
 	}
 }
@@ -145,7 +146,101 @@ func TestRepairExitsNonzeroOnErrors(t *testing.T) {
 	_ = s.Discover(ctx, "dir", state.Asset{Source: "feed-image"})
 	_ = s.MarkSaved(ctx, "dir", dir, time.Unix(1, 0))
 	_ = s.Close()
-	if code := runRepair(ctx, &config.Config{StatePath: path}, quiet, []string{"missing"}); code != 1 {
+	if code := runRepair(ctx, &config.Config{StatePath: path, SaveDir: dir}, quiet, []string{"missing"}); code != 1 {
 		t.Errorf("exit = %d, want 1 for a non-regular SavedPath", code)
+	}
+}
+
+// seedMany stores n saved entries whose files are absent under dir.
+func seedMany(t *testing.T, n int, present int) (string, string) {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "state.json")
+	ctx := context.Background()
+	s, err := state.Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := range n {
+		id := fmt.Sprintf("e%d", i)
+		p := filepath.Join(dir, id+".jpg")
+		if i < present {
+			_ = os.WriteFile(p, []byte("x"), 0o600)
+		}
+		_ = s.Discover(ctx, id, state.Asset{Source: "feed-image"})
+		_ = s.MarkSaved(ctx, id, p, time.Unix(1, 0))
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return dir, path
+}
+
+func TestRepairRefusesBadSaveRoot(t *testing.T) {
+	dir, path := seedMany(t, 2, 1)
+	before, _ := os.ReadFile(path)
+	ctx := context.Background()
+	file := filepath.Join(dir, "e0.jpg")
+	for name, root := range map[string]string{"absent": filepath.Join(dir, "nope"), "file": file, "unset": ""} {
+		cfg := &config.Config{StatePath: path, SaveDir: root}
+		if code := runRepair(ctx, cfg, quiet, []string{"missing"}); code != 1 {
+			t.Errorf("%s root: exit = %d, want 1", name, code)
+		}
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Error("a refused repair wrote the state file")
+	}
+}
+
+func TestRepairRefusesWhenEverythingIsMissing(t *testing.T) {
+	dir, path := seedMany(t, mountGoneMin+1, 0)
+	before, _ := os.ReadFile(path)
+	cfg := &config.Config{StatePath: path, SaveDir: dir}
+	if code := runRepair(context.Background(), cfg, quiet, []string{"missing"}); code != 1 {
+		t.Fatalf("exit = %d, want 1 when all files are missing", code)
+	}
+	after, _ := os.ReadFile(path)
+	if string(before) != string(after) {
+		t.Error("a refused repair wrote the state file")
+	}
+	// A few entries, all missing, is a small library and goes through.
+	dir2, path2 := seedMany(t, mountGoneMin, 0)
+	if code := runRepair(context.Background(), &config.Config{StatePath: path2, SaveDir: dir2}, quiet, []string{"missing"}); code != 0 {
+		t.Errorf("small all-missing exit = %d, want 0", code)
+	}
+	// One present file means the mount is up.
+	dir3, path3 := seedMany(t, mountGoneMin+2, 1)
+	if code := runRepair(context.Background(), &config.Config{StatePath: path3, SaveDir: dir3}, quiet, []string{"missing"}); code != 0 {
+		t.Errorf("mixed exit = %d, want 0", code)
+	}
+}
+
+func TestRepairLeavesStatErrorEntriesAlone(t *testing.T) {
+	st, _, dir := seedRepair(t)
+	defer st.Close()
+	ctx := context.Background()
+	// A directory as SavedPath is a stat error that is not absence.
+	_ = st.Discover(ctx, "odd", state.Asset{Source: "feed-image"})
+	_ = st.MarkSaved(ctx, "odd", dir, time.Unix(1, 0))
+	before, _ := st.Get(ctx, "odd")
+	got, err := repairMissing(st, dir, false, quiet)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Errors != 1 || got.Marked != 1 {
+		t.Fatalf("summary = %+v, want 1 error and only gone marked", got)
+	}
+	after, _ := st.Get(ctx, "odd")
+	if after != before {
+		t.Errorf("stat-error entry changed:\n before %+v\n after  %+v", before, after)
+	}
+	if ok, _ := st.IsSaved(ctx, "odd"); !ok {
+		t.Error("stat-error entry no longer saved")
+	}
+	for _, f := range st.Failed() {
+		if f.ID == "odd" {
+			t.Error("stat-error entry listed as failed")
+		}
 	}
 }
