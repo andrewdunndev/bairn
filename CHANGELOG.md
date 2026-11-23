@@ -14,6 +14,13 @@ additions.
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-22
+
+A **minor**: exit codes tighten. `fetch` and `status` now exit 1 on
+state errors, a failed state close, or a failed `/relations` lookup
+under `--source=tagged|liked`, where 0.7.0 exited 0, so a scheduler's
+last-success marker can stop advancing on a run that used to pass.
+
 ### Added
 
 - `bairn backfill upload-sha1 [--dry-run]` fills `uploadSha1` on
@@ -648,7 +655,8 @@ If you upgraded to v0.4.3, downgrade to v0.4.5 or later.
   provenance, GitLab Release with all artifacts linked, OCI
   container image.
 
-[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.7.0...main
+[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.8.0...main
+[0.8.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.8.0
 [0.7.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.7.0
 [0.6.2]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.2
 [0.6.1]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.6.1
