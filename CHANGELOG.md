@@ -14,6 +14,21 @@ additions.
 
 ## [Unreleased]
 
+### Added
+
+- State fields `immichVerifiedAt`, `verifyResult` and `prunedAt`, all
+  omitted when unset, so state written by 0.8.1 loads unchanged. They
+  are the groundwork for `bairn verify` and `bairn prune`; no command
+  sets them yet.
+- `bairn status` reports `verified`, `verifyFailed` and `pruned`.
+
+### Changed
+
+- An entry with `prunedAt` set is never counted as a missing file:
+  `status --missing`, `missingFile` and `repair missing` skip it, and
+  the store refuses to requeue it, so it is never downloaded again.
+  No behavior change for state without `prunedAt`.
+
 ## [0.8.1] - 2026-11-23
 
 ### Added

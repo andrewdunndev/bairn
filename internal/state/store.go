@@ -65,6 +65,18 @@ type Asset struct {
 	// Failed skips such entries; --retry-gone revisits them.
 	GoneAt  time.Time `json:"goneAt,omitzero"`
 	Retries int       `json:"retries,omitempty"`
+	// ImmichVerifiedAt is when Immich last confirmed it holds this
+	// entry's UploadSHA1 under ImmichAssetID, not trashed. Cleared when
+	// a later check no longer confirms it.
+	ImmichVerifiedAt time.Time `json:"immichVerifiedAt,omitzero"`
+	// VerifyResult is the last failed verify outcome (trashed, mismatch,
+	// absent); empty when verified or never checked.
+	VerifyResult string `json:"verifyResult,omitempty"`
+	// PrunedAt is the tombstone left when the local file was deleted
+	// after verification. Every other field is kept, so no path
+	// downloads or uploads the entry again; SavedFiles and Requeue skip
+	// it so a deleted file is never read as a missing one.
+	PrunedAt time.Time `json:"prunedAt,omitzero"`
 }
 
 // Store owns the in-memory map and the file lock. Open it once per
@@ -371,14 +383,15 @@ type UploadSHA1Candidate struct {
 	ExifFixedAt time.Time
 }
 
-// WithoutUploadSHA1 lists the uploaded assets (UploadedAt set) whose
-// UploadSHA1 is blank, ordered by ID.
+// WithoutUploadSHA1 lists the uploaded, unpruned assets (UploadedAt set,
+// PrunedAt zero) whose UploadSHA1 is blank, ordered by ID. A pruned entry
+// has no file left to hash.
 func (s *Store) WithoutUploadSHA1() []UploadSHA1Candidate {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []UploadSHA1Candidate
 	for id, a := range s.data {
-		if !a.UploadedAt.IsZero() && a.UploadSHA1 == "" {
+		if !a.UploadedAt.IsZero() && a.PrunedAt.IsZero() && a.UploadSHA1 == "" {
 			out = append(out, UploadSHA1Candidate{ID: id, SavedPath: a.SavedPath, UploadedAt: a.UploadedAt, ExifFixedAt: a.ExifFixedAt})
 		}
 	}
@@ -499,7 +512,7 @@ func (s *Store) MarkError(ctx context.Context, id, errMsg string) error {
 // Requeue marks the saved entries ids as failed in one update: SavedAt
 // and SavedPath are cleared and LastError set, so Failed lists them and
 // IsSaved is false. Every other field, the Immich receipt included, is
-// kept. Unknown or unsaved ids are skipped. The count of entries
+// kept. Unknown, unsaved and pruned ids are skipped. The count of entries
 // changed is returned; the write is deferred to Flush or Close.
 func (s *Store) Requeue(ids []string, errMsg string) int {
 	s.mu.Lock()
@@ -507,7 +520,7 @@ func (s *Store) Requeue(ids []string, errMsg string) int {
 	n := 0
 	for _, id := range ids {
 		a, ok := s.data[id]
-		if !ok || a.SavedAt.IsZero() {
+		if !ok || a.SavedAt.IsZero() || !a.PrunedAt.IsZero() {
 			continue
 		}
 		a.SavedAt = time.Time{}
@@ -575,13 +588,14 @@ type SavedFile struct {
 	SavedPath string
 }
 
-// SavedFiles lists the entries with SavedAt set, ordered by ID.
+// SavedFiles lists the entries with SavedAt set and no PrunedAt,
+// ordered by ID: the entries whose file should be on disk.
 func (s *Store) SavedFiles() []SavedFile {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []SavedFile
 	for id, a := range s.data {
-		if !a.SavedAt.IsZero() {
+		if !a.SavedAt.IsZero() && a.PrunedAt.IsZero() {
 			out = append(out, SavedFile{ID: id, SavedPath: a.SavedPath})
 		}
 	}
@@ -607,11 +621,17 @@ type Summary struct {
 	AlbumsRefused int `json:"albumsRefused"`
 	// TagsApplied, TagsOwed and TagsRefused count uploads by tag state;
 	// Owed is what a run with tagging on still owes.
-	TagsApplied int       `json:"tagsApplied"`
-	TagsOwed    int       `json:"tagsOwed"`
-	TagsRefused int       `json:"tagsRefused"`
-	LastSave    time.Time `json:"lastSave,omitzero"`
-	LastUpload  time.Time `json:"lastUpload,omitzero"`
+	TagsApplied int `json:"tagsApplied"`
+	TagsOwed    int `json:"tagsOwed"`
+	TagsRefused int `json:"tagsRefused"`
+	// Verified counts entries Immich last confirmed; VerifyFailed those
+	// whose last check failed (trashed, mismatch, absent); Pruned those
+	// whose local file was deleted.
+	Verified     int       `json:"verified"`
+	VerifyFailed int       `json:"verifyFailed"`
+	Pruned       int       `json:"pruned"`
+	LastSave     time.Time `json:"lastSave,omitzero"`
+	LastUpload   time.Time `json:"lastUpload,omitzero"`
 }
 
 // Stats returns a Summary. Cheap; an in-memory pass over the map.
@@ -651,6 +671,15 @@ func (s *Store) Stats(ctx context.Context) (Summary, error) {
 		}
 		if !a.SavedAt.IsZero() && a.FeedItemAt.IsZero() {
 			sm.Undated++
+		}
+		if !a.ImmichVerifiedAt.IsZero() {
+			sm.Verified++
+		}
+		if a.VerifyResult != "" {
+			sm.VerifyFailed++
+		}
+		if !a.PrunedAt.IsZero() {
+			sm.Pruned++
 		}
 		if a.LastError != "" {
 			sm.WithErrors++

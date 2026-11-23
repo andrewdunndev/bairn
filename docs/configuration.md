@@ -223,6 +223,19 @@ that need a note:
 - `goneAt`: when a `--retry-failed` walk covered the entry's post date
   (or reached the feed's end) and did not find the post. Absent unless
   marked. It is cleared when the entry is saved or fails again.
+- `immichVerifiedAt`: when Immich last confirmed it holds the entry's
+  `uploadSha1` under `immichAssetId`, not trashed. Absent unless
+  verified.
+- `verifyResult`: the last failed verify outcome (`trashed`,
+  `mismatch` or `absent`). Absent unless a check failed.
+- `prunedAt`: the tombstone for a local file deleted after
+  verification. Every other field is kept, `immichAssetId` and
+  `uploadSha1` included, so no run downloads or uploads the entry
+  again. `status --missing`, `missingFile` and `repair missing` skip
+  it, and `Requeue` refuses it. Absent unless pruned.
+
+Files written by 0.8.1 and earlier have none of these three keys and
+load unchanged; bairn writes them only when set.
 
 ### Backfilling `uploadSha1`
 
@@ -376,9 +389,11 @@ than the count of `alreadyDone` entries. Each considered entry lands in
 
 `bairn status` adds `undated` (saved entries with no `feedItemAt`) and
 `missingFile` (entries with `savedAt` set whose `savedPath` is not a
-regular file). It stats files and never hashes them. `bairn status
---missing` prints the ids of the `missingFile` entries instead of the
-summary.
+regular file; entries with `prunedAt` are never counted). It stats
+files and never hashes them. `bairn status --missing` prints the ids of
+the `missingFile` entries instead of the summary. `verified`,
+`verifyFailed` and `pruned` count entries with `immichVerifiedAt`,
+`verifyResult` and `prunedAt` set.
 
 
 ## Filename layout
