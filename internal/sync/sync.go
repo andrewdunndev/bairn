@@ -226,6 +226,9 @@ type Result struct {
 	// interaction between the system-post default-off rule and the
 	// --source filter so operators see what they're missing.
 	SystemPostsFiltered int `json:"systemPostsFiltered,omitempty"`
+	// Stamped counts feedItemAt stamps written this run onto entries
+	// saved before the field existed. A dry run writes none.
+	Stamped int `json:"stamped,omitempty"`
 }
 
 // Buckets partitions every discovered media item into exactly one
@@ -614,13 +617,13 @@ func shouldDownloadImage(img famly.Image, opts Options) bool {
 // savedChecker is the slice of the state store checkSaved needs.
 type savedChecker interface {
 	IsSaved(ctx context.Context, id string) (bool, error)
-	Discover(ctx context.Context, id string, a state.Asset) error
+	StampFeedItemAt(id string, at time.Time) bool
 }
 
 // checkSaved reports whether the asset is already saved. ok is false
 // when the state read failed: the item is counted in res.StateErrors
-// and must be skipped, never reprocessed as unsaved. A failed
-// FeedItemAt stamp on a saved entry is counted but does not skip.
+// and must be skipped, never reprocessed as unsaved. A
+// FeedItemAt stamp on a saved entry is counted in res.Stamped.
 func checkSaved(ctx context.Context, st savedChecker, disc asset.Discovered, dryRun bool, res *Result, logger *slog.Logger) (already, ok bool) {
 	id := disc.FamlyImageID()
 	already, err := st.IsSaved(ctx, id)
@@ -630,11 +633,10 @@ func checkSaved(ctx context.Context, st savedChecker, disc asset.Discovered, dry
 		return false, false
 	}
 	if already && !dryRun {
-		// Entries saved before FeedItemAt existed gain it here; Discover
+		// Entries saved before FeedItemAt existed gain it here; the stamp
 		// only fills a zero value and defers its flush.
-		if err := st.Discover(ctx, id, state.Asset{FeedItemAt: disc.FeedItemAt()}); err != nil {
-			res.StateErrors++
-			logger.Error("state.Discover (stamp)", "id", id, "err", err)
+		if st.StampFeedItemAt(id, disc.FeedItemAt()) {
+			res.Stamped++
 		}
 	}
 	return already, true

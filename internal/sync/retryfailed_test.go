@@ -377,17 +377,21 @@ func seedSavedUndated(t *testing.T, st *state.Store, ids ...int) {
 	}
 }
 
-func (e *retryEnv) fetch(t *testing.T, dry bool, maxPages int) {
+func (e *retryEnv) fetch(t *testing.T, dry bool, maxPages int) Result {
 	t.Helper()
-	if _, err := Run(context.Background(), e.deps, Options{Source: SourceAll, DryRun: dry, MaxPages: maxPages}); err != nil {
+	res, err := Run(context.Background(), e.deps, Options{Source: SourceAll, DryRun: dry, MaxPages: maxPages})
+	if err != nil {
 		t.Fatalf("Run: %v", err)
 	}
+	return res
 }
 
 func TestFetchStampsPostDateOnSavedEntries(t *testing.T) {
 	e := newRetryEnv(t, newDatedFeed(t, 30, nil, false))
 	seedSavedUndated(t, e.st, 5, 25)
-	e.fetch(t, false, 0)
+	if res := e.fetch(t, false, 0); res.Stamped != 2 {
+		t.Errorf("Stamped = %d, want 2", res.Stamped)
+	}
 	for _, i := range []int{5, 25} {
 		got, _ := e.st.Get(context.Background(), fmt.Sprintf("img-%d", i))
 		if !got.FeedItemAt.Equal(postTime(i)) {
@@ -399,7 +403,9 @@ func TestFetchStampsPostDateOnSavedEntries(t *testing.T) {
 func TestFetchDryRunLeavesSavedEntriesUndated(t *testing.T) {
 	e := newRetryEnv(t, newDatedFeed(t, 30, nil, false))
 	seedSavedUndated(t, e.st, 5)
-	e.fetch(t, true, 0)
+	if res := e.fetch(t, true, 0); res.Stamped != 0 {
+		t.Errorf("dry-run Stamped = %d, want 0", res.Stamped)
+	}
 	if got, _ := e.st.Get(context.Background(), "img-5"); !got.FeedItemAt.IsZero() {
 		t.Errorf("dry-run stamped FeedItemAt = %v", got.FeedItemAt)
 	}

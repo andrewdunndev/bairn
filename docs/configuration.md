@@ -145,6 +145,7 @@ Other commands:
 | | `--user`, `--password` | Immich login for the full smoke (defaults `IMMICH_BAIRN_USER`, `IMMICH_BAIRN_PASSWORD`) |
 | | `--api-key` | Immich API key (default `IMMICH_API_KEY`); ignored when user and password are set |
 | `bairn backfill upload-sha1` | `--dry-run` | count without writing the state file |
+| `bairn status` | `--missing` | print the ids (state keys only) of saved entries whose file is missing, one per line |
 
 Albums are off unless `--albums` or a pattern is set. Patterns take
 `%Y %m %B %b`, read in the run's zone at the post date. An album is
@@ -319,6 +320,25 @@ error (connection reset, truncated body, timeout, 5xx) are retried in
 the run, up to four tries with backoff, each with a fresh signed URL.
 `--progress-every N` logs a `progress` line every N pages with the date
 of the last post read and the running counts.
+
+To reconcile a fetch: `discovered` = `alreadyDone` + new (`savedNew` +
+`uploadedNew` + `uploadedDuplicate`) + `notReady` + `failed` + the
+other buckets (`skippedSystem`, `filteredBySource`, `wouldProcess`).
+`stamped` (left out when 0) counts the `feedItemAt` stamps written this
+run onto entries saved before the field existed; it is a side effect
+inside `alreadyDone`, not a bucket, and a dry run writes none.
+
+To reconcile `bairn backfill upload-sha1`: `considered` is the entries
+uploaded with an empty `uploadSha1`. Entries the same day's fetch
+uploaded with the checksum are not in it, so `considered` is smaller
+than the count of `alreadyDone` entries. Each considered entry lands in
+`hashed`, `skippedModified`, `missingFile` or `errors`.
+
+`bairn status` adds `undated` (saved entries with no `feedItemAt`) and
+`missingFile` (entries with `savedAt` set whose `savedPath` is not a
+regular file). It stats files and never hashes them. `bairn status
+--missing` prints the ids of the `missingFile` entries instead of the
+summary.
 
 
 ## Filename layout

@@ -223,16 +223,34 @@ func (s *Store) Discover(ctx context.Context, id string, a Asset) error {
 		// stamp is non-critical (re-derived from the feed on any later
 		// run), so it only marks the store dirty: it rides the next
 		// critical write or Close instead of rewriting the file itself.
-		if cur.FeedItemAt.IsZero() && !a.FeedItemAt.IsZero() {
-			cur.FeedItemAt = a.FeedItemAt.UTC()
-			s.dirty++
-		}
+		s.stampFeedItemAtLocked(cur, a.FeedItemAt)
 		return nil
 	}
 	a.FeedItemAt = a.FeedItemAt.UTC()
 	v := a
 	s.data[id] = &v
 	return s.changedLocked()
+}
+
+// stampFeedItemAtLocked fills a zero FeedItemAt and reports whether it
+// did. The caller holds s.mu.
+func (s *Store) stampFeedItemAtLocked(cur *Asset, at time.Time) bool {
+	if !cur.FeedItemAt.IsZero() || at.IsZero() {
+		return false
+	}
+	cur.FeedItemAt = at.UTC()
+	s.dirty++
+	return true
+}
+
+// StampFeedItemAt fills a zero FeedItemAt on an existing entry and
+// reports whether it wrote one. Like Discover's stamp it only marks the
+// store dirty.
+func (s *Store) StampFeedItemAt(id string, at time.Time) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cur, ok := s.data[id]
+	return ok && s.stampFeedItemAtLocked(cur, at)
 }
 
 // MarkDownloaded sets DownloadedAt and SHA1.
@@ -510,6 +528,26 @@ func (s *Store) IsUploaded(ctx context.Context, id string) (bool, error) {
 	return !a.UploadedAt.IsZero(), nil
 }
 
+// SavedFile is a saved entry (SavedAt set) and the path it recorded.
+type SavedFile struct {
+	ID        string
+	SavedPath string
+}
+
+// SavedFiles lists the entries with SavedAt set, ordered by ID.
+func (s *Store) SavedFiles() []SavedFile {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []SavedFile
+	for id, a := range s.data {
+		if !a.SavedAt.IsZero() {
+			out = append(out, SavedFile{ID: id, SavedPath: a.SavedPath})
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
 // Summary aggregates the store into a small report. Used by
 // "bairn status".
 type Summary struct {
@@ -519,6 +557,8 @@ type Summary struct {
 	Saved      int `json:"saved"`
 	Uploaded   int `json:"uploaded"`
 	WithErrors int `json:"withErrors"`
+	// Undated counts saved entries with no feedItemAt stamp.
+	Undated int `json:"undated"`
 	// AlbumsFiled, AlbumsUnfiled and AlbumsRefused count uploads by
 	// album state; Unfiled is what a run with albums on still owes.
 	AlbumsFiled   int `json:"albumsFiled"`
@@ -567,6 +607,9 @@ func (s *Store) Stats(ctx context.Context) (Summary, error) {
 			sm.TagsRefused++
 		case owedTag(a):
 			sm.TagsOwed++
+		}
+		if !a.SavedAt.IsZero() && a.FeedItemAt.IsZero() {
+			sm.Undated++
 		}
 		if a.LastError != "" {
 			sm.WithErrors++
