@@ -125,7 +125,12 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 	allowMissingState := fs.Bool("allow-missing-state", false, "upload even though the state file is absent and the save dir already holds media (every file would be treated as new)")
 	progressEvery := fs.Int("progress-every", cfg.ProgressEvery, "log a progress line every N feed pages (0 = off); BAIRN_PROGRESS_EVERY sets the default")
 	retryFailed := fs.Bool("retry-failed", false, "revisit only state entries that failed to download or save, without walking the whole feed; the walk jumps to each entry's post date and stops after the oldest. --max-pages 0 unless set; works with --dry-run")
+	retryGone := fs.Bool("retry-gone", false, "with --retry-failed, also revisit entries an earlier retry marked gone (post not in the feed); a find clears the mark, another covering miss sets it again")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *retryGone && !*retryFailed {
+		fmt.Fprintln(os.Stderr, "fetch: --retry-gone needs --retry-failed")
 		return 2
 	}
 	if *progressEvery < 0 {
@@ -271,6 +276,7 @@ func runFetch(ctx context.Context, cfg *config.Config, logger *slog.Logger, args
 		Software:           software(Version),
 		IncludeSystemPosts: *includeSystem,
 		RetryFailed:        *retryFailed,
+		RetryGone:          *retryGone,
 		ProgressEvery:      *progressEvery,
 	})
 	if err != nil {

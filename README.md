@@ -265,6 +265,8 @@ CLI flag overrides for `bairn fetch`:
                          BAIRN_PROGRESS_EVERY; 0 = off)
 --retry-failed           revisit only state entries that failed to download
                          or save, without walking the whole feed (see below)
+--retry-gone             with --retry-failed, revisit entries marked gone
+                         (see below)
 --allow-missing-state    upload even though the state file is missing and the
                          save dir already holds media (refused by default)
 ```
@@ -349,6 +351,16 @@ Bound that with `--max-pages N`, run `--retry-failed --dry-run` first to
 see the date it would jump to, or accept the full walk once; entries it
 does find are dated afterwards, and the entries it does not are reported
 as `notFound`.
+
+A walk that did not find an entry and covered it (it read past the
+entry's post date, or to the feed's end) marks the entry `goneAt`, and
+later `--retry-failed` runs skip it, so a deleted post costs one walk,
+not one per run. A walk stopped by `--max-pages` or an error marks
+nothing, and `--dry-run` never marks. The summary's `gone` counts the
+entries marked this run. `--retry-failed --retry-gone` revisits the
+marked entries too: one found is filled in and unmarked, one still
+missing is marked again. `--retry-gone` without `--retry-failed` is refused (exit 2); a
+run that skips marked entries logs "skipping entries marked gone".
 
 The flag cannot be combined with `--source`, `--include-system-posts`
 or `--allow-missing-state`, works with `--dry-run`, and skips the album

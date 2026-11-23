@@ -87,6 +87,8 @@ type Options struct {
 	// items. The walk jumps to the newest of their dates and stops past
 	// the oldest; Source and IncludeSystemPosts do not apply.
 	RetryFailed bool
+	// RetryGone also revisits the entries earlier retries marked gone.
+	RetryGone bool
 
 	// ProgressEvery logs a progress line every this many pages walked.
 	// 0 turns the lines off.
@@ -405,7 +407,13 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 	var plan *retryPlan
 	pages := deps.Famly.Pages(ctx)
 	if opts.RetryFailed {
-		plan = newRetryPlan(deps.State.Failed())
+		failed := deps.State.Failed()
+		if opts.RetryGone {
+			failed = append(failed, deps.State.Gone()...)
+		} else if n := len(deps.State.Gone()); n > 0 {
+			logger.Info("retry-failed: skipping entries marked gone (--retry-gone revisits them)", "gone", n)
+		}
+		plan = newRetryPlan(failed)
 		pages = deps.Famly.PagesFrom(ctx, plan.start)
 		logger.Info("retry-failed: revisiting failed entries", "entries", len(plan.targets),
 			"undated", plan.undated, "jumpTo", timeOrNone(plan.start), "stopAfter", timeOrNone(plan.floor))
@@ -428,6 +436,7 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 		}
 	}
 
+	walkEnded := true
 	for page, err := range pages {
 		if err != nil {
 			flush()
@@ -436,6 +445,9 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			return res, err
 		}
 		res.PagesWalked++
+		if plan != nil {
+			plan.notePage(page)
+		}
 		for _, item := range page.FeedItems {
 			if plan != nil {
 				processRetryItem(ctx, deps, opts, plan, item, &res, logger)
@@ -447,19 +459,22 @@ func Run(ctx context.Context, deps Deps, opts Options) (Result, error) {
 			logProgress(logger, res, page)
 		}
 		if plan != nil && plan.finished(page) {
+			walkEnded = false
 			break
 		}
 		if opts.MaxPages > 0 && res.PagesWalked >= opts.MaxPages {
 			logger.Info("max pages reached", "pages", res.PagesWalked, "limit", opts.MaxPages)
+			walkEnded = false
 			break
 		}
 	}
 	flush()
 	res.FinishedAt = time.Now().UTC()
 	if plan != nil {
+		plan.feedEnded = walkEnded && ctx.Err() == nil
 		res.Retry = plan.summary(ctx, deps.State, opts.DryRun)
 		logger.Info("retry-failed complete", "failed", res.Retry.Failed, "retried", res.Retry.Retried,
-			"fixed", res.Retry.Fixed, "stillFailing", res.Retry.StillFailing, "notFound", res.Retry.NotFound)
+			"fixed", res.Retry.Fixed, "stillFailing", res.Retry.StillFailing, "notFound", res.Retry.NotFound, "gone", res.Retry.Gone)
 	}
 	res.Reconcile(logger)
 	logger.Info("fetch complete",

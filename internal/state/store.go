@@ -60,7 +60,11 @@ type Asset struct {
 	// (deleted or trashed since upload). Terminal, like AlbumsRefused.
 	TagRefused string `json:"tagRefused,omitempty"`
 	LastError  string `json:"lastError,omitempty"`
-	Retries    int    `json:"retries,omitempty"`
+	// GoneAt is when a --retry-failed walk that covered the entry's
+	// post date (or reached the feed's end) did not find the post.
+	// Failed skips such entries; --retry-gone revisits them.
+	GoneAt  time.Time `json:"goneAt,omitzero"`
+	Retries int       `json:"retries,omitempty"`
 }
 
 // Store owns the in-memory map and the file lock. Open it once per
@@ -247,6 +251,7 @@ func (s *Store) MarkSaved(ctx context.Context, id, savedPath string, at time.Tim
 		a.SavedAt = at.UTC()
 		a.SavedPath = savedPath
 		a.LastError = "" // a failed fetch is resolved once the file is on disk
+		a.GoneAt = time.Time{}
 	})
 }
 
@@ -373,23 +378,42 @@ type FailedAsset struct {
 	// FeedItemAt is zero for an entry written before it was recorded.
 	FeedItemAt   time.Time
 	DiscoveredAt time.Time
+	// GoneAt is set on entries Gone lists.
+	GoneAt time.Time
 }
 
 // Failed lists the entries with a LastError and no SavedAt, ordered by
-// ID: the work a retry-only run revisits. An asset saved but not
-// uploaded is not listed; an ordinary run uploads those from disk.
-func (s *Store) Failed() []FailedAsset {
+// ID, that are not marked gone: the work a retry-only run revisits. An
+// asset saved but not uploaded is not listed; an ordinary run uploads
+// those from disk.
+func (s *Store) Failed() []FailedAsset { return s.failed(false) }
+
+// Gone lists the failed entries marked gone, ordered by ID.
+func (s *Store) Gone() []FailedAsset { return s.failed(true) }
+
+func (s *Store) failed(gone bool) []FailedAsset {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var out []FailedAsset
 	for id, a := range s.data {
-		if a.LastError != "" && a.SavedAt.IsZero() {
+		if a.LastError != "" && a.SavedAt.IsZero() && !a.GoneAt.IsZero() == gone {
 			out = append(out, FailedAsset{ID: id, Source: a.Source, FeedItemID: a.FeedItemID,
-				FeedItemAt: a.FeedItemAt, DiscoveredAt: a.DiscoveredAt})
+				FeedItemAt: a.FeedItemAt, DiscoveredAt: a.DiscoveredAt, GoneAt: a.GoneAt})
 		}
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// MarkGone records that a covering feed walk did not find the entry's
+// post, so retry runs skip it.
+func (s *Store) MarkGone(ctx context.Context, id string, at time.Time) error {
+	return s.update(id, func(a *Asset) { a.GoneAt = at.UTC() })
+}
+
+// ClearGone removes the gone mark.
+func (s *Store) ClearGone(ctx context.Context, id string) error {
+	return s.update(id, func(a *Asset) { a.GoneAt = time.Time{} })
 }
 
 // MarkError increments retries and records the message.
@@ -397,6 +421,7 @@ func (s *Store) MarkError(ctx context.Context, id, errMsg string) error {
 	return s.update(id, func(a *Asset) {
 		a.Retries++
 		a.LastError = errMsg
+		a.GoneAt = time.Time{}
 	})
 }
 
