@@ -315,7 +315,7 @@ Immich but writes neither the state file nor anything under the save
 directory (opening the state creates its `.lock` file, as every
 subcommand does). It needs `IMMICH_BASE_URL` and `IMMICH_API_KEY` and
 the state lock, and never downloads, uploads or `--restore`s anything
-(restoring a pruned file is not part of 0.9.0).
+(restoring a pruned file is `bairn repair pruned`).
 
 An entry is deleted only when all of these hold in this run:
 
