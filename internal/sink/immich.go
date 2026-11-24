@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha1"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 
@@ -60,4 +61,40 @@ func (i *Immich) Put(ctx context.Context, in PutInput) (Receipt, error) {
 		Size:     int64(len(data)),
 		SHA1:     hex.EncodeToString(sum[:]),
 	}, nil
+}
+
+// ConfirmBatch implements Confirmer.
+func (*Immich) ConfirmBatch() int { return immich.MaxBulkCheck }
+
+// Confirm implements Confirmer with one bulk-upload-check. An entry is
+// Held only when the checksum maps to the entry's own asset id and that
+// asset is not trashed.
+func (i *Immich) Confirm(ctx context.Context, items []ConfirmItem) ([]ConfirmResult, error) {
+	in := make([]immich.CheckItem, len(items))
+	want := make(map[string]string, len(items))
+	for k, it := range items {
+		in[k] = immich.CheckItem{ID: it.ID, Checksum: it.SHA1}
+		want[it.ID] = it.RemoteID
+	}
+	res, err := i.client.BulkUploadCheck(ctx, in)
+	if err != nil {
+		if errors.Is(err, immich.ErrUnauthorized) {
+			return nil, fmt.Errorf("%w: %w", ErrUnauthorized, err)
+		}
+		return nil, err
+	}
+	out := make([]ConfirmResult, len(res))
+	for k, r := range res {
+		o := Held
+		switch {
+		case !r.Duplicate:
+			o = Absent
+		case r.AssetID != want[r.ID]:
+			o = Mismatch
+		case r.IsTrashed:
+			o = Trashed
+		}
+		out[k] = ConfirmResult{ID: r.ID, Outcome: o}
+	}
+	return out, nil
 }

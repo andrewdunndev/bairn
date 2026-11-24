@@ -65,10 +65,10 @@ type Asset struct {
 	// Failed skips such entries; --retry-gone revisits them.
 	GoneAt  time.Time `json:"goneAt,omitzero"`
 	Retries int       `json:"retries,omitempty"`
-	// ImmichVerifiedAt is when Immich last confirmed it holds this
+	// VerifiedAt is when Immich last confirmed it holds this
 	// entry's UploadSHA1 under ImmichAssetID, not trashed. Cleared when
 	// a later check no longer confirms it.
-	ImmichVerifiedAt time.Time `json:"immichVerifiedAt,omitzero"`
+	VerifiedAt time.Time `json:"verifiedAt,omitzero"`
 	// VerifyResult is the last failed verify outcome (trashed, mismatch,
 	// absent); empty when verified or never checked.
 	VerifyResult string `json:"verifyResult,omitempty"`
@@ -457,8 +457,8 @@ func (s *Store) VerifyCandidates() []VerifyCandidate {
 }
 
 // StampVerify records a verify outcome. An empty result is "verified":
-// ImmichVerifiedAt is set to at and VerifyResult cleared. Any other
-// result (trashed, mismatch, absent) is stored and ImmichVerifiedAt
+// VerifiedAt is set to at and VerifyResult cleared. Any other
+// result (trashed, mismatch, absent) is stored and VerifiedAt
 // cleared, so a later failure demotes an earlier verification. A pruned
 // or unknown entry is left alone. Like StampUploadSHA1 it only marks the
 // store dirty; the caller flushes.
@@ -470,9 +470,9 @@ func (s *Store) StampVerify(id, result string, at time.Time) bool {
 		return false
 	}
 	if result == "" {
-		a.ImmichVerifiedAt, a.VerifyResult = at, ""
+		a.VerifiedAt, a.VerifyResult = at, ""
 	} else {
-		a.ImmichVerifiedAt, a.VerifyResult = time.Time{}, result
+		a.VerifiedAt, a.VerifyResult = time.Time{}, result
 	}
 	s.dirty++
 	return true
@@ -480,14 +480,14 @@ func (s *Store) StampVerify(id, result string, at time.Time) bool {
 
 // PruneEntry is what prune needs about one entry.
 type PruneEntry struct {
-	ID               string
-	SavedPath        string
-	UploadSHA1       string
-	ImmichAssetID    string
-	ImmichVerifiedAt time.Time
-	VerifyResult     string
-	UploadedAt       time.Time
-	Source           string
+	ID            string
+	SavedPath     string
+	UploadSHA1    string
+	ImmichAssetID string
+	VerifiedAt    time.Time
+	VerifyResult  string
+	UploadedAt    time.Time
+	Source        string
 }
 
 // PruneCandidates lists the entries a prune run considers: uploaded and
@@ -507,7 +507,7 @@ func (s *Store) pruneEntries(pruned bool) []PruneEntry {
 			continue
 		}
 		out = append(out, PruneEntry{ID: id, SavedPath: a.SavedPath, UploadSHA1: a.UploadSHA1,
-			ImmichAssetID: a.ImmichAssetID, ImmichVerifiedAt: a.ImmichVerifiedAt, VerifyResult: a.VerifyResult, UploadedAt: a.UploadedAt, Source: a.Source})
+			ImmichAssetID: a.ImmichAssetID, VerifiedAt: a.VerifiedAt, VerifyResult: a.VerifyResult, UploadedAt: a.UploadedAt, Source: a.Source})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
@@ -800,7 +800,7 @@ func (s *Store) Stats(ctx context.Context) (Summary, error) {
 		if !a.SavedAt.IsZero() && a.FeedItemAt.IsZero() {
 			sm.Undated++
 		}
-		if !a.ImmichVerifiedAt.IsZero() {
+		if !a.VerifiedAt.IsZero() {
 			sm.Verified++
 		}
 		if a.VerifyResult != "" {

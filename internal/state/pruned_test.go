@@ -21,8 +21,8 @@ func seedPrunedStore(t *testing.T) *Store {
 	at := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	for id, a := range map[string]Asset{
 		"live":     {},
-		"pruned":   {ImmichVerifiedAt: prunedAt, PrunedAt: prunedAt},
-		"verified": {ImmichVerifiedAt: prunedAt},
+		"pruned":   {VerifiedAt: prunedAt, PrunedAt: prunedAt},
+		"verified": {VerifiedAt: prunedAt},
 	} {
 		a.Source, a.FeedItemAt, a.DiscoveredAt = "feed-image", at, at
 		a.DownloadedAt, a.SavedAt, a.SavedPath, a.SHA1 = at, at, "/disk/"+id+".jpg", "sha-"+id
@@ -103,7 +103,7 @@ func TestV081StateLoadsWithoutNewFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, _ := s.Get(context.Background(), "img-1")
-	if a.ImmichAssetID != "imm-1" || !a.PrunedAt.IsZero() || !a.ImmichVerifiedAt.IsZero() || a.VerifyResult != "" {
+	if a.ImmichAssetID != "imm-1" || !a.PrunedAt.IsZero() || !a.VerifiedAt.IsZero() || a.VerifyResult != "" {
 		t.Errorf("loaded %+v", a)
 	}
 	if len(s.SavedFiles()) != 1 {
@@ -114,7 +114,7 @@ func TestV081StateLoadsWithoutNewFields(t *testing.T) {
 		t.Fatal(err)
 	}
 	b, _ := os.ReadFile(path)
-	for _, k := range []string{"immichVerifiedAt", "verifyResult", "prunedAt"} {
+	for _, k := range []string{"verifiedAt", "verifyResult", "prunedAt"} {
 		if strings.Contains(string(b), k) {
 			t.Errorf("unpruned state wrote %q: %s", k, b)
 		}

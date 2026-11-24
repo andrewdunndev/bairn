@@ -18,6 +18,7 @@ import (
 	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/config"
 	"gitlab.com/dunn.dev/bairn/internal/retry"
+	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 )
 
@@ -135,14 +136,14 @@ func TestVerifyMapsEveryOutcome(t *testing.T) {
 	old := at.Add(-24 * time.Hour)
 	st := vSeed(t, t.TempDir(), map[string]state.Asset{
 		"ok":        {UploadSHA1: vsum(1), ImmichAssetID: "imm-ok"},
-		"trashed":   {UploadSHA1: vsum(2), ImmichAssetID: "imm-trashed", ImmichVerifiedAt: old},
-		"mismatch":  {UploadSHA1: vsum(3), ImmichAssetID: "imm-mine", ImmichVerifiedAt: old},
-		"absent":    {UploadSHA1: vsum(4), ImmichAssetID: "imm-absent", ImmichVerifiedAt: old},
-		"blank":     {ImmichAssetID: "imm-blank", ImmichVerifiedAt: old},
+		"trashed":   {UploadSHA1: vsum(2), ImmichAssetID: "imm-trashed", VerifiedAt: old},
+		"mismatch":  {UploadSHA1: vsum(3), ImmichAssetID: "imm-mine", VerifiedAt: old},
+		"absent":    {UploadSHA1: vsum(4), ImmichAssetID: "imm-absent", VerifiedAt: old},
+		"blank":     {ImmichAssetID: "imm-blank", VerifiedAt: old},
 		"pruned":    {UploadSHA1: vsum(1), ImmichAssetID: "imm-ok", PrunedAt: old},
 		"unflagged": {UploadSHA1: vsum(1), ImmichAssetID: "imm-ok", VerifyResult: "trashed"},
 	})
-	sum := verifyEntries(context.Background(), st, f.client(), false, at, quiet)
+	sum := verifyEntries(context.Background(), st, sink.NewImmich(f.client()), false, at, quiet)
 	want := verifySummary{Verified: 2, Trashed: 1, Mismatch: 1, AbsentInImmich: 1, Unverifiable: 1}
 	if sum != want {
 		t.Fatalf("summary %+v, want %+v", sum, want)
@@ -156,14 +157,14 @@ func TestVerifyMapsEveryOutcome(t *testing.T) {
 		"blank": {false, "unverifiable"}, "pruned": {false, ""},
 	} {
 		a := vGet(t, st, id)
-		if !a.ImmichVerifiedAt.IsZero() != w.verified || a.VerifyResult != w.result {
-			t.Errorf("%s: verifiedAt=%v result=%q, want verified=%v result=%q", id, a.ImmichVerifiedAt, a.VerifyResult, w.verified, w.result)
+		if !a.VerifiedAt.IsZero() != w.verified || a.VerifyResult != w.result {
+			t.Errorf("%s: verifiedAt=%v result=%q, want verified=%v result=%q", id, a.VerifiedAt, a.VerifyResult, w.verified, w.result)
 		}
 	}
-	if a := vGet(t, st, "ok"); !a.ImmichVerifiedAt.Equal(at) {
-		t.Errorf("verifiedAt = %v, want %v", a.ImmichVerifiedAt, at)
+	if a := vGet(t, st, "ok"); !a.VerifiedAt.Equal(at) {
+		t.Errorf("verifiedAt = %v, want %v", a.VerifiedAt, at)
 	}
-	if a := vGet(t, st, "pruned"); !a.ImmichVerifiedAt.IsZero() || a.VerifyResult != "" {
+	if a := vGet(t, st, "pruned"); !a.VerifiedAt.IsZero() || a.VerifyResult != "" {
 		t.Error("pruned entry touched")
 	}
 	if len(f.sizes) != 1 || f.sizes[0] != 5 {
@@ -174,10 +175,10 @@ func TestVerifyMapsEveryOutcome(t *testing.T) {
 func TestVerifyDemotesALaterNonVerifiedResult(t *testing.T) {
 	f := newImmichFake(t, map[string]vKnown{vsum(1): {"imm-1", true}})
 	st := vSeed(t, t.TempDir(), map[string]state.Asset{
-		"a": {UploadSHA1: vsum(1), ImmichAssetID: "imm-1", ImmichVerifiedAt: time.Now()},
+		"a": {UploadSHA1: vsum(1), ImmichAssetID: "imm-1", VerifiedAt: time.Now()},
 	})
-	verifyEntries(context.Background(), st, f.client(), false, time.Now(), quiet)
-	if a := vGet(t, st, "a"); !a.ImmichVerifiedAt.IsZero() || a.VerifyResult != "trashed" {
+	verifyEntries(context.Background(), st, sink.NewImmich(f.client()), false, time.Now(), quiet)
+	if a := vGet(t, st, "a"); !a.VerifiedAt.IsZero() || a.VerifyResult != "trashed" {
 		t.Errorf("%+v: want the verified stamp cleared and result trashed", a)
 	}
 }
@@ -188,11 +189,11 @@ func TestVerifyDryRunWritesNothing(t *testing.T) {
 	st := vSeed(t, dir, map[string]state.Asset{"a": {UploadSHA1: vsum(1), ImmichAssetID: "imm-1"}})
 	path := filepath.Join(dir, "state.json")
 	before, _ := os.ReadFile(path)
-	sum := verifyEntries(context.Background(), st, f.client(), true, time.Now(), quiet)
+	sum := verifyEntries(context.Background(), st, sink.NewImmich(f.client()), true, time.Now(), quiet)
 	if sum.Verified != 1 {
 		t.Fatalf("dry run should still count: %+v", sum)
 	}
-	if a := vGet(t, st, "a"); !a.ImmichVerifiedAt.IsZero() {
+	if a := vGet(t, st, "a"); !a.VerifiedAt.IsZero() {
 		t.Error("dry run stamped memory")
 	}
 	if err := st.Close(); err != nil {
@@ -226,17 +227,17 @@ func TestVerifyBatchFailureIsolation(t *testing.T) {
 	defer front.Close()
 	ic := immich.New(front.URL, "SECRET-KEY", immich.WithRetry(retry.Policy{Attempts: 2, Initial: time.Millisecond, Max: time.Millisecond}))
 	var logs strings.Builder
-	sum := verifyEntries(context.Background(), st, ic, false, time.Now(), slog.New(slog.NewTextHandler(&logs, nil)))
+	sum := verifyEntries(context.Background(), st, sink.NewImmich(ic), false, time.Now(), slog.New(slog.NewTextHandler(&logs, nil)))
 	if logs.Len() == 0 || strings.Contains(logs.String(), "SECRET-KEY") {
 		t.Errorf("want a log line without the key, got %q", logs.String())
 	}
 	if sum.Errors != 500 || sum.Verified != 1 || sum.AbsentInImmich != 0 {
 		t.Fatalf("summary %+v, want errors=500 verified=1", sum)
 	}
-	if a := vGet(t, st, "e0000"); !a.ImmichVerifiedAt.IsZero() || a.VerifyResult != "" {
+	if a := vGet(t, st, "e0000"); !a.VerifiedAt.IsZero() || a.VerifyResult != "" {
 		t.Errorf("failed batch was stamped: %+v", a)
 	}
-	if a := vGet(t, st, "e0500"); a.ImmichVerifiedAt.IsZero() {
+	if a := vGet(t, st, "e0500"); a.VerifiedAt.IsZero() {
 		t.Error("the good batch was not stamped")
 	}
 	if len(f.sizes) != 1 || f.sizes[0] != 1 {
@@ -252,7 +253,7 @@ func TestVerifyUnauthorizedAbortsAndStampsNothing(t *testing.T) {
 		entries[fmt.Sprintf("e%04d", i)] = state.Asset{UploadSHA1: vsum(i + 10), ImmichAssetID: "x"}
 	}
 	st := vSeed(t, t.TempDir(), entries)
-	sum := verifyEntries(context.Background(), st, immich.New(srv.URL, "k"), false, time.Now(), quiet)
+	sum := verifyEntries(context.Background(), st, sink.NewImmich(immich.New(srv.URL, "k")), false, time.Now(), quiet)
 	if sum.Errors != 501 || sum.Verified+sum.AbsentInImmich != 0 {
 		t.Fatalf("summary %+v, want all 501 errors and no stamps", sum)
 	}
@@ -278,7 +279,7 @@ func TestRunVerifyExitCodesAndSummary(t *testing.T) {
 	}
 	st, _ = state.Open(context.Background(), cfg.StatePath)
 	defer st.Close()
-	if a := vGet(t, st, "a"); a.ImmichVerifiedAt.IsZero() {
+	if a := vGet(t, st, "a"); a.VerifiedAt.IsZero() {
 		t.Error("not stamped on disk")
 	}
 }

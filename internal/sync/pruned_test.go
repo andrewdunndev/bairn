@@ -25,7 +25,7 @@ func seedPruned(t *testing.T, st *state.Store, i int, lastErr string) {
 		Source: "feed-image", FeedItemID: fmt.Sprintf("post-%d", i), FeedItemAt: at, DiscoveredAt: at,
 		DownloadedAt: at, SavedAt: at, SavedPath: "/gone/" + id + ".jpg", SHA1: "sha-" + id,
 		UploadSHA1: "up-" + id, UploadedAt: at, ImmichAssetID: "imm-" + id, ImmichStatus: "created",
-		ImmichVerifiedAt: at, PrunedAt: at, LastError: lastErr,
+		VerifiedAt: at, PrunedAt: at, LastError: lastErr,
 	})
 	if err != nil {
 		t.Fatal(err)

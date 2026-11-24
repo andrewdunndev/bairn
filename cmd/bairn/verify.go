@@ -10,13 +10,10 @@ import (
 	"os"
 	"time"
 
-	"gitlab.com/dunn.dev/bairn/api/immich"
 	"gitlab.com/dunn.dev/bairn/internal/config"
+	"gitlab.com/dunn.dev/bairn/internal/sink"
 	"gitlab.com/dunn.dev/bairn/internal/state"
 )
-
-// verifyBatch is how many entries one bulk-upload-check call covers.
-const verifyBatch = immich.MaxBulkCheck
 
 // verifyResult values stored on the entry. Verified is the empty string.
 const (
@@ -37,18 +34,17 @@ type verifySummary struct {
 	Errors         int `json:"errors"`
 }
 
-// bulkChecker is the Immich call verify needs.
-type bulkChecker interface {
-	BulkUploadCheck(ctx context.Context, items []immich.CheckItem) ([]immich.CheckResult, error)
+// runVerify implements `bairn verify [--dry-run]` against the configured sink.
+func runVerify(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
+	return runVerifyOn(ctx, configuredSink(cfg, logger), cfg, logger, args)
 }
 
-// runVerify implements `bairn verify [--dry-run]`: ask Immich, with one
-// bulk-upload-check per batch, whether it still holds each uploaded
-// entry's bytes, and stamp immichVerifiedAt or verifyResult. It never
-// touches a file.
-func runVerify(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
+// runVerifyOn asks the sink's Confirmer, one batch at a time, whether it
+// still holds each uploaded entry's bytes, and stamps verifiedAt or
+// verifyResult. It never touches a file.
+func runVerifyOn(ctx context.Context, s sink.Sink, cfg *config.Config, logger *slog.Logger, args []string) int {
 	fl := flag.NewFlagSet("verify", flag.ExitOnError)
-	dryRun := fl.Bool("dry-run", false, "make the Immich calls and count the outcomes without writing the state file")
+	dryRun := fl.Bool("dry-run", false, "make the confirm calls and count the outcomes without writing the state file")
 	if err := fl.Parse(args); err != nil {
 		return 2
 	}
@@ -56,8 +52,8 @@ func runVerify(ctx context.Context, cfg *config.Config, logger *slog.Logger, arg
 		fmt.Fprintln(os.Stderr, "usage: bairn verify [--dry-run]")
 		return 2
 	}
-	if cfg.ImmichBaseURL == "" || cfg.ImmichAPIKey == "" {
-		fmt.Fprintln(os.Stderr, "verify: IMMICH_BASE_URL and IMMICH_API_KEY are required")
+	cf, ok := confirmerOf("verify", s)
+	if !ok {
 		return 2
 	}
 	// Open takes the exclusive state lock, so this cannot run beside a fetch.
@@ -66,8 +62,7 @@ func runVerify(ctx context.Context, cfg *config.Config, logger *slog.Logger, arg
 		fmt.Fprintln(os.Stderr, "state:", err)
 		return 1
 	}
-	ic := immich.New(cfg.ImmichBaseURL, cfg.ImmichAPIKey, immich.WithLogger(logger))
-	sum := verifyEntries(ctx, st, ic, *dryRun, time.Now().UTC(), logger)
+	sum := verifyEntries(ctx, st, cf, *dryRun, time.Now().UTC(), logger)
 	if err := st.Close(); err != nil {
 		logger.Error("verify: write state", "err", err)
 		sum.Errors++
@@ -81,19 +76,18 @@ func runVerify(ctx context.Context, cfg *config.Config, logger *slog.Logger, arg
 	return 0
 }
 
-// classify maps Immich's answer for one entry to its verify result. An
-// entry is verified only when the checksum maps to the entry's own
-// immichAssetId and that asset is not trashed.
-func classify(c state.VerifyCandidate, r immich.CheckResult) string {
-	switch {
-	case !r.Duplicate:
-		return resAbsent
-	case r.AssetID != c.ImmichAssetID:
-		return resMismatch
-	case r.IsTrashed:
+// resultFor maps a Confirmer's outcome to the verify result stored on
+// the entry.
+func resultFor(o sink.Outcome) string {
+	switch o {
+	case sink.Held:
+		return resVerified
+	case sink.Trashed:
 		return resTrashed
+	case sink.Mismatch:
+		return resMismatch
 	}
-	return resVerified
+	return resAbsent
 }
 
 // verifyEntries checks every uploaded, unpruned entry in batches and
@@ -103,7 +97,7 @@ func classify(c state.VerifyCandidate, r immich.CheckResult) string {
 // stops the run, counting every entry not yet checked. An entry with no
 // uploadSha1 or no immichAssetId is unverifiable: no call is made, and
 // it is stamped unverifiable so an earlier verification never survives.
-func verifyEntries(ctx context.Context, st *state.Store, ic bulkChecker, dryRun bool, at time.Time, logger *slog.Logger) verifySummary {
+func verifyEntries(ctx context.Context, st *state.Store, cf sink.Confirmer, dryRun bool, at time.Time, logger *slog.Logger) verifySummary {
 	var sum verifySummary
 	var todo []state.VerifyCandidate
 	for _, c := range st.VerifyCandidates() {
@@ -116,9 +110,9 @@ func verifyEntries(ctx context.Context, st *state.Store, ic bulkChecker, dryRun 
 		}
 		todo = append(todo, c)
 	}
-	for i := 0; i < len(todo); i += verifyBatch {
-		batch := todo[i:min(i+verifyBatch, len(todo))]
-		abort, err := verifyBatchOnce(ctx, st, ic, batch, dryRun, at, &sum)
+	for i := 0; i < len(todo); i += cf.ConfirmBatch() {
+		batch := todo[i:min(i+cf.ConfirmBatch(), len(todo))]
+		abort, err := verifyBatchOnce(ctx, st, cf, batch, dryRun, at, &sum)
 		if err != nil {
 			logger.Error("verify: batch failed; nothing stamped for it", "entries", len(batch), "err", err)
 			sum.Errors += len(batch)
@@ -135,16 +129,16 @@ func verifyEntries(ctx context.Context, st *state.Store, ic bulkChecker, dryRun 
 // is accepted and counts only after the state write, so a failed batch
 // leaves no partial result and is counted once, under Errors.
 // abort reports an error that no later batch can survive.
-func verifyBatchOnce(ctx context.Context, st *state.Store, ic bulkChecker, batch []state.VerifyCandidate, dryRun bool, at time.Time, sum *verifySummary) (abort bool, err error) {
-	items := make([]immich.CheckItem, len(batch))
+func verifyBatchOnce(ctx context.Context, st *state.Store, cf sink.Confirmer, batch []state.VerifyCandidate, dryRun bool, at time.Time, sum *verifySummary) (abort bool, err error) {
+	items := make([]sink.ConfirmItem, len(batch))
 	for i, c := range batch {
-		items[i] = immich.CheckItem{ID: c.ID, Checksum: c.UploadSHA1}
+		items[i] = sink.ConfirmItem{ID: c.ID, RemoteID: c.ImmichAssetID, SHA1: c.UploadSHA1}
 	}
-	res, err := ic.BulkUploadCheck(ctx, items)
+	res, err := cf.Confirm(ctx, items)
 	if err != nil {
-		return errors.Is(err, immich.ErrUnauthorized) || ctx.Err() != nil, err
+		return errors.Is(err, sink.ErrUnauthorized) || ctx.Err() != nil, err
 	}
-	byID := make(map[string]immich.CheckResult, len(res))
+	byID := make(map[string]sink.ConfirmResult, len(res))
 	for _, r := range res {
 		byID[r.ID] = r
 	}
@@ -157,7 +151,7 @@ func verifyBatchOnce(ctx context.Context, st *state.Store, ic bulkChecker, batch
 		if !ok {
 			return false, errors.New("reply is missing a requested entry")
 		}
-		outcomes[i] = classify(c, r)
+		outcomes[i] = resultFor(r.Outcome)
 	}
 	var tally verifySummary
 	for i, c := range batch {
