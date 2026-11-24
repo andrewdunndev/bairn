@@ -997,3 +997,40 @@ func TestPruneResumeMediaGoneDuringRecheckKeepsTombstone(t *testing.T) {
 		t.Errorf("tombstone cleared with the media gone: %+v", g)
 	}
 }
+
+// A restored entry whose re-downloaded bytes differ from what was uploaded
+// is never pruned silently: prune counts it localDiffers and keeps the file.
+func TestPruneKeepsARestoredFileWhoseBytesDiffer(t *testing.T) {
+	e := newPEnv(t)
+	p := e.add("r", "bytes-r", "bytes-r")
+	a := e.ents["r"]
+	a.PrunedAt = pruneAt
+	e.ents["r"] = a
+	if err := os.Remove(p); err != nil {
+		t.Fatal(err)
+	}
+	e.seed()
+	st, err := state.Open(context.Background(), e.state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !st.RestorePruned("r", prunedRestoreError) {
+		t.Fatal("not restored")
+	}
+	// The re-download carries a new EXIF stamp: different bytes.
+	e.write("2026/r.jpg", "REDOWNLOADED-NEW-STAMP")
+	if err := st.MarkSaved(context.Background(), "r", p, pruneAt); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Close(); err != nil {
+		t.Fatal(err)
+	}
+	f := e.fake()
+	sum, code := runPruneCapture(t, e.cfg(f.srv.URL), "--apply")
+	if code != 0 || sum.LocalDiffers != 1 || sum.Pruned != 0 {
+		t.Fatalf("exit %d %+v", code, sum)
+	}
+	if !exists(p) || !e.get("r").PrunedAt.IsZero() {
+		t.Error("file deleted or re-tombstoned")
+	}
+}

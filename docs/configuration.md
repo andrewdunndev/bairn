@@ -148,6 +148,7 @@ Other commands:
 | `bairn verify` | `--dry-run` | make the Immich calls and count the outcomes without writing the state file |
 | `bairn prune` | `--apply` | delete the verified local copies; without it, a dry run that writes nothing |
 | `bairn repair missing` | `--dry-run` | count without writing the state file |
+| `bairn repair pruned` | `--dry-run`, optional ids | restore pruned files by re-download; without ids, every pruned entry |
 | `bairn status` | `--missing` | print the ids (state keys only) of saved entries whose file is missing, one per line |
 
 Albums are off unless `--albums` or a pattern is set. Patterns take
@@ -358,6 +359,17 @@ un-pruned by the sweep is not counted again by the main pass. A pruned entry oth
 `savedPath`, hashes and `immichAssetId`; fetch, `--retry-failed`,
 `repair missing`, `backfill` and `status` leave it alone, and `status`
 counts it as `pruned`, not `missingFile`.
+
+To get pruned files back, `bairn repair pruned [--dry-run] [ID...]`
+restores them from Famly. An entry whose file is still on disk just
+loses its tombstone (`unpruned`). An entry Famly no longer serves
+(`goneAt` set) is left alone and counted `notRestorable`: its copy lives
+in Immich or the backups. The rest are re-queued (`requeued`) and
+`bairn fetch --retry-failed` downloads them again without uploading, so
+Immich keeps one asset and the entry keeps its `immichAssetId`. A
+re-downloaded file whose bytes differ from `uploadSha1` is never pruned
+again: `prune` counts it as `localDiffers`. An id that is unknown or not
+pruned makes the exit code nonzero. `--dry-run` changes nothing.
 
 Prune assumes a single operator on the host: it holds the state lock, but
 a file swapped between the check and the unlink by another local process

@@ -27,9 +27,12 @@ const missingFileError = "saved file missing"
 // runRepair implements the repair subcommand. It is offline: it reads
 // the state file and stats the saved files, and nothing else.
 func runRepair(ctx context.Context, cfg *config.Config, logger *slog.Logger, args []string) int {
-	if len(args) == 0 || args[0] != "missing" {
-		fmt.Fprintln(os.Stderr, "usage: bairn repair missing [--dry-run]")
+	if len(args) == 0 || (args[0] != "missing" && args[0] != "pruned") {
+		fmt.Fprintln(os.Stderr, "usage: bairn repair missing [--dry-run]\n       bairn repair pruned [--dry-run] [ID...]")
 		return 2
+	}
+	if args[0] == "pruned" {
+		return runRepairPruned(ctx, cfg, logger, args[1:])
 	}
 	fl := flag.NewFlagSet("repair missing", flag.ExitOnError)
 	dryRun := fl.Bool("dry-run", false, "count what would be marked without writing the state file")

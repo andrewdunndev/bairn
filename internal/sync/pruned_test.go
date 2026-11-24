@@ -120,3 +120,37 @@ func TestRequeueRefusesPrunedThenRetryFailedLeavesIt(t *testing.T) {
 	e.run(t, false)
 	assertUntouched(t, e, uploads, "img-1", want)
 }
+
+// TestRestoredPrunedEntryIsResavedWithoutUpload: RestorePruned then
+// --retry-failed saves the file again, uploads nothing and keeps the
+// Immich receipt. The fake answers "created" with a new id to any
+// request, so a stray upload shows as a request and a changed id.
+func TestRestoredPrunedEntryIsResavedWithoutUpload(t *testing.T) {
+	e, uploads := prunedEnv(t, 3)
+	seedPruned(t, e.st, 1, "")
+	ctx := context.Background()
+	want, _ := e.st.Get(ctx, "img-1")
+	if !e.st.RestorePruned("img-1", "restored after prune") {
+		t.Fatal("not restored")
+	}
+	if f := e.st.Failed(); len(f) != 1 || f[0].ID != "img-1" {
+		t.Fatalf("Failed = %+v, want img-1", f)
+	}
+	res := e.run(t, false)
+	if res.Retry == nil || res.Retry.Fixed != 1 || res.Errors != 0 {
+		t.Fatalf("retry = %+v errors %d", res.Retry, res.Errors)
+	}
+	if uploads.Load() != 0 || res.Uploaded != 0 || res.UploadDuplicates != 0 {
+		t.Errorf("uploads: requests=%d created=%d dup=%d, want none", uploads.Load(), res.Uploaded, res.UploadDuplicates)
+	}
+	if n := filesUnder(t, e.dir); n != 1 {
+		t.Errorf("disk has %d files, want 1", n)
+	}
+	got, _ := e.st.Get(ctx, "img-1")
+	if got.ImmichAssetID != want.ImmichAssetID || got.UploadSHA1 != want.UploadSHA1 || got.UploadedAt != want.UploadedAt {
+		t.Errorf("receipt changed: %+v", got)
+	}
+	if got.SavedAt.IsZero() || !sink.Within(e.dir, got.SavedPath) || got.LastError != "" || !got.PrunedAt.IsZero() {
+		t.Errorf("entry not re-saved cleanly: %+v", got)
+	}
+}

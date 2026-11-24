@@ -179,6 +179,10 @@ summary, the state file, filename layout and embedded metadata are in
   verified to hold. It is a dry run unless `--apply`, and the real prune
   is operator-gated: run it only after a restore drill, and run `verify`
   then a `prune` dry run first. See `docs/configuration.md`.
+- `bairn repair pruned [--dry-run] [ID...]` undoes a prune by Famly
+  re-download: it re-queues pruned entries, then `bairn fetch
+  --retry-failed` saves the files again. Nothing is uploaded twice, since
+  each entry keeps its Immich receipt.
 - The state file is the tombstone for uploads: back it up with the archive.
 
 ## Developing
