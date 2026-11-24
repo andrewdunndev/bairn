@@ -488,6 +488,7 @@ type PruneEntry struct {
 	VerifyResult  string
 	UploadedAt    time.Time
 	Source        string
+	GoneAt        time.Time
 }
 
 // PruneCandidates lists the entries a prune run considers: uploaded and
@@ -507,7 +508,7 @@ func (s *Store) pruneEntries(pruned bool) []PruneEntry {
 			continue
 		}
 		out = append(out, PruneEntry{ID: id, SavedPath: a.SavedPath, UploadSHA1: a.UploadSHA1,
-			ImmichAssetID: a.ImmichAssetID, VerifiedAt: a.VerifiedAt, VerifyResult: a.VerifyResult, UploadedAt: a.UploadedAt, Source: a.Source})
+			ImmichAssetID: a.ImmichAssetID, VerifiedAt: a.VerifiedAt, VerifyResult: a.VerifyResult, UploadedAt: a.UploadedAt, Source: a.Source, GoneAt: a.GoneAt})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
@@ -538,6 +539,28 @@ func (s *Store) ClearPruned(id string) bool {
 		return false
 	}
 	a.PrunedAt = time.Time{}
+	s.dirty++
+	return true
+}
+
+// RestorePruned turns a pruned entry into a failed one in a single
+// mutation: PrunedAt, SavedAt, SavedPath and GoneAt are cleared and
+// LastError set, so the next retry fetch downloads the file again. Every
+// other field, the Immich receipt included, is kept, so the re-download
+// is never uploaded a second time. It returns false for an unknown or
+// unpruned id. The write is deferred to Flush or Close.
+func (s *Store) RestorePruned(id, errMsg string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	a, ok := s.data[id]
+	if !ok || a.PrunedAt.IsZero() {
+		return false
+	}
+	a.PrunedAt = time.Time{}
+	a.SavedAt = time.Time{}
+	a.SavedPath = ""
+	a.LastError = errMsg
+	a.GoneAt = time.Time{}
 	s.dirty++
 	return true
 }
