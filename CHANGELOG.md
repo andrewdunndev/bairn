@@ -12,6 +12,18 @@ additions.
 [kac]: https://keepachangelog.com/en/1.1.0/
 [semver]: https://semver.org/spec/v2.0.0.html
 
+## [0.9.1] - 2026-11-23
+
+### Added
+
+- `bairn repair pruned [--dry-run] [ID...]` restores files that
+  `bairn prune` deleted, by downloading them from Famly again; with no
+  IDs it takes every pruned entry. An entry whose media is still on
+  disk is only un-pruned. An entry Famly no longer serves is reported
+  as `notRestorable` and left as it is. Every other entry is requeued
+  for `bairn fetch --retry-failed`, which saves the file again
+  without uploading it to Immich a second time. `--dry-run` changes nothing.
+
 ## [0.9.0] - 2026-11-23
 
 ### Added
@@ -726,7 +738,8 @@ If you upgraded to v0.4.3, downgrade to v0.4.5 or later.
   provenance, GitLab Release with all artifacts linked, OCI
   container image.
 
-[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.9.0...main
+[Unreleased]: https://gitlab.com/dunn.dev/bairn/-/compare/v0.9.1...main
+[0.9.1]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.9.1
 [0.9.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.9.0
 [0.8.1]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.8.1
 [0.8.0]: https://gitlab.com/dunn.dev/bairn/-/tags/v0.8.0
